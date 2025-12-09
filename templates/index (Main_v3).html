@@ -1,0 +1,375 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Silverlake Part Sales Opportunity Finder</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.datatables.net/1.13.4/css/jquery.dataTables.min.css">
+    <style>
+      body {
+        background: url("{{ url_for('static', filename='background.jpg') }}") no-repeat center center fixed;
+        background-size: cover;
+        font-family: 'Montserrat', sans-serif;
+        color: black;
+      }
+      h1, h2, label {
+        color: #5c9c13;
+      }
+      .btn-primary, .btn-success {
+        background-color: #5c9c13;
+        border: none;
+      }
+      .btn-primary:hover, .btn-success:hover {
+        background-color: #4a8010;
+      }
+      .form-control {
+        background-color: #d6f5c1;
+        color: #333;
+        border: 1px solid #333;
+      }
+      .form-control:focus {
+        border-color: #5c9c13;
+        box-shadow: 0 0 5px #5c9c13;
+      }
+      table {
+        color: #f0f0f0;
+        background-color: #111;
+      }
+      th, td {
+        border-bottom: 1px solid #5c9c13;
+      }
+      #model-suggestions {
+        background-color: #d6f5c1;
+        color: #333;
+        border: 1px solid #5c9c13;
+      }
+      .logo {
+        text-align: center;
+        margin-bottom: 20px;
+      }
+      .logo img {
+        width: 300px;
+        max-width: 100%;
+        height: auto;
+      }
+    </style>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.datatables.net/1.13.4/js/jquery.dataTables.min.js"></script>
+  </head>
+  <body class="p-4">
+    <div class="container">
+	<div class="logo">
+        <img src="{{ url_for('static', filename='logo-slg-strip.svg') }}" alt="Silverlake Logo">
+      </div>
+
+      <!-- Navbar -->
+      <nav class="navbar navbar-expand-lg navbar-dark mb-4" style="background-color: #5c9c13; border-radius: 10px;">
+        <div class="container-fluid">
+          <a class="navbar-brand" href="#">
+            <img src="{{ url_for('static', filename='logo-slg-strip.svg') }}" alt="Silverlake Logo" style="height: 30px;">
+          </a>
+          <div class="d-flex">
+            <a href="{{ url_for('logout') }}" class="btn btn-light">Logout</a>
+          </div>
+        </div>
+      </nav>
+
+      <h1 class="mb-4 text-center">Silverlake Part Sales Opportunity Finder</h1>
+
+      <form method="post">
+        <div class="row">
+          <div class="col-md-6 mb-3">
+            <label class="form-label">Model</label>
+            <input type="text" name="model" class="form-control" required>
+            <ul id="model-suggestions" class="list-group" style="display: none; position: absolute; z-index: 1000; max-height: 150px; overflow-y: auto;"></ul>
+          </div>
+          <div class="col-md-2 mb-3">
+            <label class="form-label">Year</label>
+            <input type="number" name="year" class="form-control" required>
+          </div>
+          <div class="col-md-4 mb-3">
+            <label class="form-label">Engine Code (Optional)</label>
+            <input type="text" name="engine_code" class="form-control">
+          </div>
+        </div>
+        <div class="row">
+          <div class="col-md-6 mb-3">
+            <label class="form-label">Minimum Price (£)</label>
+            <input type="number" name="min_price" class="form-control" step="0.01">
+          </div>
+          <div class="col-md-6 mb-3">
+            <label class="form-label">Minimum Opportunity Score (£)</label>
+            <input type="number" name="min_opportunity" class="form-control" step="0.01">
+          </div>	
+        </div>
+        <button type="submit" class="btn btn-primary">Search</button>
+        {% if parts %}
+          <a href="/download" class="btn btn-success ms-2">Download Excel</a>
+        {% endif %}
+	
+<button type="submit" class="btn btn-primary" name="action" value="search_excluding">Search (Export)</button>
+
+      
+<button type="button" class="btn btn-warning ms-2" id="ebayButtonS">eBay Small Parts</button>
+<button type="button" class="btn btn-warning ms-2" id="ebayButtonM">eBay Medium Parts</button>
+<button type="button" class="btn btn-warning ms-2" id="ebayButtonL">eBay Large Parts</button>
+
+</form>
+
+      {% if search_details %}
+      <h2 class="mt-5">Top Parts for {{ search_details.model }} (Year {{ search_details.year }}) {% if search_details.engine_code %} Engine: {{ search_details.engine_code }} {% endif %}</h2>
+      {% endif %}
+
+      {% if parts %}
+      <table id="parts-table" class="table table-striped mt-3">
+        <thead><tr>
+          <th>Part</th><th>Start Year</th><th>End Year</th><th>Description</th><th>Price</th><th>Parts in Stock</th><th>Backorders</th><th>Parts Sold</th><th>Not Found 180 days</th><th>Potential Profit</th><th>Sales Speed</th><th>Opportunity Score</th>
+        </tr></thead>
+        <tbody>
+        {% for row in parts %}
+          <tr>
+            <td {% if row['Backorders'] > 0 %} style="color: #5c9c13;" {% endif %}>{{ row['Part'] }}</td>
+            <td {% if row['Backorders'] > 0 %} style="color: #5c9c13;" {% endif %}>{{ row['IC Start Year'] }}</td>
+            <td {% if row['Backorders'] > 0 %} style="color: #5c9c13;" {% endif %}>{{ row['IC End Year'] }}</td>
+            <td {% if row['Backorders'] > 0 %} style="color: #5c9c13;" {% endif %}>{{ row['IC Description'] }}</td>
+            <td {% if row['Backorders'] > 0 %} style="color: #5c9c13;" {% endif %}>£{{ "{:.2f}".format(row['B Price']) }}</td>
+            <td {% if row['Backorders'] > 0 %} style="color: #5c9c13;" {% endif %}>{{ row['Parts in Stock'] }}</td>
+            <td {% if row['Backorders'] > 0 %} style="color: #5c9c13;" {% endif %}>{{ row['Backorders'] }}</td>
+            <td {% if row['Backorders'] > 0 %} style="color: #5c9c13;" {% endif %}>{{ row['Parts Sold All'] }}</td>
+            <td {% if row['Backorders'] > 0 %} style="color: #5c9c13;" {% endif %}>{{ row['Not Found 180 days'] }}</td>
+            <td {% if row['Backorders'] > 0 %} style="color: #5c9c13;" {% endif %}>£{{ "{:.2f}".format(row['Potential_Profit']) }}</td>
+            <td {% if row['Backorders'] > 0 %} style="color: #5c9c13;" {% endif %}>{{ "{:.2f}".format(row['Sales_Speed']) }}</td>
+            <td {% if row['Backorders'] > 0 %} style="color: #5c9c13;" {% endif %}>£{{ "{:.2f}".format(row['Opportunity_Score']) }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+	      
+      </table>
+      {% endif %}
+      {% if google_sheet_matches %}
+<h2 class="mt-5">Google Sheet Matches for Engine Code</h2>
+<table class="table table-striped mt-3">
+   {% set excluded_keys = [] %}
+  <thead>
+    <tr>
+      {% for key in google_sheet_matches[0].keys() %}
+        {% if key not in excluded_keys %}
+         <th>{{ key }}</th>
+        {% endif %}
+      {% endfor %}
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in google_sheet_matches %}
+    <tr>
+      {% for cell in row.values() %}
+       {% if key not in excluded_keys %}
+         <td style="background-color: {{ cell.bg }}">{{ cell.value }}</td>
+       {% endif %}
+      {% endfor %}
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+	    
+
+    </div>
+
+    <script>
+      $(document).ready(function() {
+        $('input[name="model"]').on('input', function() {
+          var query = $(this).val().trim();
+          if (query.length > 0) {
+            $.ajax({
+              url: '/autocomplete_model',
+              method: 'GET',
+              data: { 'query': query },
+              success: function(response) {
+                var suggestions = response.models;
+                var suggestionList = $('#model-suggestions');
+                suggestionList.empty();
+                suggestions.forEach(function(model) {
+                  suggestionList.append('<li class="list-group-item">' + model + '</li>');
+                });
+                suggestionList.show();
+              }
+            });
+          } else {
+            $('#model-suggestions').hide();
+          }
+        });
+
+        $('#model-suggestions').on('click', 'li', function() {
+          $('input[name="model"]').val($(this).text());
+          $('#model-suggestions').hide();
+        });
+
+        $(document).click(function(event) {
+          if (!$(event.target).closest('#model-suggestions').length && !$(event.target).closest('input[name="model"]').length) {
+            $('#model-suggestions').hide();
+          }
+        });
+
+        // Initialize DataTables with per-column search without replacing headers
+        var table = $('#parts-table').DataTable({
+          pageLength: 25,
+          order: [],
+          initComplete: function () {
+            this.api().columns().every(function () {
+              var column = this;
+              var header = $(column.header());
+              var title = header.text();
+              header.html('<div>' + title + '<br><input type="text" class="form-control form-control-sm" placeholder="Search" style="margin-top:5px;"/></div>');
+              $('input', header).on('keyup change clear', function () {
+                if (column.search() !== this.value) {
+                  column.search(this.value).draw();
+                }
+              });
+            });
+          }
+        });
+      });
+    </script>
+
+  
+<!-- Modal eBay Small Parts-->
+<div class="modal fade" id="ebayModalS" tabindex="-1" aria-labelledby="ebayModalLabelS" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="ebayModalLabelS">eBay Small Parts Lookup below £50</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body" id="ebayModalBodyS">
+        <p>Loading...</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+
+<script>
+  $(document).ready(function() {
+    $('#ebayButtonS').on('click', function() {
+      const model = $('input[name="model"]').val().trim();
+      const year = $('input[name="year"]').val().trim();
+      if (!model || !year) {
+        alert("Please enter both model and year first.");
+        return;
+      }
+
+      $('#ebayModalBodyS').html('<p>Loading...</p>');
+      $('#ebayModalS').modal('show');
+
+      $.ajax({
+        url: '/ebay_small_parts',
+        method: 'GET',
+        data: { model: model, year: year },
+        success: function(data) {
+          $('#ebayModalBodyS').html(data);
+        },
+        error: function() {
+          $('#ebayModalBodyS').html('<p>Error loading data.</p>');
+        }
+      });
+    });
+  });
+</script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+	
+<!-- Modal eBay Medium Parts-->
+<div class="modal fade" id="ebayModalM" tabindex="-1" aria-labelledby="ebayModalLabelM" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="ebayModalLabelM">eBay Medium Parts Lookup between £50 to £500</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body" id="ebayModalBodyM">
+        <p>Loading...</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+
+<script>
+  $(document).ready(function() {
+    $('#ebayButtonM').on('click', function() {
+      const model = $('input[name="model"]').val().trim();
+      const year = $('input[name="year"]').val().trim();
+      if (!model || !year) {
+        alert("Please enter both model and year first.");
+        return;
+      }
+
+      $('#ebayModalBodyM').html('<p>Loading...</p>');
+      $('#ebayModalM').modal('show');
+
+      $.ajax({
+        url: '/ebay_medium_parts',
+        method: 'GET',
+        data: { model: model, year: year },
+        success: function(data) {
+          $('#ebayModalBodyM').html(data);
+        },
+        error: function() {
+          $('#ebayModalBodyM').html('<p>Error loading data.</p>');
+        }
+      });
+    });
+  });
+</script>
+
+<!-- Modal eBay Large Parts-->
+<div class="modal fade" id="ebayModalL" tabindex="-1" aria-labelledby="ebayModalLabelL" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="ebayModalLabelL">eBay Large Parts Lookup Over £500</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body" id="ebayModalBodyL">
+        <p>Loading...</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+
+<script>
+  $(document).ready(function() {
+    $('#ebayButtonL').on('click', function() {
+      const model = $('input[name="model"]').val().trim();
+      const year = $('input[name="year"]').val().trim();
+      if (!model || !year) {
+        alert("Please enter both model and year first.");
+        return;
+      }
+
+      $('#ebayModalBodyL').html('<p>Loading...</p>');
+      $('#ebayModalL').modal('show');
+
+      $.ajax({
+        url: '/ebay_large_parts',
+        method: 'GET',
+        data: { model: model, year: year },
+        success: function(data) {
+          $('#ebayModalBodyL').html(data);
+        },
+        error: function() {
+          $('#ebayModalBodyL').html('<p>Error loading data.</p>');
+        }
+      });
+    });
+  });
+</script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+</html>
