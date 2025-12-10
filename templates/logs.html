@@ -70,10 +70,11 @@
           <a class="navbar-brand" href="#">
             <img src="{{ url_for('static', filename='logo-slg-strip.svg') }}" alt="Silverlake Logo" style="height: 30px;">
           </a>
-		  <div class="d-flex">
+                  <div class="d-flex">
+            <a href="{{ url_for('stats') }}" class="btn btn-light me-2">Stats</a>
             <a href="{{ url_for('crush_vehicles') }}" class="btn btn-light me-2">Crush Vehicles</a>
           </div>
-		  <div class="d-flex">
+                  <div class="d-flex">
             <a href="{{ url_for('logout') }}" class="btn btn-light">Logout</a>
           </div>
         </div>
