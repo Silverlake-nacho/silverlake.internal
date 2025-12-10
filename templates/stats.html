@@ -1,0 +1,460 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Silverlake Sales Stats</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
+    <style>
+      body {
+        background: url("{{ url_for('static', filename='background.jpg') }}") no-repeat center center fixed;
+        background-size: cover;
+        font-family: 'Montserrat', sans-serif;
+        color: black;
+      }
+      h1, h2, label {
+        color: #5c9c13;
+      }
+      .btn-primary, .btn-success {
+        background-color: #5c9c13;
+        border: none;
+      }
+      .btn-primary:hover, .btn-success:hover {
+        background-color: #4a8010;
+      }
+      .form-control {
+        background-color: #d6f5c1;
+        color: #333;
+        border: 1px solid #333;
+      }
+      .form-control:focus {
+        border-color: #5c9c13;
+        box-shadow: 0 0 5px #5c9c13;
+      }
+      table {
+        color: #f0f0f0;
+        background-color: #111;
+      }
+      th, td {
+        border-bottom: 1px solid #5c9c13;
+      }
+      .exclusion-card .exclusion-body {
+        display: none;
+      }
+      .exclusion-card:hover .exclusion-body,
+      .exclusion-card:focus-within .exclusion-body {
+        display: block;
+      }
+      .logo {
+        text-align: center;
+        margin-bottom: 20px;
+      }
+      .logo img {
+        width: 300px;
+        max-width: 100%;
+        height: auto;
+      }
+    </style>
+  </head>
+  <body class="p-4">
+    <div class="container">
+      <div class="logo">
+        <img src="{{ url_for('static', filename='logo-slg-strip.svg') }}" alt="Silverlake Logo">
+      </div>
+
+      <nav class="navbar navbar-expand-lg navbar-dark mb-4" style="background-color: #5c9c13; border-radius: 10px;">
+        <div class="container-fluid">
+          <a class="navbar-brand" href="#">
+            <img src="{{ url_for('static', filename='logo-slg-strip.svg') }}" alt="Silverlake Logo" style="height: 30px;">
+          </a>
+          <div class="d-flex">
+            <a href="{{ url_for('index') }}" class="btn btn-light me-2">Home</a>
+            <a href="{{ url_for('logs') }}" class="btn btn-light me-2">Logs</a>
+            <a href="{{ url_for('crush_vehicles') }}" class="btn btn-light me-2">Crush Vehicles</a>
+            <a href="{{ url_for('logout') }}" class="btn btn-light">Logout</a>
+          </div>
+        </div>
+      </nav>
+
+      <h1 class="mb-4 text-center">Sales Stats by Department</h1>
+
+      <div class="mb-3 d-flex align-items-center flex-wrap gap-2">
+        <div class="d-flex flex-wrap gap-2">
+          <a href="{{ url_for('stats', filter='today', live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">Today</a>
+          <a href="{{ url_for('stats', filter='yesterday', live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">Yesterday</a>
+          <a href="{{ url_for('stats', filter='this_month', live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">This Month</a>
+          <a href="{{ url_for('stats', filter='last_month', live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">Last Month</a>
+          <form method="get" class="d-inline">
+            <input type="hidden" name="filter" value="custom">
+            <input type="date" name="start_date" required>
+            <input type="date" name="end_date" required>
+            {% if live_enabled %}
+              <input type="hidden" name="live" value="1">
+            {% endif %}
+            <button type="submit" class="btn btn-sm btn-primary">Custom</button>
+          </form>
+        </div>
+        <div class="form-check ms-2">
+          <input class="form-check-input" type="checkbox" id="liveToggle" {% if live_enabled %}checked{% endif %}>
+          <label class="form-check-label text-success" for="liveToggle">Live</label>
+        </div>
+      </div>
+
+      <div class="card mb-4 shadow-sm exclusion-card">
+        <div class="card-body">
+          <div class="d-flex justify-content-between align-items-center">
+            <h5 class="mb-0">Exclude Departments</h5>
+          </div>
+          <div class="exclusion-body mt-3">
+            <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
+              <p class="mb-0 text-muted">Hover to show department exclusions.</p>
+              <div class="d-flex gap-2">
+                <button type="submit" form="departmentFilterForm" class="btn btn-sm btn-primary">Apply</button>
+                <button type="submit" form="departmentFilterForm" formaction="{{ url_for('save_stats_exclusions') }}" formmethod="post" class="btn btn-sm btn-success">Set as Default</button>
+              </div>
+            </div>
+            <form id="departmentFilterForm" class="row g-2" method="get" action="{{ url_for('stats') }}">
+              <input type="hidden" name="filter" value="{{ filter_type }}">
+              <input type="hidden" name="start_date" value="{{ start_date.isoformat() if start_date else '' }}">
+              <input type="hidden" name="end_date" value="{{ end_date.isoformat() if end_date else '' }}">
+              <input type="hidden" id="liveInputField" name="live" value="{{ 1 if live_enabled else '' }}">
+              {% for dept in all_departments %}
+                <div class="col-sm-6 col-md-4 col-lg-3">
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" name="exclude" value="{{ dept }}" id="dept-{{ loop.index }}" {% if dept in excluded_departments %}checked{% endif %}>
+                    <label class="form-check-label" for="dept-{{ loop.index }}">{{ dept }}</label>
+                  </div>
+                </div>
+              {% endfor %}
+            </form>
+          </div>
+        </div>
+      </div>
+
+      <div class="row g-4 mb-4">
+        <div class="col-lg-6">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <h5 class="text-success mb-0">Showing: {{ date_range_label }}</h5>
+            </div>
+            <table class="table table-striped">
+            <thead>
+              <tr>
+                <th>Department</th>
+                <th class="text-end">Total</th>
+                <th class="text-end">Total with VAT</th>
+              </tr>
+            </thead>
+            <tbody id="departmentTableBody">
+              {% for row in rows %}
+              <tr>
+                <td>{{ row[0] }}</td>
+                <td class="text-end">£{{ '%.2f'|format(row[1]) }}</td>
+                <td class="text-end">£{{ '%.2f'|format(row[2]) }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+            <tfoot>
+              <tr class="fw-bold">
+                <td>Total</td>
+                <td class="text-end" id="totalSumCell">£{{ '%.2f'|format(sum_total) }}</td>
+                <td class="text-end" id="totalVatSumCell">£{{ '%.2f'|format(sum_total_vat) }}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+        <div class="col-lg-6">
+          <div class="card shadow-sm">
+            <div class="card-body">
+              <div class="d-flex justify-content-between align-items-center mb-3">
+                <h5 class="card-title mb-0" id="chartTitle">Totals by Department (Bar)</h5>
+                <button id="toggleChartBtn" class="btn btn-sm btn-success">Show Pie Chart</button>
+              </div>
+              <canvas id="salesChart" height="180"></canvas>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      Chart.register(ChartDataLabels);
+
+      let labels = {{ chart_labels | tojson }};
+      let values = {{ chart_values | tojson }};
+
+      function generateColors(count) {
+        return Array.from({ length: count }).map((_, idx) => {
+          const base = [92, 156, 19];
+          const factor = 0.6 + (idx % 5) * 0.1;
+          return `rgba(${Math.floor(base[0] * factor)}, ${Math.floor(base[1] * factor)}, ${Math.floor(base[2] * factor)}, 0.8)`;
+        });
+      }
+
+      let colors = generateColors(labels.length);
+
+      const chartTitle = document.getElementById('chartTitle');
+      const toggleChartBtn = document.getElementById('toggleChartBtn');
+      const chartCanvas = document.getElementById('salesChart');
+
+      let currentChartType = 'bar';
+      let chartInstance = null;
+
+      function formatCurrency(value) {
+        return `£${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+      }
+
+      function buildChartConfig(type) {
+        if (type === 'pie') {
+          return {
+            type: 'pie',
+            data: {
+              labels,
+              datasets: [{
+                data: values,
+                backgroundColor: colors
+              }]
+            },
+            options: {
+              plugins: {
+                legend: { display: false },
+                datalabels: {
+                  color: '#fff',
+                  textStrokeColor: '#fff',
+                  textStrokeWidth: 0,
+                  font: {
+                    weight: 'bold'
+                  },
+                  align: function() {
+                    return 'center';
+                  },
+                  anchor: function() {
+                    return 'center';
+                  },
+                  offset: function(context) {
+                    const data = context.dataset.data;
+                    const meta = context.chart.getDatasetMeta(context.datasetIndex);
+                    const arc = meta && meta.data ? meta.data[context.dataIndex] : null;
+                    const radius = arc ? arc.outerRadius : 0;
+
+                    // Drive labels progressively outward while keeping them inside the slice.
+                    // Push later slices close to the edge and tiny slices further from the center
+                    // to ease overlap without leaving the segment.
+                    const steps = Math.max(1, data.length - 1);
+                    const indexRatio = context.dataIndex / steps;
+
+                    const total = data.reduce((acc, val) => acc + val, 0) || 1;
+                    const percentage = data[context.dataIndex] / total;
+
+                    const centerBias = radius * 0.04; // keep first slice near the center
+                    const progressive = indexRatio * radius * 0.92; // last slice nears the outer edge
+                    const tinySliceBoost = Math.max(0, (0.18 - percentage) * radius * 0.7);
+                    const offset = centerBias + progressive + tinySliceBoost;
+
+                    return Math.min(Math.max(0, offset), Math.max(0, radius - 4));
+                  },
+                  clip: true,
+                  formatter: function(value, context) {
+                    return context.chart.data.labels[context.dataIndex];
+                  }
+                },
+                tooltip: {
+                  callbacks: {
+                    label: function(context) {
+                      const value = context.parsed || 0;
+                      const total = context.dataset.data.reduce((acc, val) => acc + val, 0);
+                      const percentage = total ? ((value / total) * 100).toFixed(1) : 0;
+                      return `${context.label}: ${formatCurrency(value)} (${percentage}%)`;
+                    }
+                  }
+                }
+              }
+            }
+          };
+        }
+
+        return {
+          type: 'bar',
+          data: {
+            labels,
+            datasets: [{
+              label: 'Total',
+              data: values,
+              backgroundColor: colors,
+            }]
+          },
+          options: {
+            responsive: true,
+            plugins: {
+              datalabels: { display: false },
+              legend: { display: false },
+              tooltip: {
+                callbacks: {
+                  label: function(context) {
+                    const value = context.parsed.y || 0;
+                    return formatCurrency(value);
+                  }
+                }
+              }
+            },
+            scales: {
+              y: {
+                ticks: {
+                  callback: function(value) {
+                    return '£' + value.toLocaleString();
+                  }
+                },
+                beginAtZero: true
+              }
+            }
+          }
+        };
+      }
+
+      function renderChart(type) {
+        if (chartInstance) {
+          chartInstance.destroy();
+        }
+
+        chartInstance = new Chart(chartCanvas, buildChartConfig(type));
+        currentChartType = type;
+        chartTitle.textContent = type === 'pie' ? 'Totals by Department (Pie)' : 'Totals by Department (Bar)';
+        toggleChartBtn.textContent = type === 'pie' ? 'Show Bar Chart' : 'Show Pie Chart';
+      }
+
+      toggleChartBtn.addEventListener('click', () => {
+        const nextType = currentChartType === 'bar' ? 'pie' : 'bar';
+        renderChart(nextType);
+      });
+
+      function currencyString(amount) {
+        return `£${Number(amount).toFixed(2)}`;
+      }
+
+      function rebuildTable(data) {
+        const tbody = document.getElementById('departmentTableBody');
+        tbody.innerHTML = '';
+
+        data.rows.forEach(row => {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td>${row.department}</td>
+            <td class="text-end">${currencyString(row.total)}</td>
+            <td class="text-end">${currencyString(row.total_vat)}</td>
+          `;
+          tbody.appendChild(tr);
+        });
+
+        document.getElementById('totalSumCell').textContent = currencyString(data.sum_total);
+        document.getElementById('totalVatSumCell').textContent = currencyString(data.sum_total_vat);
+        document.getElementById('chartTitle').textContent = currentChartType === 'pie'
+          ? 'Totals by Department (Pie)'
+          : 'Totals by Department (Bar)';
+        document.querySelector('.text-success.mb-0').textContent = `Showing: ${data.date_range_label}`;
+      }
+
+      function updateChartData(data) {
+        labels = data.chart_labels;
+        values = data.chart_values;
+        colors = generateColors(labels.length);
+
+        if (chartInstance) {
+          chartInstance.data.labels = labels;
+          chartInstance.data.datasets[0].data = values;
+          chartInstance.data.datasets[0].backgroundColor = colors;
+          chartInstance.update();
+        }
+      }
+
+      const filterType = "{{ filter_type }}";
+      const startDate = "{{ start_date.isoformat() if start_date else '' }}";
+      const endDate = "{{ end_date.isoformat() if end_date else '' }}";
+      const excludedDepartments = {{ excluded_departments | tojson }};
+      const liveCheckbox = document.getElementById('liveToggle');
+
+      function buildDataUrl() {
+        const url = new URL("{{ url_for('stats_data') }}", window.location.origin);
+        url.searchParams.set('filter', filterType);
+        if (startDate) url.searchParams.set('start_date', startDate);
+        if (endDate) url.searchParams.set('end_date', endDate);
+        excludedDepartments.forEach(dept => url.searchParams.append('exclude', dept));
+        return url.toString();
+      }
+
+      let liveInterval = null;
+
+      async function refreshStats() {
+        try {
+          const response = await fetch(buildDataUrl());
+          if (!response.ok) return;
+          const data = await response.json();
+          rebuildTable(data);
+          updateChartData(data);
+        } catch (err) {
+          console.error('Live stats refresh failed', err);
+        }
+      }
+
+      function syncLiveParam(checked) {
+        const url = new URL(window.location.href);
+        if (checked) {
+          url.searchParams.set('live', '1');
+        } else {
+          url.searchParams.delete('live');
+        }
+        window.history.replaceState({}, '', url);
+      }
+
+      function startLiveUpdates() {
+        if (liveInterval) return;
+        refreshStats();
+        liveInterval = setInterval(refreshStats, 5000);
+      }
+
+      function stopLiveUpdates() {
+        if (liveInterval) {
+          clearInterval(liveInterval);
+          liveInterval = null;
+        }
+      }
+
+      function syncLiveControls(enabled) {
+        syncLiveParam(enabled);
+        const liveInput = document.getElementById('liveInputField');
+        if (liveInput) {
+          liveInput.value = enabled ? '1' : '';
+        }
+
+        document.querySelectorAll('.date-link').forEach(link => {
+          const url = new URL(link.href);
+          if (enabled) {
+            url.searchParams.set('live', '1');
+          } else {
+            url.searchParams.delete('live');
+          }
+          link.href = url.toString();
+        });
+      }
+
+      liveCheckbox.addEventListener('change', (event) => {
+        const enabled = event.target.checked;
+        syncLiveControls(enabled);
+        if (enabled) {
+          startLiveUpdates();
+        } else {
+          stopLiveUpdates();
+        }
+      });
+
+      const initialLiveEnabled = {{ 'true' if live_enabled else 'false' }};
+      if (initialLiveEnabled) {
+        syncLiveControls(true);
+        startLiveUpdates();
+      }
+
+      renderChart(currentChartType);
+    </script>
+  </body>
+</html>
