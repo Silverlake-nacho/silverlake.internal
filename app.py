@@ -549,6 +549,59 @@ def fetch_department_sales(start_date: date, end_date: date) -> List[Tuple[str, 
     cur.close()
     conn.close()
     return rows
+
+
+def fetch_department_monthly_totals(department: str, year: int) -> List[Tuple[int, float]]:
+    start_year = date(year, 1, 1)
+    start_next_year = date(year + 1, 1, 1)
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT EXTRACT(MONTH FROM datecreated)::int AS month,
+               SUM(total) AS sum_total
+        FROM invoice
+        WHERE datecreated >= %s
+          AND datecreated < %s
+          AND departmentname = %s
+        GROUP BY month
+        ORDER BY month
+        """,
+        (start_year, start_next_year, department),
+    )
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    return rows
+
+
+def fetch_department_daily_totals(department: str, year: int, month: int) -> List[Tuple[int, float]]:
+    start_month = date(year, month, 1)
+    if month == 12:
+        start_next_month = date(year + 1, 1, 1)
+    else:
+        start_next_month = date(year, month + 1, 1)
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT EXTRACT(DAY FROM datecreated)::int AS day,
+               SUM(total) AS sum_total
+        FROM invoice
+        WHERE datecreated >= %s
+          AND datecreated < %s
+          AND departmentname = %s
+        GROUP BY day
+        ORDER BY day
+        """,
+        (start_month, start_next_month, department),
+    )
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    return rows
     
 def parse_date_filter(filter_type: str, start_date_str: str = None, end_date_str: str = None) -> Tuple[date, date]:
     today = date.today()
@@ -694,7 +747,7 @@ def stats():
         live_enabled=live_enabled,
     )
 
-    
+
 @app.route("/stats/data", methods=["GET"])
 def stats_data():
     filter_type = request.args.get("filter", "this_month")
@@ -722,6 +775,40 @@ def stats_data():
         }
     )
 
+
+@app.route("/stats/department/<path:department>/monthly", methods=["GET"])
+def stats_department_monthly(department):
+    current_year = date.today().year
+    rows = fetch_department_monthly_totals(department, current_year)
+
+    labels = []
+    values = []
+    months = []
+    for month, total in rows:
+        labels.append(datetime(1900, month, 1).strftime("%b"))
+        values.append(float(total))
+        months.append(month)
+
+    return jsonify({"labels": labels, "values": values, "months": months, "year": current_year})
+
+
+@app.route("/stats/department/<path:department>/daily", methods=["GET"])
+def stats_department_daily(department):
+    try:
+        month = int(request.args.get("month", "1"))
+    except ValueError:
+        month = 1
+
+    current_year = date.today().year
+    rows = fetch_department_daily_totals(department, current_year, month)
+
+    labels = []
+    values = []
+    for day, total in rows:
+        labels.append(str(int(day)))
+        values.append(float(total))
+
+    return jsonify({"labels": labels, "values": values, "year": current_year, "month": month})
 
 @app.route("/stats/exclusions", methods=["POST"])
 def save_stats_exclusions():
