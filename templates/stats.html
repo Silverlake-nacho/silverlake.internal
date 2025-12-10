@@ -232,6 +232,8 @@
       let departmentMonthlyChart = null;
       let departmentDailyChart = null;
       let selectedDepartment = null;
+      let selectedMonthNumber = null;
+      let selectedMonthLabel = null;
 
       function formatCurrency(value) {
         return `£${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -318,8 +320,17 @@
           },
           options: {
             responsive: true,
+            layout: {
+              padding: { top: 20 }
+            },
             plugins: {
-              datalabels: { display: false },
+              datalabels: {
+                display: true,
+                anchor: 'end',
+                align: 'end',
+                color: '#000',
+                formatter: (value) => formatCurrency(value)
+              },
               legend: { display: false },
               tooltip: {
                 callbacks: {
@@ -360,7 +371,7 @@
         renderChart(nextType);
       });
 
-      function buildDepartmentBarConfig(labels, values, onBarClick) {
+      function buildDepartmentBarConfig(labels, values, onBarClick, datalabelRotation = 0) {
         return {
           type: 'bar',
           data: {
@@ -379,9 +390,19 @@
                 onBarClick(index);
               }
             },
+            layout: {
+              padding: { top: 30 }
+            },
             plugins: {
               legend: { display: false },
-              datalabels: { display: false },
+              datalabels: {
+                display: true,
+                anchor: 'end',
+                align: 'end',
+                color: '#000',
+                formatter: (value) => formatCurrency(value),
+                rotation: datalabelRotation
+              },
               tooltip: {
                 callbacks: {
                   label: function(context) {
@@ -403,6 +424,16 @@
             }
           }
         };
+      }
+
+      function computeDatalabelRotation(labelCount) {
+        const minRotation = -15;
+        const maxRotation = -65;
+        const minCount = 5;
+        const maxCount = 30;
+        const clampedCount = Math.max(minCount, Math.min(maxCount, labelCount));
+        const t = (clampedCount - minCount) / (maxCount - minCount);
+        return minRotation + t * (maxRotation - minRotation);
       }
 
       function renderDepartmentMonthlyChart(labels, values, months, department) {
@@ -435,11 +466,11 @@
 
         departmentDailyChart = new Chart(
           departmentDailyCanvas,
-          buildDepartmentBarConfig(labels, values)
+          buildDepartmentBarConfig(labels, values, undefined, computeDatalabelRotation(labels.length))
         );
       }
 
-      async function loadDepartmentMonthly(department) {
+      async function loadDepartmentMonthly(department, { preserveDaily = false } = {}) {
         try {
           const response = await fetch(`/stats/department/${encodeURIComponent(department)}/monthly`);
           if (!response.ok) return;
@@ -450,17 +481,35 @@
             return;
           }
           renderDepartmentMonthlyChart(data.labels, data.values, data.months, department);
-          departmentDailyCard.classList.add('d-none');
+          if (!preserveDaily || !selectedMonthNumber) {
+            selectedMonthNumber = null;
+            selectedMonthLabel = null;
+            departmentDailyCard.classList.add('d-none');
+          } else {
+            const monthIdx = data.months.indexOf(Number(selectedMonthNumber));
+            if (monthIdx === -1) {
+              selectedMonthNumber = null;
+              selectedMonthLabel = null;
+              departmentDailyCard.classList.add('d-none');
+            } else {
+              const monthLabel = data.labels[monthIdx];
+              await loadDepartmentDaily(department, selectedMonthNumber, monthLabel, true);
+            }
+          }
         } catch (err) {
           console.error('Failed to load department monthly totals', err);
         }
       }
 
-      async function loadDepartmentDaily(department, monthNumber, monthLabel) {
+      async function loadDepartmentDaily(department, monthNumber, monthLabel, preserveSelection = false) {
         try {
           const response = await fetch(`/stats/department/${encodeURIComponent(department)}/daily?month=${monthNumber}`);
           if (!response.ok) return;
           const data = await response.json();
+          if (!preserveSelection) {
+            selectedMonthNumber = monthNumber;
+            selectedMonthLabel = monthLabel;
+          }
           renderDepartmentDailyChart(data.labels, data.values, department, data.year, monthLabel);
         } catch (err) {
           console.error('Failed to load department daily totals', err);
@@ -468,13 +517,23 @@
       }
 
       function attachDepartmentRowHandlers() {
-        document.querySelectorAll('#departmentTableBody tr.department-row').forEach(row => {
-          const dept = row.dataset.department;
-          row.onclick = () => {
+        const tbody = document.getElementById('departmentTableBody');
+        if (!tbody) return;
+
+        // Use delegated listener so clicks keep working even after live table rebuilds.
+        if (!tbody.dataset.handlerAttached) {
+          tbody.addEventListener('click', (event) => {
+            const row = event.target.closest('tr.department-row');
+            if (!row) return;
+            const dept = row.dataset.department;
+            if (!dept) return;
             selectedDepartment = dept;
+            selectedMonthNumber = null;
+            selectedMonthLabel = null;
             loadDepartmentMonthly(dept);
-          };
-        });
+          });
+          tbody.dataset.handlerAttached = 'true';
+        }
       }
 
       function currencyString(amount) {
@@ -521,18 +580,27 @@
         }
       }
 
-      const filterType = "{{ filter_type }}";
-      const startDate = "{{ start_date.isoformat() if start_date else '' }}";
-      const endDate = "{{ end_date.isoformat() if end_date else '' }}";
-      const excludedDepartments = {{ excluded_departments | tojson }};
       const liveCheckbox = document.getElementById('liveToggle');
 
       function buildDataUrl() {
         const url = new URL("{{ url_for('stats_data') }}", window.location.origin);
-        url.searchParams.set('filter', filterType);
-        if (startDate) url.searchParams.set('start_date', startDate);
-        if (endDate) url.searchParams.set('end_date', endDate);
-        excludedDepartments.forEach(dept => url.searchParams.append('exclude', dept));
+
+        // Reuse the current page's query so live updates reflect the user's
+        // active filter and exclusion settings (including defaults restored
+        // from the session).
+        const params = new URLSearchParams(window.location.search);
+
+        // Guarantee the filter param so the backend can resolve date ranges
+        // even if the URL was missing one.
+        if (!params.has('filter')) {
+          params.set('filter', "{{ filter_type }}");
+        }
+
+        params.forEach((value, key) => {
+          // Preserve multi-value params like "exclude".
+          url.searchParams.append(key, value);
+        });
+
         return url.toString();
       }
 
@@ -540,11 +608,15 @@
 
       async function refreshStats() {
         try {
-          const response = await fetch(buildDataUrl());
+          const response = await fetch(buildDataUrl(), { cache: 'no-store' });
           if (!response.ok) return;
           const data = await response.json();
           rebuildTable(data);
           updateChartData(data);
+
+          if (selectedDepartment) {
+            await loadDepartmentMonthly(selectedDepartment, { preserveDaily: true });
+          }
         } catch (err) {
           console.error('Live stats refresh failed', err);
         }
