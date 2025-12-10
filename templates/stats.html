@@ -149,7 +149,7 @@
             </thead>
             <tbody id="departmentTableBody">
               {% for row in rows %}
-              <tr>
+              <tr class="department-row" data-department="{{ row[0] }}" style="cursor: pointer;">
                 <td>{{ row[0] }}</td>
                 <td class="text-end">£{{ '%.2f'|format(row[1]) }}</td>
                 <td class="text-end">£{{ '%.2f'|format(row[2]) }}</td>
@@ -166,17 +166,37 @@
           </table>
         </div>
         <div class="col-lg-6">
-          <div class="card shadow-sm">
-            <div class="card-body">
-              <div class="d-flex justify-content-between align-items-center mb-3">
-                <h5 class="card-title mb-0" id="chartTitle">Totals by Department (Bar)</h5>
-                <button id="toggleChartBtn" class="btn btn-sm btn-success">Show Pie Chart</button>
-              </div>
-              <canvas id="salesChart" height="180"></canvas>
-            </div>
+      <div class="card shadow-sm">
+        <div class="card-body">
+          <div class="d-flex justify-content-between align-items-center mb-3">
+            <h5 class="card-title mb-0" id="chartTitle">Totals by Department (Bar)</h5>
+            <button id="toggleChartBtn" class="btn btn-sm btn-success">Show Pie Chart</button>
           </div>
+          <canvas id="salesChart" height="180"></canvas>
         </div>
       </div>
+    </div>
+  </div>
+
+  <div class="card shadow-sm mb-4 d-none" id="departmentMonthlyCard">
+    <div class="card-body">
+      <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+        <h5 class="card-title mb-0" id="departmentMonthlyTitle"></h5>
+        <small class="text-muted" id="departmentMonthlySubtitle"></small>
+      </div>
+      <canvas id="departmentMonthlyChart" height="140"></canvas>
+    </div>
+  </div>
+
+  <div class="card shadow-sm mb-4 d-none" id="departmentDailyCard">
+    <div class="card-body">
+      <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+        <h5 class="card-title mb-0" id="departmentDailyTitle"></h5>
+        <small class="text-muted" id="departmentDailySubtitle"></small>
+      </div>
+      <canvas id="departmentDailyChart" height="140"></canvas>
+    </div>
+  </div>
     </div>
 
     <script>
@@ -198,9 +218,20 @@
       const chartTitle = document.getElementById('chartTitle');
       const toggleChartBtn = document.getElementById('toggleChartBtn');
       const chartCanvas = document.getElementById('salesChart');
+      const departmentMonthlyCard = document.getElementById('departmentMonthlyCard');
+      const departmentMonthlyTitle = document.getElementById('departmentMonthlyTitle');
+      const departmentMonthlySubtitle = document.getElementById('departmentMonthlySubtitle');
+      const departmentMonthlyCanvas = document.getElementById('departmentMonthlyChart');
+      const departmentDailyCard = document.getElementById('departmentDailyCard');
+      const departmentDailyTitle = document.getElementById('departmentDailyTitle');
+      const departmentDailySubtitle = document.getElementById('departmentDailySubtitle');
+      const departmentDailyCanvas = document.getElementById('departmentDailyChart');
 
       let currentChartType = 'bar';
       let chartInstance = null;
+      let departmentMonthlyChart = null;
+      let departmentDailyChart = null;
+      let selectedDepartment = null;
 
       function formatCurrency(value) {
         return `£${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -329,6 +360,123 @@
         renderChart(nextType);
       });
 
+      function buildDepartmentBarConfig(labels, values, onBarClick) {
+        return {
+          type: 'bar',
+          data: {
+            labels,
+            datasets: [{
+              label: 'Total',
+              data: values,
+              backgroundColor: generateColors(labels.length)
+            }]
+          },
+          options: {
+            responsive: true,
+            onClick: function(evt, activeEls) {
+              if (onBarClick && activeEls.length) {
+                const index = activeEls[0].index;
+                onBarClick(index);
+              }
+            },
+            plugins: {
+              legend: { display: false },
+              datalabels: { display: false },
+              tooltip: {
+                callbacks: {
+                  label: function(context) {
+                    const value = context.parsed.y || 0;
+                    return formatCurrency(value);
+                  }
+                }
+              }
+            },
+            scales: {
+              y: {
+                beginAtZero: true,
+                ticks: {
+                  callback: function(value) {
+                    return '£' + value.toLocaleString();
+                  }
+                }
+              }
+            }
+          }
+        };
+      }
+
+      function renderDepartmentMonthlyChart(labels, values, months, department) {
+        if (departmentMonthlyChart) {
+          departmentMonthlyChart.destroy();
+        }
+
+        departmentMonthlyTitle.textContent = `${department} - Monthly totals (current year)`;
+        departmentMonthlySubtitle.textContent = 'Click a month to see daily totals';
+        departmentMonthlyCard.classList.remove('d-none');
+
+        departmentMonthlyChart = new Chart(
+          departmentMonthlyCanvas,
+          buildDepartmentBarConfig(labels, values, (index) => {
+            const monthNumber = months[index];
+            const monthLabel = labels[index];
+            loadDepartmentDaily(department, monthNumber, monthLabel);
+          })
+        );
+      }
+
+      function renderDepartmentDailyChart(labels, values, department, year, monthLabel) {
+        if (departmentDailyChart) {
+          departmentDailyChart.destroy();
+        }
+
+        departmentDailyTitle.textContent = `${department} - Daily totals for ${monthLabel} ${year}`;
+        departmentDailySubtitle.textContent = 'Click another month above to change view';
+        departmentDailyCard.classList.remove('d-none');
+
+        departmentDailyChart = new Chart(
+          departmentDailyCanvas,
+          buildDepartmentBarConfig(labels, values)
+        );
+      }
+
+      async function loadDepartmentMonthly(department) {
+        try {
+          const response = await fetch(`/stats/department/${encodeURIComponent(department)}/monthly`);
+          if (!response.ok) return;
+          const data = await response.json();
+          if (!data.labels.length) {
+            departmentMonthlyCard.classList.add('d-none');
+            departmentDailyCard.classList.add('d-none');
+            return;
+          }
+          renderDepartmentMonthlyChart(data.labels, data.values, data.months, department);
+          departmentDailyCard.classList.add('d-none');
+        } catch (err) {
+          console.error('Failed to load department monthly totals', err);
+        }
+      }
+
+      async function loadDepartmentDaily(department, monthNumber, monthLabel) {
+        try {
+          const response = await fetch(`/stats/department/${encodeURIComponent(department)}/daily?month=${monthNumber}`);
+          if (!response.ok) return;
+          const data = await response.json();
+          renderDepartmentDailyChart(data.labels, data.values, department, data.year, monthLabel);
+        } catch (err) {
+          console.error('Failed to load department daily totals', err);
+        }
+      }
+
+      function attachDepartmentRowHandlers() {
+        document.querySelectorAll('#departmentTableBody tr.department-row').forEach(row => {
+          const dept = row.dataset.department;
+          row.onclick = () => {
+            selectedDepartment = dept;
+            loadDepartmentMonthly(dept);
+          };
+        });
+      }
+
       function currencyString(amount) {
         return `£${Number(amount).toFixed(2)}`;
       }
@@ -339,6 +487,9 @@
 
         data.rows.forEach(row => {
           const tr = document.createElement('tr');
+          tr.classList.add('department-row');
+          tr.dataset.department = row.department;
+          tr.style.cursor = 'pointer';
           tr.innerHTML = `
             <td>${row.department}</td>
             <td class="text-end">${currencyString(row.total)}</td>
@@ -353,6 +504,8 @@
           ? 'Totals by Department (Pie)'
           : 'Totals by Department (Bar)';
         document.querySelector('.text-success.mb-0').textContent = `Showing: ${data.date_range_label}`;
+
+        attachDepartmentRowHandlers();
       }
 
       function updateChartData(data) {
@@ -454,6 +607,7 @@
         startLiveUpdates();
       }
 
+      attachDepartmentRowHandlers();
       renderChart(currentChartType);
     </script>
   </body>
