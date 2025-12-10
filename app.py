@@ -1,19 +1,19 @@
 from flask import Flask, request, render_template, send_file, redirect, url_for, session, flash
 import pandas as pd
 from io import BytesIO
-from datetime import datetime, timedelta
+from datetime import datetime, date, timedelta
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 import psycopg2
-from datetime import date, timedelta
 import time
 import requests
 from bs4 import BeautifulSoup
 from flask import request, render_template_string
 from collections import defaultdict
 from sshtunnel import SSHTunnelForwarder
+from typing import List, Tuple
 
 
 def rgb_to_hex(rgb):
@@ -528,14 +528,78 @@ def log_action(action, username, reg=None, stock=None, vstockno=None, location=N
     conn.commit()
     cur.close()
     conn.close()
+
+
+def fetch_department_sales(start_date: date, end_date: date) -> List[Tuple[str, float, float]]:
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT departmentname,
+               SUM(total) AS sum_total,
+               SUM(total + totaltax1) AS sum_total_vat
+        FROM invoice
+        WHERE datecreated >= %s AND datecreated < %s
+        GROUP BY departmentname
+        ORDER BY departmentname
+        """,
+        (start_date, end_date),
+    )
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    return rows
     
-from datetime import date, timedelta
+def parse_date_filter(filter_type: str, start_date_str: str = None, end_date_str: str = None) -> Tuple[date, date]:
+    today = date.today()
+
+    if filter_type == "today":
+        return today, today + timedelta(days=1)
+    if filter_type == "yesterday":
+        return today - timedelta(days=1), today
+    if filter_type == "this_month":
+        return today.replace(day=1), (today.replace(day=1) + timedelta(days=32)).replace(day=1)
+    if filter_type == "last_month":
+        first_this_month = today.replace(day=1)
+        last_month_end = first_this_month - timedelta(days=1)
+        return last_month_end.replace(day=1), first_this_month
+    if filter_type == "custom" and start_date_str and end_date_str:
+        return date.fromisoformat(start_date_str), date.fromisoformat(end_date_str)
+
+    return today, today + timedelta(days=1)
+    
+    
+def describe_date_range(filter_type: str, start_date: date, end_date: date) -> str:
+    if not start_date or not end_date:
+        return "All Time"
+
+    labels = {
+        "today": "Today",
+        "yesterday": "Yesterday",
+        "this_month": "This Month",
+        "last_month": "Last Month",
+        "custom": "Custom",
+    }
+
+    inclusive_end = end_date - timedelta(days=1)
+
+    def format_date(value: date) -> str:
+        return value.strftime("%d/%m/%Y")
+
+    if start_date == inclusive_end:
+        range_text = format_date(start_date)
+    else:
+        range_text = f"{format_date(start_date)} - {format_date(inclusive_end)}"
+
+    label = labels.get(filter_type, "Custom")
+    return f"{label} ({range_text})"
 
 @app.route("/logs", methods=["GET", "POST"])
 def logs():
     filter_type = request.args.get("filter", "today")
-    start_date = None
-    end_date = None
+    start_date_str = request.args.get("start_date")
+    end_date_str = request.args.get("end_date")
+    start_date, end_date = parse_date_filter(filter_type, start_date_str, end_date_str)
 
     today = date.today()
 
@@ -578,6 +642,105 @@ def logs():
     conn.close()
 
     return render_template("logs.html", logs=rows, filter_type=filter_type)
+
+
+def build_stats_context(filter_type: str, start_date_str: str, end_date_str: str, exclude_args: List[str]):
+    start_date, end_date = parse_date_filter(filter_type, start_date_str, end_date_str)
+    date_range_label = describe_date_range(filter_type, start_date, end_date)
+
+    rows = fetch_department_sales(start_date, end_date)
+
+    default_exclusions = session.get("stats_excluded_departments", [])
+    excluded_departments = exclude_args or default_exclusions
+
+    filtered_rows = [row for row in rows if row[0] not in excluded_departments]
+
+    sum_total = sum(float(row[1]) for row in filtered_rows)
+    sum_total_vat = sum(float(row[2]) for row in filtered_rows)
+
+    chart_labels = [row[0] for row in filtered_rows]
+    chart_values = [float(row[1]) for row in filtered_rows]
+
+    all_departments = sorted({row[0] for row in rows})
+
+    return {
+        "filter_type": filter_type,
+        "start_date": start_date,
+        "end_date": end_date,
+        "date_range_label": date_range_label,
+        "rows": filtered_rows,
+        "sum_total": sum_total,
+        "sum_total_vat": sum_total_vat,
+        "chart_labels": chart_labels,
+        "chart_values": chart_values,
+        "all_departments": all_departments,
+        "excluded_departments": excluded_departments,
+    }
+
+    
+@app.route("/stats", methods=["GET"])
+def stats():
+    filter_type = request.args.get("filter", "this_month")
+    start_date_str = request.args.get("start_date")
+    end_date_str = request.args.get("end_date")
+    excluded_args = request.args.getlist("exclude")
+
+    context = build_stats_context(filter_type, start_date_str, end_date_str, excluded_args)
+    live_enabled = str(request.args.get("live", "")).lower() in {"1", "true", "yes", "on"}
+
+    return render_template(
+        "stats.html",
+        **context,
+        live_enabled=live_enabled,
+    )
+
+    
+@app.route("/stats/data", methods=["GET"])
+def stats_data():
+    filter_type = request.args.get("filter", "this_month")
+    start_date_str = request.args.get("start_date")
+    end_date_str = request.args.get("end_date")
+    excluded_args = request.args.getlist("exclude")
+
+    context = build_stats_context(filter_type, start_date_str, end_date_str, excluded_args)
+
+    return jsonify(
+        {
+            "date_range_label": context["date_range_label"],
+            "rows": [
+                {
+                    "department": row[0],
+                    "total": float(row[1]),
+                    "total_vat": float(row[2]),
+                }
+                for row in context["rows"]
+            ],
+            "sum_total": context["sum_total"],
+            "sum_total_vat": context["sum_total_vat"],
+            "chart_labels": context["chart_labels"],
+            "chart_values": context["chart_values"],
+        }
+    )
+
+
+@app.route("/stats/exclusions", methods=["POST"])
+def save_stats_exclusions():
+    filter_type = request.form.get("filter", "this_month")
+    start_date = request.form.get("start_date")
+    end_date = request.form.get("end_date")
+    excluded_departments = request.form.getlist("exclude")
+
+    session["stats_excluded_departments"] = excluded_departments
+
+    return redirect(
+        url_for(
+            "stats",
+            filter=filter_type,
+            start_date=start_date,
+            end_date=end_date,
+            exclude=excluded_departments,
+        )
+    )
     
 @app.route("/logs/download")
 def download_logs():
