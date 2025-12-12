@@ -74,6 +74,7 @@ app.secret_key = 'your_super_secret_key_here'
 
 USERS = {
     'admin': 'Silverlake1!',
+    'paul': 'Silverlake1!',
     'nacho': 'Silverlake1!'
 }
 
