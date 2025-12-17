@@ -14,6 +14,8 @@ from flask import request, render_template_string
 from collections import defaultdict
 from sshtunnel import SSHTunnelForwarder
 from typing import List, Tuple
+import json
+import os
 
 
 def rgb_to_hex(rgb):
@@ -21,6 +23,23 @@ def rgb_to_hex(rgb):
     g = int(rgb.get('green', 1) * 255)
     b = int(rgb.get('blue', 1) * 255)
     return '#{:02X}{:02X}{:02X}'.format(r, g, b)
+    
+def load_department_order() -> List[str]:
+    if not os.path.exists(DEPARTMENT_ORDER_PATH):
+        return []
+    try:
+        with open(DEPARTMENT_ORDER_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            if isinstance(data, list):
+                return [str(item) for item in data]
+    except Exception:
+        pass
+    return []
+
+
+def persist_department_order(order: List[str]) -> None:
+    with open(DEPARTMENT_ORDER_PATH, "w", encoding="utf-8") as f:
+        json.dump(order, f)
 
 def get_matching_google_sheet_rows(engine_code):
     try:
@@ -71,6 +90,9 @@ df = pd.read_csv(file_path)
 
 app = Flask(__name__)
 app.secret_key = 'your_super_secret_key_here'
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DEPARTMENT_ORDER_PATH = os.path.join(BASE_DIR, "department_order.json")
 
 USERS = {
     'admin': 'Silverlake1!',
@@ -703,11 +725,17 @@ def build_stats_context(filter_type: str, start_date_str: str, end_date_str: str
     date_range_label = describe_date_range(filter_type, start_date, end_date)
 
     rows = fetch_department_sales(start_date, end_date)
+    saved_order = load_department_order()
+    order_index = {name: idx for idx, name in enumerate(saved_order)}
 
     default_exclusions = session.get("stats_excluded_departments", [])
     excluded_departments = exclude_args or default_exclusions
 
     filtered_rows = [row for row in rows if row[0] not in excluded_departments]
+    filtered_rows = sorted(
+        filtered_rows,
+        key=lambda row: (order_index.get(row[0], float("inf")), row[0]),
+    )
 
     sum_total = sum(float(row[1]) for row in filtered_rows)
     sum_total_vat = sum(float(row[2]) for row in filtered_rows)
@@ -777,6 +805,20 @@ def stats_data():
     )
 
 
+@app.route("/stats/order", methods=["POST"])
+def save_department_order():
+    data = request.get_json(silent=True) or {}
+    order = data.get("order", [])
+
+    if not isinstance(order, list):
+        return jsonify({"error": "Invalid order payload"}), 400
+
+    normalized_order = [str(item) for item in order]
+    persist_department_order(normalized_order)
+
+    return jsonify({"status": "saved", "order": normalized_order})
+    
+    
 @app.route("/stats/department/<path:department>/monthly", methods=["GET"])
 def stats_department_monthly(department):
     current_year = date.today().year
