@@ -136,12 +136,17 @@
 
       <div class="row g-4 mb-4">
         <div class="col-lg-6">
-            <div class="d-flex justify-content-between align-items-center mb-2">
+            <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
               <h5 class="text-success mb-0">Showing: {{ date_range_label }}</h5>
+              <div class="d-flex align-items-center gap-2 ms-auto">
+                <button id="saveOrderBtn" class="btn btn-outline-success btn-sm">Save Department Order</button>
+                <small id="saveOrderStatus" class="text-muted"></small>
+              </div>
             </div>
             <table class="table table-striped">
             <thead>
               <tr>
+                <th class="text-center">Order</th>
                 <th>Department</th>
                 <th class="text-end">Total</th>
                 <th class="text-end">Total with VAT</th>
@@ -149,7 +154,13 @@
             </thead>
             <tbody id="departmentTableBody">
               {% for row in rows %}
-              <tr class="department-row" data-department="{{ row[0] }}" style="cursor: pointer;">
+              <tr class="department-row" data-department="{{ row[0] }}" data-total="{{ row[1] }}" data-total-vat="{{ row[2] }}" style="cursor: pointer;">
+                <td class="text-center">
+                  <div class="btn-group btn-group-sm" role="group">
+                    <button class="btn btn-light border move-up" title="Move up">▲</button>
+                    <button class="btn btn-light border move-down" title="Move down">▼</button>
+                  </div>
+                </td>
                 <td>{{ row[0] }}</td>
                 <td class="text-end">£{{ '%.2f'|format(row[1]) }}</td>
                 <td class="text-end">£{{ '%.2f'|format(row[2]) }}</td>
@@ -158,6 +169,7 @@
             </tbody>
             <tfoot>
               <tr class="fw-bold">
+                <td></td>
                 <td>Total</td>
                 <td class="text-end" id="totalSumCell">£{{ '%.2f'|format(sum_total) }}</td>
                 <td class="text-end" id="totalVatSumCell">£{{ '%.2f'|format(sum_total_vat) }}</td>
@@ -218,6 +230,8 @@
       const chartTitle = document.getElementById('chartTitle');
       const toggleChartBtn = document.getElementById('toggleChartBtn');
       const chartCanvas = document.getElementById('salesChart');
+      const saveOrderBtn = document.getElementById('saveOrderBtn');
+      const saveOrderStatus = document.getElementById('saveOrderStatus');
       const departmentMonthlyCard = document.getElementById('departmentMonthlyCard');
       const departmentMonthlyTitle = document.getElementById('departmentMonthlyTitle');
       const departmentMonthlySubtitle = document.getElementById('departmentMonthlySubtitle');
@@ -234,6 +248,7 @@
       let selectedDepartment = null;
       let selectedMonthNumber = null;
       let selectedMonthLabel = null;
+      let orderDirty = false;
 
       function formatCurrency(value) {
         return `£${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -321,7 +336,7 @@
           options: {
             responsive: true,
             layout: {
-              padding: { top: 20 }
+              padding: { top: 30 }
             },
             plugins: {
               datalabels: {
@@ -329,7 +344,8 @@
                 anchor: 'end',
                 align: 'end',
                 color: '#000',
-                formatter: (value) => formatCurrency(value)
+                formatter: (value) => formatCurrency(value),
+                rotation: (context) => computeDatalabelRotation(context.chart.data.labels.length)
               },
               legend: { display: false },
               tooltip: {
@@ -343,6 +359,7 @@
             },
             scales: {
               y: {
+                grace: '15%',
                 ticks: {
                   callback: function(value) {
                     return '£' + value.toLocaleString();
@@ -427,7 +444,7 @@
       }
 
       function computeDatalabelRotation(labelCount) {
-        const minRotation = -15;
+        const minRotation = -35;
         const maxRotation = -65;
         const minCount = 5;
         const maxCount = 30;
@@ -523,7 +540,18 @@
         // Use delegated listener so clicks keep working even after live table rebuilds.
         if (!tbody.dataset.handlerAttached) {
           tbody.addEventListener('click', (event) => {
+            const upBtn = event.target.closest('.move-up');
+            const downBtn = event.target.closest('.move-down');
             const row = event.target.closest('tr.department-row');
+            if (upBtn || downBtn) {
+              event.stopPropagation();
+              event.preventDefault();
+              if (row) {
+                moveRow(row, upBtn ? -1 : 1);
+              }
+              return;
+            }
+
             if (!row) return;
             const dept = row.dataset.department;
             if (!dept) return;
@@ -540,6 +568,15 @@
         return `£${Number(amount).toFixed(2)}`;
       }
 
+      function renderReorderControls() {
+        return `
+          <div class="btn-group btn-group-sm" role="group">
+            <button class="btn btn-light border move-up" title="Move up">▲</button>
+            <button class="btn btn-light border move-down" title="Move down">▼</button>
+          </div>
+        `;
+      }
+
       function rebuildTable(data) {
         const tbody = document.getElementById('departmentTableBody');
         tbody.innerHTML = '';
@@ -548,15 +585,18 @@
           const tr = document.createElement('tr');
           tr.classList.add('department-row');
           tr.dataset.department = row.department;
+          tr.dataset.total = row.total;
+          tr.dataset.totalVat = row.total_vat;
           tr.style.cursor = 'pointer';
           tr.innerHTML = `
+            <td class="text-center">${renderReorderControls()}</td>
             <td>${row.department}</td>
             <td class="text-end">${currencyString(row.total)}</td>
             <td class="text-end">${currencyString(row.total_vat)}</td>
           `;
           tbody.appendChild(tr);
         });
-
+		
         document.getElementById('totalSumCell').textContent = currencyString(data.sum_total);
         document.getElementById('totalVatSumCell').textContent = currencyString(data.sum_total_vat);
         document.getElementById('chartTitle').textContent = currentChartType === 'pie'
@@ -565,6 +605,80 @@
         document.querySelector('.text-success.mb-0').textContent = `Showing: ${data.date_range_label}`;
 
         attachDepartmentRowHandlers();
+      }
+
+      function getTableRows() {
+        return Array.from(document.querySelectorAll('#departmentTableBody tr.department-row'));
+      }
+
+      function getDepartmentOrder() {
+        return getTableRows().map(row => row.dataset.department);
+      }
+
+      function moveRow(row, direction) {
+        const sibling = direction < 0 ? row.previousElementSibling : row.nextElementSibling;
+        if (!sibling) return;
+
+        if (direction < 0) {
+          row.parentElement.insertBefore(row, sibling);
+        } else {
+          row.parentElement.insertBefore(sibling, row);
+        }
+
+        updateChartFromTable();
+        flagUnsavedOrder();
+      }
+
+      function updateChartFromTable() {
+        const rows = getTableRows();
+        labels = rows.map(row => row.dataset.department);
+        values = rows.map(row => Number(row.dataset.total));
+        colors = generateColors(labels.length);
+
+        if (chartInstance) {
+          chartInstance.data.labels = labels;
+          chartInstance.data.datasets[0].data = values;
+          chartInstance.data.datasets[0].backgroundColor = colors;
+          chartInstance.update();
+        }
+      }
+
+      function flagUnsavedOrder() {
+        orderDirty = true;
+        if (saveOrderStatus) {
+          saveOrderStatus.textContent = 'Order not saved';
+          saveOrderStatus.classList.remove('text-success');
+        }
+      }
+
+      function markOrderSaved() {
+        orderDirty = false;
+        if (saveOrderStatus) {
+          saveOrderStatus.textContent = 'Order saved for everyone';
+          saveOrderStatus.classList.add('text-success');
+        }
+      }
+
+      async function persistDepartmentOrder() {
+        const order = getDepartmentOrder();
+        try {
+          const response = await fetch('/stats/order', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ order })
+          });
+
+          if (!response.ok) {
+            throw new Error('Failed to save order');
+          }
+          markOrderSaved();
+        } catch (err) {
+          console.error(err);
+          if (saveOrderStatus) {
+            saveOrderStatus.textContent = 'Could not save order';
+            saveOrderStatus.classList.remove('text-success');
+          }
+        }
       }
 
       function updateChartData(data) {
@@ -677,6 +791,13 @@
       if (initialLiveEnabled) {
         syncLiveControls(true);
         startLiveUpdates();
+      }
+
+      if (saveOrderBtn) {
+        saveOrderBtn.addEventListener('click', (event) => {
+          event.preventDefault();
+          persistDepartmentOrder();
+        });
       }
 
       attachDepartmentRowHandlers();
