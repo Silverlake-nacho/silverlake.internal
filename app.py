@@ -14,6 +14,7 @@ from flask import request, render_template_string
 from collections import defaultdict
 from sshtunnel import SSHTunnelForwarder
 from typing import List, Tuple
+from calendar import monthrange
 import json
 import os
 
@@ -574,6 +575,85 @@ def fetch_department_sales(start_date: date, end_date: date) -> List[Tuple[str, 
     return rows
 
 
+def fetch_user_sales(start_date: date, end_date: date) -> List[Tuple[str, float, float]]:
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT us.shortname,
+               SUM(total) AS sum_total,
+               SUM(total + totaltax1) AS sum_total_vat
+        FROM invoice
+        JOIN pinuser us ON us.user_id = invoice.whocreated_id
+        WHERE datecreated >= %s AND datecreated < %s
+        GROUP BY us.shortname
+        ORDER BY us.shortname
+        """,
+        (start_date, end_date),
+    )
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    return rows
+
+
+def fetch_department_parts_sold(start_date: date, end_date: date) -> List[Tuple[str, float, float]]:
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT COALESCE(inv.departmentname, 'Unknown') AS departmentname,
+               COUNT(inv.invnumber) AS parts_sold
+        FROM sold
+        LEFT JOIN invoice inv ON inv.invoice_id = sold.invoice_id
+        WHERE sold.issold AND solddate >= %s AND solddate < %s
+        GROUP BY departmentname
+        ORDER BY departmentname
+        """,
+        (start_date, end_date),
+    )
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    # Reuse the same tuple shape as sales totals so the rest of the code can stay generic.
+    return [(row[0], float(row[1]), float(row[1])) for row in rows]
+
+
+def fetch_user_parts_sold(start_date: date, end_date: date) -> List[Tuple[str, float, float]]:
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT COALESCE(us.shortname, 'Unknown') AS shortname,
+               COUNT(sold.invnumber) AS parts_sold
+        FROM sold
+        LEFT JOIN invoice inv ON inv.invoice_id = sold.invoice_id
+        LEFT JOIN pinuser us ON us.user_id = inv.whocreated_id
+        WHERE sold.issold AND solddate >= %s AND solddate < %s
+        GROUP BY us.shortname
+        ORDER BY us.shortname
+        """,
+        (start_date, end_date),
+    )
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    return [(row[0], float(row[1]), float(row[1])) for row in rows]
+
+
+def shift_one_month_back(value: date) -> date:
+    """Return the same calendar day in the previous month, clamped to month length."""
+
+    year = value.year
+    month = value.month - 1
+    if month == 0:
+        month = 12
+        year -= 1
+
+    day = min(value.day, monthrange(year, month)[1])
+    return date(year, month, day)
+
+
 def fetch_department_monthly_totals(department: str, year: int) -> List[Tuple[int, float]]:
     start_year = date(year, 1, 1)
     start_next_year = date(year + 1, 1, 1)
@@ -599,6 +679,59 @@ def fetch_department_monthly_totals(department: str, year: int) -> List[Tuple[in
     return rows
 
 
+def fetch_department_parts_monthly_totals(department: str, year: int) -> List[Tuple[int, float]]:
+    start_year = date(year, 1, 1)
+    start_next_year = date(year + 1, 1, 1)
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT EXTRACT(MONTH FROM solddate)::int AS month,
+               COUNT(inv.invnumber) AS parts_sold
+        FROM sold
+        LEFT JOIN invoice inv ON inv.invoice_id = sold.invoice_id
+        WHERE solddate >= %s
+          AND solddate < %s
+          AND COALESCE(inv.departmentname, 'Unknown') = %s
+          AND sold.issold
+        GROUP BY month
+        ORDER BY month
+        """,
+        (start_year, start_next_year, department),
+    )
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    return rows
+
+
+def fetch_user_monthly_totals(user: str, year: int) -> List[Tuple[int, float]]:
+    start_year = date(year, 1, 1)
+    start_next_year = date(year + 1, 1, 1)
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT EXTRACT(MONTH FROM datecreated)::int AS month,
+               SUM(total) AS sum_total
+        FROM invoice inv
+        JOIN pinuser us ON us.user_id = inv.whocreated_id
+        WHERE datecreated >= %s
+          AND datecreated < %s
+          AND us.shortname = %s
+        GROUP BY month
+        ORDER BY month
+        """,
+        (start_year, start_next_year, user),
+    )
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    return rows
+
+
 def fetch_department_daily_totals(department: str, year: int, month: int) -> List[Tuple[int, float]]:
     start_month = date(year, month, 1)
     if month == 12:
@@ -616,6 +749,65 @@ def fetch_department_daily_totals(department: str, year: int, month: int) -> Lis
         WHERE datecreated >= %s
           AND datecreated < %s
           AND departmentname = %s
+        GROUP BY day
+        ORDER BY day
+        """,
+        (start_month, start_next_month, department),
+    )
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    return rows
+
+
+def fetch_user_daily_totals(user: str, year: int, month: int) -> List[Tuple[int, float]]:
+    start_month = date(year, month, 1)
+    if month == 12:
+        start_next_month = date(year + 1, 1, 1)
+    else:
+        start_next_month = date(year, month + 1, 1)
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT EXTRACT(DAY FROM datecreated)::int AS day,
+               SUM(total) AS sum_total
+        FROM invoice inv
+        JOIN pinuser us ON us.user_id = inv.whocreated_id
+        WHERE datecreated >= %s
+          AND datecreated < %s
+          AND us.shortname = %s
+        GROUP BY day
+        ORDER BY day
+        """,
+        (start_month, start_next_month, user),
+    )
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    return rows
+
+
+def fetch_department_parts_daily_totals(department: str, year: int, month: int) -> List[Tuple[int, float]]:
+    start_month = date(year, month, 1)
+    if month == 12:
+        start_next_month = date(year + 1, 1, 1)
+    else:
+        start_next_month = date(year, month + 1, 1)
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT EXTRACT(DAY FROM solddate)::int AS day,
+               COUNT(inv.invnumber) AS parts_sold
+        FROM sold
+        LEFT JOIN invoice inv ON inv.invoice_id = sold.invoice_id
+        WHERE solddate >= %s
+          AND solddate < %s
+          AND COALESCE(inv.departmentname, 'Unknown') = %s
+          AND sold.issold
         GROUP BY day
         ORDER BY day
         """,
@@ -720,18 +912,72 @@ def logs():
     return render_template("logs.html", logs=rows, filter_type=filter_type)
 
 
-def build_stats_context(filter_type: str, start_date_str: str, end_date_str: str, exclude_args: List[str]):
+def normalize_stats_mode(mode: str) -> str:
+    return "parts" if str(mode).lower() == "parts" else "sales"
+
+
+def normalize_stats_dimension(dimension: str) -> str:
+    return "user" if str(dimension).lower() == "user" else "department"
+
+
+def build_stats_context(
+    filter_type: str,
+    start_date_str: str,
+    end_date_str: str,
+    exclude_args: List[str],
+    mode: str,
+    dimension: str,
+):
     start_date, end_date = parse_date_filter(filter_type, start_date_str, end_date_str)
     date_range_label = describe_date_range(filter_type, start_date, end_date)
 
-    rows = fetch_department_sales(start_date, end_date)
+    resolved_mode = normalize_stats_mode(mode)
+    resolved_dimension = normalize_stats_dimension(dimension)
+    mode_label = "Parts Sold" if resolved_mode == "parts" else "Sales"
+    value_format = "count" if resolved_mode == "parts" else "currency"
+    value_label = "Parts Sold" if resolved_mode == "parts" else "Sales Total"
+    value_vat_label = (
+        "Parts Sold (Prev Period)" if resolved_mode == "parts" else "Total with VAT"
+    )
+
+    entity_label = "Department" if resolved_dimension == "department" else "User"
+    entity_label_plural = "Departments" if resolved_dimension == "department" else "Users"
+
+    if resolved_dimension == "department":
+        fetch_rows = fetch_department_parts_sold if resolved_mode == "parts" else fetch_department_sales
+        fetch_prev_rows = fetch_department_parts_sold
+    else:
+        fetch_rows = fetch_user_parts_sold if resolved_mode == "parts" else fetch_user_sales
+        fetch_prev_rows = fetch_user_parts_sold
+
+    rows = fetch_rows(start_date, end_date)
+    prev_rows = []
+    prev_row_map = {}
+    if resolved_mode == "parts":
+        prev_start = shift_one_month_back(start_date)
+        prev_end = shift_one_month_back(end_date)
+        prev_rows = fetch_prev_rows(prev_start, prev_end)
+        prev_row_map = {row[0]: float(row[1]) for row in prev_rows}
     saved_order = load_department_order()
     order_index = {name: idx for idx, name in enumerate(saved_order)}
 
-    default_exclusions = session.get("stats_excluded_departments", [])
+    exclusion_key = (
+        "stats_excluded_departments"
+        if resolved_dimension == "department"
+        else "stats_excluded_users"
+    )
+    default_exclusions = session.get(exclusion_key, [])
     excluded_departments = exclude_args or default_exclusions
 
-    filtered_rows = [row for row in rows if row[0] not in excluded_departments]
+    filtered_rows = []
+    for row in rows:
+        if row[0] in excluded_departments:
+            continue
+        if resolved_mode == "parts":
+            prev_value = prev_row_map.get(row[0], 0.0)
+            filtered_rows.append((row[0], float(row[1]), float(prev_value)))
+        else:
+            filtered_rows.append(row)
     filtered_rows = sorted(
         filtered_rows,
         key=lambda row: (order_index.get(row[0], float("inf")), row[0]),
@@ -757,6 +1003,14 @@ def build_stats_context(filter_type: str, start_date_str: str, end_date_str: str
         "chart_values": chart_values,
         "all_departments": all_departments,
         "excluded_departments": excluded_departments,
+        "stats_mode": resolved_mode,
+        "stats_dimension": resolved_dimension,
+        "mode_label": mode_label,
+        "value_format": value_format,
+        "value_label": value_label,
+        "value_vat_label": value_vat_label,
+        "entity_label": entity_label,
+        "entity_label_plural": entity_label_plural,
     }
 
     
@@ -766,8 +1020,12 @@ def stats():
     start_date_str = request.args.get("start_date")
     end_date_str = request.args.get("end_date")
     excluded_args = request.args.getlist("exclude")
+    mode = request.args.get("mode", "sales")
+    dimension = request.args.get("dimension", "department")
 
-    context = build_stats_context(filter_type, start_date_str, end_date_str, excluded_args)
+    context = build_stats_context(
+        filter_type, start_date_str, end_date_str, excluded_args, mode, dimension
+    )
     live_enabled = str(request.args.get("live", "")).lower() in {"1", "true", "yes", "on"}
 
     return render_template(
@@ -783,8 +1041,12 @@ def stats_data():
     start_date_str = request.args.get("start_date")
     end_date_str = request.args.get("end_date")
     excluded_args = request.args.getlist("exclude")
+    mode = request.args.get("mode", "sales")
+    dimension = request.args.get("dimension", "department")
 
-    context = build_stats_context(filter_type, start_date_str, end_date_str, excluded_args)
+    context = build_stats_context(
+        filter_type, start_date_str, end_date_str, excluded_args, mode, dimension
+    )
 
     return jsonify(
         {
@@ -822,7 +1084,22 @@ def save_department_order():
 @app.route("/stats/department/<path:department>/monthly", methods=["GET"])
 def stats_department_monthly(department):
     current_year = date.today().year
-    rows = fetch_department_monthly_totals(department, current_year)
+    mode = normalize_stats_mode(request.args.get("mode", "sales"))
+    dimension = normalize_stats_dimension(request.args.get("dimension", "department"))
+    if dimension == "user":
+        fetch_rows = (
+            fetch_user_parts_monthly_totals
+            if mode == "parts"
+            else fetch_user_monthly_totals
+        )
+    else:
+        fetch_rows = (
+            fetch_department_parts_monthly_totals
+            if mode == "parts"
+            else fetch_department_monthly_totals
+        )
+
+    rows = fetch_rows(department, current_year)
 
     labels = []
     values = []
@@ -843,7 +1120,22 @@ def stats_department_daily(department):
         month = 1
 
     current_year = date.today().year
-    rows = fetch_department_daily_totals(department, current_year, month)
+    mode = normalize_stats_mode(request.args.get("mode", "sales"))
+    dimension = normalize_stats_dimension(request.args.get("dimension", "department"))
+    if dimension == "user":
+        fetch_rows = (
+            fetch_user_parts_daily_totals
+            if mode == "parts"
+            else fetch_user_daily_totals
+        )
+    else:
+        fetch_rows = (
+            fetch_department_parts_daily_totals
+            if mode == "parts"
+            else fetch_department_daily_totals
+        )
+
+    rows = fetch_rows(department, current_year, month)
 
     labels = []
     values = []
@@ -858,9 +1150,14 @@ def save_stats_exclusions():
     filter_type = request.form.get("filter", "this_month")
     start_date = request.form.get("start_date")
     end_date = request.form.get("end_date")
+    mode = request.form.get("mode", "sales")
+    dimension = request.form.get("dimension", "department")
     excluded_departments = request.form.getlist("exclude")
 
-    session["stats_excluded_departments"] = excluded_departments
+    if normalize_stats_dimension(dimension) == "user":
+        session["stats_excluded_users"] = excluded_departments
+    else:
+        session["stats_excluded_departments"] = excluded_departments
 
     return redirect(
         url_for(
@@ -868,6 +1165,8 @@ def save_stats_exclusions():
             filter=filter_type,
             start_date=start_date,
             end_date=end_date,
+            mode=mode,
+            dimension=dimension,
             exclude=excluded_departments,
         )
     )
