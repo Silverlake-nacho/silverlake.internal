@@ -832,7 +832,9 @@ def parse_date_filter(filter_type: str, start_date_str: str = None, end_date_str
         last_month_end = first_this_month - timedelta(days=1)
         return last_month_end.replace(day=1), first_this_month
     if filter_type == "custom" and start_date_str and end_date_str:
-        return date.fromisoformat(start_date_str), date.fromisoformat(end_date_str)
+        start_date = date.fromisoformat(start_date_str)
+        end_date = date.fromisoformat(end_date_str) + timedelta(days=1)
+        return start_date, end_date
 
     return today, today + timedelta(days=1)
     
