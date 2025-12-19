@@ -603,7 +603,7 @@ def fetch_department_parts_sold(start_date: date, end_date: date) -> List[Tuple[
     cur.execute(
         """
         SELECT COALESCE(inv.departmentname, 'Unknown') AS departmentname,
-               COUNT(inv.invnumber) AS parts_sold
+               COUNT(sold.invnumber) AS parts_sold
         FROM sold
         LEFT JOIN invoice inv ON inv.invoice_id = sold.invoice_id
         WHERE sold.issold AND solddate >= %s AND solddate < %s
@@ -688,7 +688,7 @@ def fetch_department_parts_monthly_totals(department: str, year: int) -> List[Tu
     cur.execute(
         """
         SELECT EXTRACT(MONTH FROM solddate)::int AS month,
-               COUNT(inv.invnumber) AS parts_sold
+               COUNT(sold.invnumber) AS parts_sold
         FROM sold
         LEFT JOIN invoice inv ON inv.invoice_id = sold.invoice_id
         WHERE solddate >= %s
@@ -801,7 +801,7 @@ def fetch_department_parts_daily_totals(department: str, year: int, month: int) 
     cur.execute(
         """
         SELECT EXTRACT(DAY FROM solddate)::int AS day,
-               COUNT(inv.invnumber) AS parts_sold
+               COUNT(sold.invnumber) AS parts_sold
         FROM sold
         LEFT JOIN invoice inv ON inv.invoice_id = sold.invoice_id
         WHERE solddate >= %s
