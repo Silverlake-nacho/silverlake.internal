@@ -232,12 +232,13 @@
         display: block;
       }
       .logo {
-        text-align: center;
+        display: flex;
+        justify-content: flex-end;
         margin-bottom: 20px;
       }
       .logo img {
-        width: 300px;
-        max-width: 100%;
+        width: 150px;
+        max-width: 50%;
         height: auto;
       }
       .toggle-stack {
@@ -281,7 +282,7 @@
         <div class="sidebar-footer">
           <a href="{{ url_for('logout') }}" class="nav-link">
             <i class="fas fa-arrow-right-from-bracket"></i>
-            <span class="link-text">Logout</span>
+            <span class="link-text">Logout ({{ current_user }})</span>
           </a>
         </div>
       </nav>
@@ -329,6 +330,7 @@
                     <div class="d-flex gap-2">
                       <button type="submit" form="departmentFilterForm" class="btn btn-sm btn-primary">Apply</button>
                       <button type="submit" form="departmentFilterForm" formaction="{{ url_for('save_stats_exclusions') }}" formmethod="post" class="btn btn-sm btn-success">Set as Default</button>
+                      <small class="text-muted align-self-center">Defaults are saved per user.</small>
                     </div>
                   </div>
                   <form id="departmentFilterForm" class="row g-2" method="get" action="{{ url_for('stats') }}">
@@ -946,7 +948,7 @@
       function markOrderSaved() {
         orderDirty = false;
         if (saveOrderStatus) {
-          saveOrderStatus.textContent = 'Order saved for everyone';
+          saveOrderStatus.textContent = 'Order saved for you';
           saveOrderStatus.classList.add('text-success');
         }
       }
@@ -994,8 +996,7 @@
         const url = new URL("{{ url_for('stats_data') }}", window.location.origin);
 
         // Reuse the current page's query so live updates reflect the user's
-        // active filter and exclusion settings (including defaults restored
-        // from the session).
+        // active filter and exclusion settings (including per-user defaults).
         const params = new URLSearchParams(window.location.search);
 
         // Ensure the current mode is always set for data refreshes.
