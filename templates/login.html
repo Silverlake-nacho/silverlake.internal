@@ -22,9 +22,10 @@
   </style>
 </head>
 <body class="p-4">
-  <div class="container">
-    <h1 class="mb-4 text-center">Login</h1>
+    <div class="container">
+      <h1 class="mb-4 text-center">Login</h1>
     <form method="post">
+      <input type="hidden" name="next" value="{{ next_url or '' }}">
       <div class="mb-3">
         <label class="form-label">Username</label>
         <input type="text" name="username" class="form-control" required>
