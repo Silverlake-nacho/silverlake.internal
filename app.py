@@ -13,7 +13,7 @@ from bs4 import BeautifulSoup
 from flask import request, render_template_string
 from collections import defaultdict
 from sshtunnel import SSHTunnelForwarder
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 from calendar import monthrange
 import json
 import os
@@ -25,22 +25,74 @@ def rgb_to_hex(rgb):
     b = int(rgb.get('blue', 1) * 255)
     return '#{:02X}{:02X}{:02X}'.format(r, g, b)
     
-def load_department_order() -> List[str]:
-    if not os.path.exists(DEPARTMENT_ORDER_PATH):
-        return []
+def _load_json_file(path: str, fallback):
+    if not os.path.exists(path):
+        return fallback
     try:
-        with open(DEPARTMENT_ORDER_PATH, "r", encoding="utf-8") as f:
-            data = json.load(f)
-            if isinstance(data, list):
-                return [str(item) for item in data]
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
     except Exception:
-        pass
-    return []
+        return fallback
 
 
-def persist_department_order(order: List[str]) -> None:
+def _normalise_order_store(raw_data) -> dict:
+    if isinstance(raw_data, list):
+        # Legacy format where the order was global for everyone.
+        return {"__default__": [str(item) for item in raw_data]}
+    if isinstance(raw_data, dict):
+        normalised = {}
+        for key, value in raw_data.items():
+            if isinstance(value, list):
+                normalised[str(key)] = [str(item) for item in value]
+        return normalised
+    return {}
+
+
+def load_department_order(user: Optional[str] = None) -> List[str]:
+    raw_data = _load_json_file(DEPARTMENT_ORDER_PATH, {})
+    store = _normalise_order_store(raw_data)
+    if user and user in store:
+        return store[user]
+    return store.get("__default__", [])
+
+
+def persist_department_order(order: List[str], user: Optional[str] = None) -> None:
+    raw_data = _load_json_file(DEPARTMENT_ORDER_PATH, {})
+    store = _normalise_order_store(raw_data)
+    key = user or "__default__"
+    store[key] = [str(item) for item in order]
     with open(DEPARTMENT_ORDER_PATH, "w", encoding="utf-8") as f:
-        json.dump(order, f)
+        json.dump(store, f)
+
+
+def _normalise_exclusion_store(raw_data) -> dict:
+    if not isinstance(raw_data, dict):
+        return {}
+    normalised = {}
+    for user, payload in raw_data.items():
+        if isinstance(payload, dict):
+            normalised[user] = {
+                "department": [str(item) for item in payload.get("department", [])],
+                "user": [str(item) for item in payload.get("user", [])],
+            }
+    return normalised
+
+
+def load_stats_exclusions(user: Optional[str], dimension: str) -> List[str]:
+    raw_data = _load_json_file(STATS_EXCLUSIONS_PATH, {})
+    store = _normalise_exclusion_store(raw_data)
+    key = user or "__default__"
+    return store.get(key, {}).get(dimension, [])
+
+
+def persist_stats_exclusions(user: Optional[str], dimension: str, exclusions: List[str]) -> None:
+    raw_data = _load_json_file(STATS_EXCLUSIONS_PATH, {})
+    store = _normalise_exclusion_store(raw_data)
+    key = user or "__default__"
+    user_entry = store.setdefault(key, {"department": [], "user": []})
+    user_entry[dimension] = [str(item) for item in exclusions]
+    with open(STATS_EXCLUSIONS_PATH, "w", encoding="utf-8") as f:
+        json.dump(store, f)
 
 def get_matching_google_sheet_rows(engine_code):
     try:
@@ -94,10 +146,17 @@ app.secret_key = 'your_super_secret_key_here'
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DEPARTMENT_ORDER_PATH = os.path.join(BASE_DIR, "department_order.json")
+STATS_EXCLUSIONS_PATH = os.path.join(BASE_DIR, "stats_exclusions.json")
+
+@app.context_processor
+def inject_current_user():
+    return {"current_user": session.get("username")}
 
 USERS = {
     'admin': 'Silverlake1!',
     'paul': 'Silverlake1!',
+    'morgan': 'Silverlake1!',
+    'cain': 'Silverlake1!',
     'nacho': 'Silverlake1!'
 }
 
@@ -113,6 +172,7 @@ def login():
         if username in USERS and USERS[username] == password:
             session['logged_in'] = True
             session['login_time'] = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+            session['username'] = username
             return redirect(url_for('index'))
         else:
             error = 'Invalid Credentials. Please try again.'
@@ -960,17 +1020,14 @@ def build_stats_context(
         prev_end = shift_one_month_back(end_date)
         prev_rows = fetch_prev_rows(prev_start, prev_end)
         prev_row_map = {row[0]: float(row[1]) for row in prev_rows}
-    saved_order = load_department_order()
+    current_user = session.get("username")
+    saved_order = load_department_order(current_user)
     order_index = {name: idx for idx, name in enumerate(saved_order)}
 
-    exclusion_key = (
-        "stats_excluded_departments"
-        if resolved_dimension == "department"
-        else "stats_excluded_users"
+    default_exclusions = load_stats_exclusions(
+        current_user, "department" if resolved_dimension == "department" else "user"
     )
-    default_exclusions = session.get(exclusion_key, [])
     excluded_departments = exclude_args or default_exclusions
-
     filtered_rows = []
     for row in rows:
         if row[0] in excluded_departments:
@@ -1078,7 +1135,8 @@ def save_department_order():
         return jsonify({"error": "Invalid order payload"}), 400
 
     normalized_order = [str(item) for item in order]
-    persist_department_order(normalized_order)
+    user = session.get("username")
+    persist_department_order(normalized_order, user)
 
     return jsonify({"status": "saved", "order": normalized_order})
     
@@ -1156,10 +1214,9 @@ def save_stats_exclusions():
     dimension = request.form.get("dimension", "department")
     excluded_departments = request.form.getlist("exclude")
 
-    if normalize_stats_dimension(dimension) == "user":
-        session["stats_excluded_users"] = excluded_departments
-    else:
-        session["stats_excluded_departments"] = excluded_departments
+    resolved_dimension = "user" if normalize_stats_dimension(dimension) == "user" else "department"
+    user = session.get("username")
+    persist_stats_exclusions(user, resolved_dimension, excluded_departments)
 
     return redirect(
         url_for(
