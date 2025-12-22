@@ -166,6 +166,7 @@ search_details = None
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     error = None
+    next_url = request.args.get('next') or request.form.get('next')
     if request.method == 'POST':
         username = request.form['username']
         password = request.form['password']
@@ -173,10 +174,12 @@ def login():
             session['logged_in'] = True
             session['login_time'] = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
             session['username'] = username
+            if next_url:
+                return redirect(next_url)
             return redirect(url_for('index'))
         else:
             error = 'Invalid Credentials. Please try again.'
-    return render_template('login.html', error=error)
+    return render_template('login.html', error=error, next_url=next_url)
 
 @app.route('/logout')
 def logout():
@@ -187,7 +190,8 @@ def logout():
 def require_login():
     allowed_routes = ['login', 'static', 'autocomplete_model']
     if request.endpoint not in allowed_routes and not session.get('logged_in'):
-        return redirect(url_for('login'))
+        next_url = request.url
+        return redirect(url_for('login', next=next_url))
     if session.get('logged_in'):
         login_time = session.get('login_time')
         if login_time:
@@ -701,6 +705,48 @@ def fetch_user_parts_sold(start_date: date, end_date: date) -> List[Tuple[str, f
     return [(row[0], float(row[1]), float(row[1])) for row in rows]
 
 
+def fetch_parts_breakdown(
+    entity_value: str, start_date: date, end_date: date, dimension: str
+) -> List[Tuple[str, int]]:
+    """Return itemname counts for the given department or user."""
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    dimension_key = "user" if normalize_stats_dimension(dimension) == "user" else "department"
+    joins = """
+        LEFT JOIN invoice inv ON inv.invoice_id = sold.invoice_id
+        LEFT JOIN itemtype it ON it.itemtype_id = sold.itemtype_id
+    """
+    filter_clause = "COALESCE(inv.departmentname, 'Unknown') = %s"
+    params = [start_date, end_date, entity_value]
+
+    if dimension_key == "user":
+        joins += " LEFT JOIN pinuser us ON us.user_id = inv.whocreated_id"
+        filter_clause = "COALESCE(us.shortname, 'Unknown') = %s"
+
+    cur.execute(
+        f"""
+        SELECT
+            COALESCE(REPLACE(REPLACE(REPLACE(it.itemname, '[', ''), ']', ''), '_', ' '), 'Unknown') AS itemname,
+            COUNT(sold.invnumber) AS parts_sold
+        FROM sold
+        {joins}
+        WHERE sold.issold
+          AND solddate >= %s
+          AND solddate < %s
+          AND {filter_clause}
+        GROUP BY itemname
+        ORDER BY parts_sold DESC, itemname
+        """,
+        params,
+    )
+
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    return [(row[0], int(row[1])) for row in rows]
+
 def shift_one_month_back(value: date) -> date:
     """Return the same calendar day in the previous month, clamped to month length."""
 
@@ -1122,6 +1168,37 @@ def stats_data():
             "sum_total_vat": context["sum_total_vat"],
             "chart_labels": context["chart_labels"],
             "chart_values": context["chart_values"],
+        }
+    )
+
+
+@app.route("/stats/parts_breakdown", methods=["GET"])
+def stats_parts_breakdown():
+    mode = normalize_stats_mode(request.args.get("mode", "sales"))
+    if mode != "parts":
+        return jsonify({"error": "Parts breakdown is only available for Parts mode"}), 400
+
+    filter_type = request.args.get("filter", "this_month")
+    start_date_str = request.args.get("start_date")
+    end_date_str = request.args.get("end_date")
+    dimension = normalize_stats_dimension(request.args.get("dimension", "department"))
+    entity_value = request.args.get("entity")
+
+    if not entity_value:
+        return jsonify({"error": "Missing entity"}), 400
+
+    start_date, end_date = parse_date_filter(filter_type, start_date_str, end_date_str)
+    date_range_label = describe_date_range(filter_type, start_date, end_date)
+    rows = fetch_parts_breakdown(entity_value, start_date, end_date, dimension)
+    total = sum(row[1] for row in rows)
+
+    return jsonify(
+        {
+            "entity": entity_value,
+            "dimension": dimension,
+            "date_range_label": date_range_label,
+            "items": [{"itemname": row[0], "count": row[1]} for row in rows],
+            "total": total,
         }
     )
 
