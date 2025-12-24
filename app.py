@@ -157,6 +157,7 @@ USERS = {
     'paul': 'Silverlake1!',
     'morgan': 'Silverlake1!',
     'cain': 'Silverlake1!',
+    'stores': 'stores',
     'Stores': 'stores',
     'nacho': 'Silverlake1!'
 }
