@@ -157,6 +157,7 @@ USERS = {
     'paul': 'Silverlake1!',
     'morgan': 'Silverlake1!',
     'cain': 'Silverlake1!',
+    'Stores': 'stores',
     'nacho': 'Silverlake1!'
 }
 
@@ -530,6 +531,7 @@ DB_PORT = 5432
 DB_NAME = "silverlake"
 DB_USER = "postgres"
 DB_PASS = ""
+IMAGE_BASE_URL = "http://192.168.10.23/pinproHostedImages/"
 
 # keep tunnel global so it persists
 tunnel = None
@@ -616,6 +618,26 @@ def log_action(action, username, reg=None, stock=None, vstockno=None, location=N
     conn.commit()
     cur.close()
     conn.close()
+
+
+def fetch_images_by_barcode(barcode: str) -> List[Tuple[str, Optional[int]]]:
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            SELECT relativeurl, displayorder
+            FROM image
+            WHERE barcode = %s
+              AND COALESCE(thumbnail, false) = false
+            ORDER BY COALESCE(displayorder, 0), relativeurl
+            """,
+            (barcode,),
+        )
+        return cur.fetchall()
+    finally:
+        cur.close()
+        conn.close()
 
 
 def fetch_department_sales(start_date: date, end_date: date) -> List[Tuple[str, float, float]]:
@@ -1020,6 +1042,46 @@ def logs():
     return render_template("logs.html", logs=rows, filter_type=filter_type)
 
 
+@app.route("/image_lookup", methods=["GET", "POST"])
+def image_lookup():
+    barcode_query = ""
+    form_barcode_value = ""
+    images = []
+    error_message = None
+
+    if request.method == "POST":
+        barcode_query = request.form.get("barcode", "").strip()
+    else:
+        barcode_query = request.args.get("barcode", "").strip()
+
+    if barcode_query:
+        try:
+            rows = fetch_images_by_barcode(barcode_query)
+            images = []
+            for relative_url, display_order in rows:
+                if relative_url.startswith(("http://", "https://")):
+                    final_url = relative_url
+                else:
+                    cleaned_relative = relative_url.lstrip("/")
+                    final_url = f"{IMAGE_BASE_URL.rstrip('/')}/{cleaned_relative}"
+                images.append({"url": final_url, "displayorder": display_order})
+            if not images:
+                error_message = f"No images found for tag {barcode_query}."
+        except Exception as exc:
+            error_message = "Something went wrong while searching for images."
+            print(f"Error fetching images for barcode {barcode_query}: {exc}")
+    elif request.method == "POST":
+        error_message = "Please enter a tag number to search."
+
+    return render_template(
+        "image_lookup.html",
+        barcode_query=barcode_query,
+        images=images,
+        error_message=error_message,
+        active_page="image_lookup",
+    )
+
+
 def normalize_stats_mode(mode: str) -> str:
     return "parts" if str(mode).lower() == "parts" else "sales"
 
@@ -1137,6 +1199,7 @@ def stats():
         "stats.html",
         **context,
         live_enabled=live_enabled,
+        active_page="stats",
     )
 
 
