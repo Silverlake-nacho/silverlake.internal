@@ -9,6 +9,7 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
     <style>
       :root {
         --sidebar-expanded: 260px;
@@ -448,7 +449,10 @@
                   <div class="card-body">
                     <div class="d-flex justify-content-between align-items-center mb-3">
                       <h5 class="card-title mb-0" id="chartTitle">{{ value_label }} by Department (Bar)</h5>
-                      <button id="toggleChartBtn" class="btn btn-sm btn-success">Show Pie Chart</button>
+                      <div class="d-flex gap-2">
+                        <button id="resetZoomBtn" class="btn btn-sm btn-outline-secondary">Reset Zoom</button>
+                        <button id="toggleChartBtn" class="btn btn-sm btn-success">Show Pie Chart</button>
+                      </div>
                     </div>
                     <canvas id="salesChart" height="180"></canvas>
                   </div>
@@ -508,9 +512,12 @@
       </div>
     </div>
 
-    <script>
+     <script>
       if (typeof Chart !== 'undefined' && typeof ChartDataLabels !== 'undefined') {
         Chart.register(ChartDataLabels);
+      }
+      if (typeof Chart !== 'undefined' && typeof ChartZoom !== 'undefined') {
+        Chart.register(ChartZoom);
       }
 
       const statsMode = "{{ stats_mode }}";
@@ -537,6 +544,7 @@
 
       const chartTitle = document.getElementById('chartTitle');
       const toggleChartBtn = document.getElementById('toggleChartBtn');
+      const resetZoomBtn = document.getElementById('resetZoomBtn');
       const chartCanvas = document.getElementById('salesChart');
       const saveOrderBtn = document.getElementById('saveOrderBtn');
       const saveOrderStatus = document.getElementById('saveOrderStatus');
@@ -580,6 +588,25 @@
         return value.toLocaleString();
       }
 
+      function buildZoomOptions(mode) {
+        return {
+          pan: {
+            enabled: true,
+            mode,
+            modifierKey: 'shift'
+          },
+          zoom: {
+            wheel: { enabled: true },
+            pinch: { enabled: true },
+            drag: { enabled: true, threshold: 6 },
+            mode
+          },
+          limits: {
+            y: { min: 0 }
+          }
+        };
+      }
+
       function buildChartConfig(type) {
         if (type === 'pie') {
           return {
@@ -594,41 +621,34 @@
             options: {
               plugins: {
                 legend: { display: false },
+                zoom: buildZoomOptions('xy'),
                 datalabels: {
-                  color: '#fff',
-                  textStrokeColor: '#fff',
-                  textStrokeWidth: 0,
-                  font: {
-                    weight: 'bold'
+                  display: function(context) {
+                    const data = context.dataset.data || [];
+                    const value = data[context.dataIndex] || 0;
+                    const total = data.reduce((acc, val) => acc + val, 0);
+                    if (!total) return false;
+
+                    // Only show labels for slices that have enough room to avoid overlap.
+                    const percentage = value / total;
+                    return percentage >= 0.025;
                   },
-                  align: function() {
-                    return 'center';
-                  },
-                  anchor: function() {
-                    return 'center';
-                  },
-                  offset: function(context) {
-                    const data = context.dataset.data;
+                  color: '#ffffff',
+                  backgroundColor: 'rgba(0, 0, 0, 0.25)',
+                  borderRadius: 4,
+                  padding: 4,
+                  font: function(context) {
+                    const data = context.dataset.data || [];
                     const meta = context.chart.getDatasetMeta(context.datasetIndex);
                     const arc = meta && meta.data ? meta.data[context.dataIndex] : null;
                     const radius = arc ? arc.outerRadius : 0;
-
-                    // Drive labels progressively outward while keeping them inside the slice.
-                    // Push later slices close to the edge and tiny slices further from the center
-                    // to ease overlap without leaving the segment.
-                    const steps = Math.max(1, data.length - 1);
-                    const indexRatio = context.dataIndex / steps;
-
-                    const total = data.reduce((acc, val) => acc + val, 0) || 1;
-                    const percentage = data[context.dataIndex] / total;
-
-                    const centerBias = radius * 0.04; // keep first slice near the center
-                    const progressive = indexRatio * radius * 0.92; // last slice nears the outer edge
-                    const tinySliceBoost = Math.max(0, (0.18 - percentage) * radius * 0.7);
-                    const offset = centerBias + progressive + tinySliceBoost;
-
-                    return Math.min(Math.max(0, offset), Math.max(0, radius - 4));
+                    const size = Math.max(10, Math.min(14, radius * 0.06));
+                    return { weight: 'bold', size };
                   },
+                  align: 'center',
+                  anchor: 'center',
+                  offset: 0,
+                  clamp: true,
                   clip: true,
                   formatter: function(value, context) {
                     return context.chart.data.labels[context.dataIndex];
@@ -658,45 +678,46 @@
               data: values,
               backgroundColor: colors,
             }]
-          },
-          options: {
-            responsive: true,
-            layout: {
-              padding: { top: 30 }
             },
-            plugins: {
-              datalabels: {
-                display: true,
-                anchor: 'end',
-                align: 'end',
-                color: '#000',
-                formatter: (value) => formatValue(value),
-                rotation: (context) => computeDatalabelRotation(context.chart.data.labels.length)
-              },
-              legend: { display: false },
-              tooltip: {
-                callbacks: {
-                  label: function(context) {
-                    const value = context.parsed.y || 0;
-                    return formatValue(value);
-                  }
-                }
-              }
-            },
-            scales: {
-              y: {
-                grace: '15%',
-                ticks: {
-                  callback: function(value) {
-                    return axisLabel(value);
+            options: {
+              responsive: true,
+              plugins: {
+                datalabels: {
+                  display: true,
+                  anchor: 'end',
+                  align: 'end',
+                  color: '#000',
+                  formatter: (value) => formatValue(value),
+                  rotation: (context) => computeDatalabelRotation(context.chart.data.labels.length)
+                },
+                legend: { display: false },
+                tooltip: {
+                  callbacks: {
+                    label: function(context) {
+                      const value = context.parsed.y || 0;
+                      return formatValue(value);
+                    }
                   }
                 },
-                beginAtZero: true
+                zoom: buildZoomOptions('xy')
+              },
+              layout: {
+                padding: { top: 30 }
+              },
+              scales: {
+                y: {
+                  grace: '15%',
+                  ticks: {
+                    callback: function(value) {
+                      return axisLabel(value);
+                    }
+                  },
+                  beginAtZero: true
+                }
               }
             }
-          }
-        };
-      }
+          };
+        }
 
       function renderChart(type) {
         if (chartInstance) {
@@ -713,6 +734,14 @@
         const nextType = currentChartType === 'bar' ? 'pie' : 'bar';
         renderChart(nextType);
       });
+
+      if (resetZoomBtn) {
+        resetZoomBtn.addEventListener('click', () => {
+          if (chartInstance && typeof chartInstance.resetZoom === 'function') {
+            chartInstance.resetZoom();
+          }
+        });
+      }
 
       function buildDepartmentBarConfig(labels, values, onBarClick, datalabelRotation = 0) {
       return {

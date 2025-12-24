@@ -11,6 +11,26 @@
       background-size: cover;
       font-family: 'Montserrat', sans-serif;
       color: black;
+      min-height: 100vh;
+    }
+    .login-wrapper {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px 16px;
+    }
+    .login-card {
+      width: 150%;
+      max-width: 400px;
+      background: rgba(255, 255, 255, 0.9);
+      border-radius: 12px;
+      padding: 24px;
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
+    }
+    .login-card h1 {
+      font-weight: 800;
+      color: #5c9c13;
     }
     .btn-primary {
       background-color: #5c9c13;
@@ -19,26 +39,36 @@
     .btn-primary:hover {
       background-color: #4a8010;
     }
+    @media (max-width: 480px) {
+      body {
+        background-position: center;
+      }
+      .login-card {
+        padding: 20px;
+      }
+    }
   </style>
 </head>
-<body class="p-4">
-    <div class="container">
+<body>
+  <div class="login-wrapper">
+    <div class="login-card">
       <h1 class="mb-4 text-center">Login</h1>
-    <form method="post">
-      <input type="hidden" name="next" value="{{ next_url or '' }}">
-      <div class="mb-3">
-        <label class="form-label">Username</label>
-        <input type="text" name="username" class="form-control" required>
-      </div>
-      <div class="mb-3">
-        <label class="form-label">Password</label>
-        <input type="password" name="password" class="form-control" required>
-      </div>
-      <button type="submit" class="btn btn-primary">Login</button>
-      {% if error %}
-      <div class="alert alert-danger mt-3">{{ error }}</div>
-      {% endif %}
-    </form>
+      <form method="post">
+        <input type="hidden" name="next" value="{{ next_url or '' }}">
+        <div class="mb-3">
+          <label class="form-label">Username</label>
+          <input type="text" name="username" class="form-control" required>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Password</label>
+          <input type="password" name="password" class="form-control" required>
+        </div>
+        <button type="submit" class="btn btn-primary w-100">Login</button>
+        {% if error %}
+        <div class="alert alert-danger mt-3">{{ error }}</div>
+        {% endif %}
+      </form>
+    </div>
   </div>
 </body>
 </html>

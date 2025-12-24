@@ -1,0 +1,429 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Silverlake Image Lookup</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+    <style>
+      body {
+        margin: 0;
+        background: url("{{ url_for('static', filename='background.jpg') }}") no-repeat center center fixed;
+        background-size: cover;
+        font-family: 'Montserrat', sans-serif;
+        color: black;
+      }
+      h1, h2, label {
+        color: #5c9c13;
+      }
+      .page-wrapper {
+        min-height: 100vh;
+      }
+      .topbar {
+        background-color: #5c9c13;
+        color: #fff;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 10px 16px;
+        position: sticky;
+        top: 0;
+        z-index: 1000;
+        cursor: pointer;
+      }
+      .topbar.collapsed .nav-section {
+        display: none;
+      }
+      .topbar .brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .topbar .brand img {
+        height: 34px;
+      }
+      .topbar .nav-section {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+      }
+      .topbar .nav-link {
+        color: #fff;
+        font-weight: 700;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 10px;
+        border-radius: 10px;
+        text-decoration: none;
+        transition: background-color 0.2s ease, color 0.2s ease;
+        font-size: 0.95rem;
+      }
+      .topbar .nav-link i {
+        width: 18px;
+        text-align: center;
+        font-size: 1.05rem;
+      }
+      .topbar .nav-link.active,
+      .topbar .nav-link:hover {
+        background-color: rgba(255, 255, 255, 0.16);
+        color: #fff;
+      }
+      .topbar .sidebar-footer {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .content {
+        margin: 0;
+      }
+      .content-inner {
+        padding: 16px;
+      }
+      .logo {
+        display: flex;
+        justify-content: flex-end;
+        margin-bottom: 20px;
+      }
+      .logo img {
+        width: 150px;
+        max-width: 50%;
+        height: auto;
+      }
+      .btn-primary, .btn-success {
+        background-color: #5c9c13;
+        border: none;
+      }
+      .btn-primary:hover, .btn-success:hover {
+        background-color: #4a8010;
+      }
+      .form-control {
+        background-color: #d6f5c1;
+        color: #333;
+        border: 1px solid #333;
+      }
+      .form-control:focus {
+        border-color: #5c9c13;
+        box-shadow: 0 0 5px #5c9c13;
+      }
+      .image-frame {
+        background: #f8f9fa;
+        border-radius: 12px;
+        padding: 12px;
+        border: 1px solid #e0e0e0;
+      }
+      .image-frame img {
+        max-height: 520px;
+        object-fit: contain;
+      }
+      .simple-carousel {
+        position: relative;
+      }
+      .simple-carousel img {
+        width: 100%;
+        display: none;
+      }
+      .simple-carousel img.active {
+        display: block;
+      }
+      .carousel-controls {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-top: 12px;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+      .carousel-controls .btn {
+        min-width: 110px;
+      }
+      .carousel-status {
+        font-weight: 600;
+        color: #5c9c13;
+      }
+      .scanner-drawer {
+        border: 1px solid #e0e0e0;
+        border-radius: 10px;
+        padding: 10px;
+        background: #f8f9fa;
+        display: none;
+      }
+      .scanner-drawer.show {
+        display: block;
+      }
+      #qr-reader {
+        width: 100%;
+      }
+      #qr-reader__scan_region video {
+        max-height: 280px;
+      }
+      @media (max-width: 768px) {
+        :root {
+          --sidebar-expanded: 220px;
+        }
+        .image-frame img {
+          max-height: 360px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    {% set active_page = active_page | default('image_lookup') %}
+    <div class="page-wrapper">
+      <nav class="topbar">
+        <div class="brand">
+          <img src="{{ url_for('static', filename='logo-slg-strip.svg') }}" alt="Silverlake Logo">
+        </div>
+
+        <div class="sidebar-footer">
+          <a href="{{ url_for('logout') }}" class="nav-link">
+            <i class="fas fa-arrow-right-from-bracket"></i>
+            <span class="link-text">Logout ({{ current_user }})</span>
+          </a>
+        </div>
+      </nav>
+      <div class="content">
+        <div class="content-inner">
+            <div class="container">
+              <h1 class="mb-4 text-center">Image Lookup</h1>
+
+              {% if images %}
+                <div class="card shadow-sm mb-4">
+                  <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+                      <h5 class="mb-0 text-success">Showing {{ images|length }} image{% if images|length != 1 %}s{% endif %} for tag {{ barcode_query }}</h5>
+                    </div>
+                    <div class="simple-carousel" id="simpleCarousel">
+                      {% for image in images %}
+                        <div class="image-frame">
+                          <img src="{{ image.url }}" class="{% if loop.first %}active{% endif %}" alt="Image {{ loop.index }}">
+                        </div>
+                      {% endfor %}
+                    </div>
+                    <div class="carousel-controls">
+                      <button type="button" class="btn btn-outline-success" id="prevImageBtn">
+                        <i class="fas fa-arrow-left"></i> Previous
+                      </button>
+                      <span class="carousel-status" id="carouselStatus">1 / {{ images|length }}</span>
+                      <button type="button" class="btn btn-outline-success" id="nextImageBtn">
+                        Next <i class="fas fa-arrow-right"></i>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              {% endif %}
+
+              <div class="card mb-4 shadow-sm">
+                <div class="card-body">
+                  <form method="post" class="row g-3 align-items-end">
+                  <div class="col-md-8">
+                    <label for="barcode" class="form-label">Tag Number</label>
+                    <input type="text" id="barcode" name="barcode" value="{{ form_barcode_value }}" class="form-control" placeholder="Enter tag number" required>
+                    <div class="form-text text-muted">Press Enter or click Search to load images.</div>
+                  </div>
+                  <div class="col-md-4 d-flex gap-2 flex-wrap">
+                    <button type="submit" class="btn btn-primary flex-grow-1">Search</button>
+                    <button type="button" class="btn btn-outline-secondary btn-sm" id="scanBarcodeBtn">
+                      <i class="fas fa-camera"></i> Scan
+                    </button>
+                  </div>
+                </form>
+                <div id="scannerDrawer" class="scanner-drawer mt-2" aria-live="polite">
+                  <div class="d-flex justify-content-between align-items-center mb-2">
+                    <strong class="text-success">Camera Scanner</strong>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="closeScannerBtn">Close</button>
+                  </div>
+                  <div id="scannerStatus" class="small text-muted mb-2">Starting camera…</div>
+                  <div id="qr-reader"></div>
+                </div>
+                {% if error_message %}
+                  <div class="alert alert-warning mt-3 mb-0">{{ error_message }}</div>
+                {% endif %}
+              </div>
+            </div>
+
+            {% if barcode_query and not images and not error_message %}
+              <div class="alert alert-info">No images found for tag {{ barcode_query }}.</div>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+      (function () {
+        var scanBtn = document.getElementById("scanBarcodeBtn");
+        var closeScanBtn = document.getElementById("closeScannerBtn");
+        var scannerDrawer = document.getElementById("scannerDrawer");
+        var scannerStatus = document.getElementById("scannerStatus");
+        var barcodeInput = document.getElementById("barcode");
+        var html5Qr = null;
+        var scriptLoaded = false;
+        var scriptLoading = false;
+
+        function setStatus(text, isError) {
+          if (!scannerStatus) return;
+          scannerStatus.textContent = text;
+          scannerStatus.className = "small mb-2 " + (isError ? "text-danger" : "text-muted");
+        }
+
+        function showScanner() {
+          if (!scannerDrawer) return;
+          scannerDrawer.className = scannerDrawer.className.replace(" show", "");
+          scannerDrawer.className += " show";
+        }
+
+        function hideScanner() {
+          if (!scannerDrawer) return;
+          scannerDrawer.className = scannerDrawer.className.replace(" show", "");
+          if (html5Qr) {
+            html5Qr.stop().catch(function () {});
+          }
+        }
+
+        function startReader() {
+          if (html5Qr) {
+            showScanner();
+            setStatus("Point the camera at the barcode/QR.", false);
+            html5Qr.start({ facingMode: { exact: "environment" } }, { fps: 10, qrbox: 250 },
+              onScanSuccess,
+              function (errMsg) { setStatus(errMsg || "Scanning…", false); }
+            ).catch(function () {
+              setStatus("Unable to start camera. Check permissions.", true);
+            });
+            return;
+          }
+          if (typeof Html5Qrcode === "undefined") {
+            setStatus("Loading scanner…", false);
+            return;
+          }
+          html5Qr = new Html5Qrcode("qr-reader");
+          startReader();
+        }
+
+        function onScanSuccess(decodedText) {
+          hideScanner();
+          setStatus("Scan complete.", false);
+          if (barcodeInput) {
+            barcodeInput.value = decodedText;
+            barcodeInput.focus();
+          }
+        }
+
+        function loadScriptAndStart() {
+          if (scriptLoaded) {
+            showScanner();
+            startReader();
+            return;
+          }
+          if (scriptLoading) {
+            return;
+          }
+          scriptLoading = true;
+          showScanner();
+          setStatus("Loading scanner…", false);
+          var script = document.createElement("script");
+          script.src = "https://unpkg.com/html5-qrcode@2.3.10/minified/html5-qrcode.min.js";
+          script.onload = function () {
+            scriptLoaded = true;
+            setStatus("Point the camera at the barcode/QR.", false);
+            startReader();
+          };
+          script.onerror = function () {
+            setStatus("Scanner could not be loaded. Please enter the tag manually.", true);
+          };
+          document.body.appendChild(script);
+        }
+
+        if (scanBtn) {
+          scanBtn.onclick = function () {
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+              setStatus("Camera access not supported on this device. Please enter the tag manually.", true);
+              showScanner();
+              return;
+            }
+            loadScriptAndStart();
+          };
+        }
+
+        if (closeScanBtn) {
+          closeScanBtn.onclick = function () {
+            hideScanner();
+          };
+        }
+
+        // Clear the search field after submit so it's ready for the next search
+        var formEl = document.querySelector("form[method='post']");
+        if (formEl && barcodeInput) {
+          formEl.addEventListener("submit", function () {
+            setTimeout(function () {
+              barcodeInput.value = "";
+            }, 50);
+          });
+        }
+      })();
+    </script>
+    <script>
+      (function () {
+        var topbar = document.querySelector(".topbar");
+        if (!topbar) return;
+        topbar.className += " collapsed";
+
+        topbar.addEventListener("click", function (evt) {
+          if (topbar.className.indexOf("collapsed") !== -1) {
+            topbar.className = topbar.className.replace(" collapsed", "");
+          } else {
+            topbar.className += " collapsed";
+          }
+        });
+      })();
+    </script>
+    {% if images %}
+    <script>
+      (function () {
+        var carousel = document.getElementById("simpleCarousel");
+        if (!carousel) return;
+        var images = carousel.getElementsByTagName("img");
+        var prevBtn = document.getElementById("prevImageBtn");
+        var nextBtn = document.getElementById("nextImageBtn");
+        var status = document.getElementById("carouselStatus");
+        var currentIndex = 0;
+        var total = images.length;
+
+        function showImage(index) {
+          if (!images.length) return;
+          for (var i = 0; i < images.length; i++) {
+            if (i === index) {
+              images[i].className = "active";
+            } else {
+              images[i].className = images[i].className.replace("active", "").trim();
+            }
+          }
+          if (status) {
+            status.textContent = (index + 1) + " / " + total;
+          }
+        }
+
+        function goPrev() {
+          currentIndex = (currentIndex - 1 + total) % total;
+          showImage(currentIndex);
+        }
+
+        function goNext() {
+          currentIndex = (currentIndex + 1) % total;
+          showImage(currentIndex);
+        }
+
+        if (prevBtn) prevBtn.onclick = goPrev;
+        if (nextBtn) nextBtn.onclick = goNext;
+        showImage(currentIndex);
+      })();
+    </script>
+    {% endif %}
+  </body>
+</html>
