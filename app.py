@@ -17,6 +17,7 @@ from typing import List, Tuple, Optional
 from calendar import monthrange
 import json
 import os
+from urllib.parse import urljoin
 
 
 def rgb_to_hex(rgb):
@@ -94,6 +95,36 @@ def persist_stats_exclusions(user: Optional[str], dimension: str, exclusions: Li
     with open(STATS_EXCLUSIONS_PATH, "w", encoding="utf-8") as f:
         json.dump(store, f)
 
+
+def fetch_auction_slides() -> Tuple[List[dict], Optional[str]]:
+    try:
+        response = requests.get(
+            AUCTIONS_URL,
+            headers={"User-Agent": "Mozilla/5.0"},
+            timeout=15,
+        )
+        response.raise_for_status()
+    except Exception as exc:
+        return [], f"Unable to load auctions right now: {exc}"
+
+    soup = BeautifulSoup(response.text, "html.parser")
+    slides = []
+    for img in soup.select("img"):
+        src = img.get("data-src") or img.get("data-original") or img.get("src")
+        if not src or src.startswith("data:"):
+            continue
+        slides.append(
+            {
+                "src": urljoin(AUCTIONS_URL, src),
+                "title": img.get("alt") or "Auction listing",
+            }
+        )
+        if len(slides) >= 20:
+            break
+    if not slides:
+        return [], "No auction images were found in the search results."
+    return slides, None
+
 def get_matching_google_sheet_rows(engine_code):
     try:
         SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly']
@@ -147,6 +178,7 @@ app.secret_key = 'your_super_secret_key_here'
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DEPARTMENT_ORDER_PATH = os.path.join(BASE_DIR, "department_order.json")
 STATS_EXCLUSIONS_PATH = os.path.join(BASE_DIR, "stats_exclusions.json")
+AUCTIONS_URL = "https://www.salvagemarket.co.uk/Search?auction[]=&bucketDetails=&bucketId=&damageCategory[]=&distance[]=&editorPickSearch=0&freeSubscriptionOnly=false&fuelType[]=&latitude=0&longitude=0&make[]=&model[]=&orderBy=1&pageNumber=0&pageSize=20&quickSearch=0&searchText=&seller[]=ca35a24f-c044-420d-9c1b-9aa05beb8e96&startDrive[]=&transmissionType[]=&year[]="
 
 @app.context_processor
 def inject_current_user():
@@ -272,6 +304,17 @@ def index():
             google_sheet_matches = get_matching_google_sheet_rows(engine_code)
 
     return render_template('index.html', parts=parts, search_details=search_details, google_sheet_matches=google_sheet_matches)
+
+
+@app.route("/auctions", methods=["GET"])
+def auctions():
+    slides, error = fetch_auction_slides()
+    return render_template(
+        "auctions.html",
+        slides=slides,
+        error=error,
+        source_url=AUCTIONS_URL,
+    )
 
 @app.route('/download')
 def download():
