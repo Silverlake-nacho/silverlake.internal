@@ -678,7 +678,62 @@ def fetch_images_by_barcode(barcode: str) -> List[Tuple[str, Optional[int]]]:
             """,
             (barcode,),
         )
-        return cur.fetchall()
+        rows = cur.fetchall()
+        rows = [
+            (relativeurl, displayorder)
+            for relativeurl, displayorder in rows
+            if relativeurl and not str(relativeurl).lower().startswith("fto/")
+        ]
+        if rows:
+            return rows
+
+        if not barcode.startswith("2-"):
+            return []
+
+        trimmed_tag = barcode[2:]
+        cur.execute(
+            """
+            SELECT invnumber
+            FROM inventory
+            WHERE tag = %s
+            ORDER BY invnumber
+            LIMIT 1
+            """,
+            (trimmed_tag,),
+        )
+        invnumber_row = cur.fetchone()
+        if not invnumber_row:
+            cur.execute(
+                """
+                SELECT invnumber
+                FROM sold
+                WHERE tag = %s
+                ORDER BY invnumber
+                LIMIT 1
+                """,
+                (trimmed_tag,),
+            )
+            invnumber_row = cur.fetchone()
+        if not invnumber_row:
+            return []
+
+        invnumber = invnumber_row[0]
+        cur.execute(
+            """
+            SELECT relativeurl, displayorder
+            FROM image
+            WHERE invnumber = %s
+              AND COALESCE(thumbnail, false) = false
+            ORDER BY COALESCE(displayorder, 0), relativeurl
+            """,
+            (invnumber,),
+        )
+        rows = cur.fetchall()
+        return [
+            (relativeurl, displayorder)
+            for relativeurl, displayorder in rows
+            if relativeurl and not str(relativeurl).lower().startswith("fto/")
+        ]
     finally:
         cur.close()
         conn.close()
