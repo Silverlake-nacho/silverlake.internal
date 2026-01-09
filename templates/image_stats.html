@@ -249,13 +249,6 @@
         gap: 0.75rem;
         margin-bottom: 1.5rem;
       }
-      .parts-breakdown-trigger {
-        cursor: pointer;
-        text-decoration: underline;
-        text-decoration-style: dotted;
-        text-decoration-thickness: 2px;
-        text-decoration-color: #5c9c13;
-      }
       @media (max-width: 768px) {
         :root {
           --sidebar-expanded: 220px;
@@ -275,13 +268,13 @@
             <i class="fas fa-magnifying-glass-dollar"></i>
             <span class="link-text">Opportunity Finder</span>
           </a>
-          <a href="{{ url_for('stats') }}" class="nav-link active">
+          <a href="{{ url_for('image_stats') }}" class="nav-link active">
             <i class="fas fa-chart-pie"></i>
-            <span class="link-text">Sales Stats</span>
-          </a>
-          <a href="{{ url_for('image_stats') }}" class="nav-link">
-            <i class="fas fa-image"></i>
             <span class="link-text">Image Stats</span>
+          </a>
+          <a href="{{ url_for('stats') }}" class="nav-link">
+            <i class="fas fa-chart-column"></i>
+            <span class="link-text">Sales Stats</span>
           </a>
           <a href="{{ url_for('crush_vehicles') }}" class="nav-link">
             <i class="fas fa-car-burst"></i>
@@ -310,14 +303,16 @@
 
             <div class="mb-3 d-flex align-items-center flex-wrap gap-2">
               <div class="d-flex flex-wrap gap-2">
-                <a href="{{ url_for('stats', filter='today', mode=stats_mode, dimension=stats_dimension, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">Today</a>
-                <a href="{{ url_for('stats', filter='yesterday', mode=stats_mode, dimension=stats_dimension, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">Yesterday</a>
-                <a href="{{ url_for('stats', filter='this_month', mode=stats_mode, dimension=stats_dimension, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">This Month</a>
-                <a href="{{ url_for('stats', filter='last_month', mode=stats_mode, dimension=stats_dimension, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">Last Month</a>
+                <a href="{{ url_for('image_stats', filter='today', mode=image_mode, prev_mode=prev_mode, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">Today</a>
+                <a href="{{ url_for('image_stats', filter='yesterday', mode=image_mode, prev_mode=prev_mode, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">Yesterday</a>
+                <a href="{{ url_for('image_stats', filter='this_month', mode=image_mode, prev_mode=prev_mode, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">This Month</a>
+                <a href="{{ url_for('image_stats', filter='last_month', mode=image_mode, prev_mode=prev_mode, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">Last Month</a>
+                <a href="{{ url_for('image_stats', filter='this_year', mode=image_mode, prev_mode=prev_mode, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">This Year</a>
+                <a href="{{ url_for('image_stats', filter='last_year', mode=image_mode, prev_mode=prev_mode, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">Last Year</a>
                 <form method="get" class="d-inline">
                   <input type="hidden" name="filter" value="custom">
-                  <input type="hidden" name="mode" value="{{ stats_mode }}">
-                  <input type="hidden" name="dimension" value="{{ stats_dimension }}">
+                  <input type="hidden" name="mode" value="{{ image_mode }}">
+                  <input type="hidden" name="prev_mode" value="{{ prev_mode }}">
                   <input type="date" name="start_date" required>
                   <input type="date" name="end_date" required>
                   {% if live_enabled %}
@@ -339,17 +334,17 @@
                 </div>
                 <div class="exclusion-body mt-3">
                   <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
-                    <p class="mb-0 text-muted">Hover to show department exclusions.</p>
+                    <p class="mb-0 text-muted">Hover to show user exclusions.</p>
                     <div class="d-flex gap-2">
                       <button type="submit" form="departmentFilterForm" class="btn btn-sm btn-primary">Apply</button>
                       <button type="submit" form="departmentFilterForm" formaction="{{ url_for('save_stats_exclusions') }}" formmethod="post" class="btn btn-sm btn-success">Set as Default</button>
                       <small class="text-muted align-self-center">Defaults are saved per user.</small>
                     </div>
                   </div>
-                  <form id="departmentFilterForm" class="row g-2" method="get" action="{{ url_for('stats') }}">
+                  <form id="departmentFilterForm" class="row g-2" method="get" action="{{ url_for('image_stats') }}">
                     <input type="hidden" name="filter" value="{{ filter_type }}">
-                    <input type="hidden" name="mode" value="{{ stats_mode }}">
-                    <input type="hidden" name="dimension" value="{{ stats_dimension }}">
+                    <input type="hidden" name="mode" value="{{ image_mode }}">
+                    <input type="hidden" name="prev_mode" value="{{ prev_mode }}">
                     <input type="hidden" name="start_date" value="{{ start_date.isoformat() if start_date else '' }}">
                     <input type="hidden" name="end_date" value="{{ end_date.isoformat() if end_date else '' }}">
                     <input type="hidden" id="liveInputField" name="live" value="{{ 1 if live_enabled else '' }}">
@@ -371,26 +366,12 @@
                 <span class="toggle-label">Mode</span>
                 <label class="toggle" for="modeToggle">
                   <input type="checkbox" id="modeToggle"
-                    {% if stats_mode == 'parts' %}checked{% endif %}
-                    aria-label="Toggle between Sales and Parts Sold">
+                    {% if image_mode == 'parts_imaged' %}checked{% endif %}
+                    aria-label="Toggle between Images and Parts Imaged">
                   <span class="toggle-track"></span>
                   <div class="toggle-labels">
-                    <span>Sales</span>
-                    <span>Parts Sold</span>
-                  </div>
-                </label>
-              </div>
-
-              <div class="toggle-wrapper">
-                <span class="toggle-label">Type</span>
-                <label class="toggle" for="dimensionToggle">
-                  <input type="checkbox" id="dimensionToggle"
-                    {% if stats_dimension == 'user' %}checked{% endif %}
-                    aria-label="Toggle between Department and User">
-                  <span class="toggle-track"></span>
-                  <div class="toggle-labels">
-                    <span>Department</span>
-                    <span>User</span>
+                    <span>Images</span>
+                    <span>Parts Imaged</span>
                   </div>
                 </label>
               </div>
@@ -399,9 +380,15 @@
             <div class="row g-4 mb-4">
               <div class="col-lg-6">
                   <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
-                    <h5 class="text-success mb-0">Showing: {{ date_range_label }}</h5>
+                    <div class="d-flex flex-column">
+                      <h5 class="text-success mb-0">Showing: {{ date_range_label }}</h5>
+                      <small class="text-muted">{{ value_vat_label }}: {{ prev_date_range_label }}</small>
+                    </div>
                     <div class="d-flex align-items-center gap-2 ms-auto">
-                      <button id="saveOrderBtn" class="btn btn-outline-success btn-sm">Save Department Order</button>
+                      <button id="togglePrevModeBtn" class="btn btn-outline-secondary btn-sm">
+                        {{ 'Use Previous Month' if prev_mode == 'mirror' else 'Use Mirrored Range' }}
+                      </button>
+                      <button id="saveOrderBtn" class="btn btn-outline-success btn-sm">Save User Order</button>
                       <small id="saveOrderStatus" class="text-muted"></small>
                     </div>
                   </div>
@@ -428,7 +415,7 @@
                         <td class="text-end">£{{ '%.2f'|format(row[1]) }}</td>
                         <td class="text-end">£{{ '%.2f'|format(row[2]) }}</td>
                       {% else %}
-                        <td class="text-end {% if stats_mode == 'parts' %}parts-breakdown-trigger{% endif %}">{{ '{:,.0f}'.format(row[1]) }}</td>
+                        <td class="text-end">{{ '{:,.0f}'.format(row[1]) }}</td>
                         <td class="text-end">{{ '{:,.0f}'.format(row[2]) }}</td>
                       {% endif %}
                     </tr>
@@ -485,33 +472,6 @@
               </div>
             </div>
 
-            <div class="modal fade" id="partsBreakdownModal" tabindex="-1" aria-labelledby="partsBreakdownModalLabel" aria-hidden="true">
-              <div class="modal-dialog modal-lg modal-dialog-scrollable">
-                <div class="modal-content">
-                  <div class="modal-header">
-                    <div>
-                      <h5 class="modal-title mb-0" id="partsBreakdownModalLabel">Parts sold breakdown</h5>
-                      <small class="text-muted" id="partsBreakdownModalSubtitle"></small>
-                    </div>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                  </div>
-                  <div class="modal-body">
-                    <p class="text-muted small mb-2" id="partsBreakdownStatus"></p>
-                    <div class="table-responsive">
-                      <table class="table table-striped table-sm">
-                        <thead>
-                          <tr>
-                            <th>Item</th>
-                            <th class="text-end">Quantity</th>
-                          </tr>
-                        </thead>
-                        <tbody id="partsBreakdownList"></tbody>
-                      </table>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
           </div>
         </div>
       </div>
@@ -525,8 +485,7 @@
         Chart.register(ChartZoom);
       }
 
-      const statsMode = "{{ stats_mode }}";
-      const statsDimension = "{{ stats_dimension }}";
+      const imageMode = "{{ image_mode }}";
       const filterType = "{{ filter_type }}";
       const modeLabel = "{{ mode_label }}";
       const valueFormat = "{{ value_format }}"; // currency | count
@@ -561,12 +520,6 @@
       const departmentDailyTitle = document.getElementById('departmentDailyTitle');
       const departmentDailySubtitle = document.getElementById('departmentDailySubtitle');
       const departmentDailyCanvas = document.getElementById('departmentDailyChart');
-      const partsBreakdownModalEl = document.getElementById('partsBreakdownModal');
-      let partsBreakdownModal = null;
-      const partsBreakdownTitle = document.getElementById('partsBreakdownModalLabel');
-      const partsBreakdownSubtitle = document.getElementById('partsBreakdownModalSubtitle');
-      const partsBreakdownList = document.getElementById('partsBreakdownList');
-      const partsBreakdownStatus = document.getElementById('partsBreakdownStatus');
 
       let currentChartType = 'bar';
       let chartInstance = null;
@@ -813,71 +766,6 @@
         return minRotation + t * (maxRotation - minRotation);
       }
 
-      function getPartsBreakdownModal() {
-        if (!partsBreakdownModalEl) return null;
-        if (!partsBreakdownModal && window.bootstrap && window.bootstrap.Modal) {
-          partsBreakdownModal = window.bootstrap.Modal.getOrCreateInstance(partsBreakdownModalEl);
-        }
-        return partsBreakdownModal;
-      }
-
-      function buildBreakdownUrl(entity) {
-        const url = new URL("/stats/parts_breakdown", window.location.origin);
-        const params = new URLSearchParams(window.location.search);
-        params.set('mode', statsMode);
-        params.set('dimension', statsDimension);
-        params.set('entity', entity);
-        if (!params.has('filter')) {
-          params.set('filter', filterType);
-        }
-        params.forEach((value, key) => url.searchParams.append(key, value));
-        return url.toString();
-      }
-
-      function renderPartsBreakdown(items) {
-        if (!partsBreakdownList) return;
-        partsBreakdownList.innerHTML = items.map(item => `
-          <tr>
-            <td>${item.itemname || 'Unknown'}</td>
-            <td class="text-end">${Number(item.count || 0).toLocaleString()}</td>
-          </tr>
-        `).join('');
-      }
-
-      async function openPartsBreakdown(entity) {
-        if (statsMode !== 'parts') return;
-        const modal = getPartsBreakdownModal();
-        if (!modal || !partsBreakdownList || !partsBreakdownStatus || !partsBreakdownTitle || !partsBreakdownSubtitle) return;
-
-        partsBreakdownTitle.textContent = `${entity} - Parts sold breakdown`;
-        partsBreakdownSubtitle.textContent = '';
-        partsBreakdownStatus.textContent = 'Loading parts...';
-        partsBreakdownList.innerHTML = '';
-        modal.show();
-
-        try {
-          const response = await fetch(buildBreakdownUrl(entity), { cache: 'no-store' });
-          if (!response.ok) {
-            throw new Error('Failed to load parts breakdown');
-          }
-          const data = await response.json();
-          if (data.date_range_label) {
-            partsBreakdownSubtitle.textContent = data.date_range_label;
-          }
-          if (Array.isArray(data.items) && data.items.length) {
-            renderPartsBreakdown(data.items);
-            const total = Number(data.total || 0).toLocaleString();
-            partsBreakdownStatus.textContent = `Total parts sold: ${total}`;
-          } else {
-            partsBreakdownStatus.textContent = 'No parts sold in this period.';
-            partsBreakdownList.innerHTML = '<tr><td colspan="2" class="text-center text-muted">No items found.</td></tr>';
-          }
-        } catch (err) {
-          console.error(err);
-          partsBreakdownStatus.textContent = 'Unable to load parts breakdown right now.';
-          partsBreakdownList.innerHTML = '<tr><td colspan="2" class="text-center text-danger">Error loading data.</td></tr>';
-        }
-      }
 
       function renderDepartmentMonthlyChart(labels, values, months, department) {
         if (departmentMonthlyChart) {
@@ -916,9 +804,8 @@
 
       async function loadDepartmentMonthly(department, { preserveDaily = false } = {}) {
         try {
-          const url = new URL(`/stats/department/${encodeURIComponent(department)}/monthly`, window.location.origin);
-          url.searchParams.set('mode', statsMode);
-          url.searchParams.set('dimension', statsDimension);
+          const url = new URL(`/image_stats/user/${encodeURIComponent(department)}/monthly`, window.location.origin);
+          url.searchParams.set('mode', imageMode);
           const response = await fetch(url.toString());
           if (!response.ok) return;
           const data = await response.json();
@@ -950,9 +837,8 @@
 
       async function loadDepartmentDaily(department, monthNumber, monthLabel, preserveSelection = false) {
         try {
-          const url = new URL(`/stats/department/${encodeURIComponent(department)}/daily`, window.location.origin);
-          url.searchParams.set('mode', statsMode);
-          url.searchParams.set('dimension', statsDimension);
+          const url = new URL(`/image_stats/user/${encodeURIComponent(department)}/daily`, window.location.origin);
+          url.searchParams.set('mode', imageMode);
           url.searchParams.set('month', monthNumber);
           const response = await fetch(url.toString());
           if (!response.ok) return;
@@ -982,18 +868,6 @@
               event.preventDefault();
               if (row) {
                 moveRow(row, upBtn ? -1 : 1);
-              }
-              return;
-            }
-
-            const partsTrigger = event.target.closest('.parts-breakdown-trigger');
-            if (partsTrigger && statsMode === 'parts') {
-              event.stopPropagation();
-              event.preventDefault();
-              const targetRow = partsTrigger.closest('tr.department-row');
-              const entity = targetRow ? targetRow.dataset.department : null;
-              if (entity) {
-                openPartsBreakdown(entity);
               }
               return;
             }
@@ -1030,8 +904,6 @@
         const tbody = document.getElementById('departmentTableBody');
         tbody.innerHTML = '';
 
-        const breakdownClass = statsMode === 'parts' ? 'parts-breakdown-trigger' : '';
-
         data.rows.forEach(row => {
           const tr = document.createElement('tr');
           tr.classList.add('department-row');
@@ -1042,7 +914,7 @@
           tr.innerHTML = `
             <td class="text-center">${renderReorderControls()}</td>
             <td>${row.department}</td>
-            <td class="text-end ${breakdownClass}">${formatTableValue(row.total)}</td>
+            <td class="text-end">${formatTableValue(row.total)}</td>
             <td class="text-end">${formatTableValue(row.total_vat)}</td>
           `;
           tbody.appendChild(tr);
@@ -1113,7 +985,7 @@
       async function persistDepartmentOrder() {
         const order = getDepartmentOrder();
         try {
-          const response = await fetch('/stats/order', {
+          const response = await fetch('/image_stats/order', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ order })
@@ -1147,18 +1019,19 @@
 
       const liveCheckbox = document.getElementById('liveToggle');
       const modeToggle = document.getElementById('modeToggle');
-      const dimensionToggle = document.getElementById('dimensionToggle');
+      const togglePrevModeBtn = document.getElementById('togglePrevModeBtn');
+      const dimensionToggle = null;
 
       function buildDataUrl() {
-        const url = new URL("{{ url_for('stats_data') }}", window.location.origin);
+        const url = new URL("{{ url_for('image_stats_data') }}", window.location.origin);
 
         // Reuse the current page's query so live updates reflect the user's
         // active filter and exclusion settings (including per-user defaults).
         const params = new URLSearchParams(window.location.search);
 
         // Ensure the current mode is always set for data refreshes.
-        params.set('mode', statsMode);
-        params.set('dimension', statsDimension);
+        params.set('mode', imageMode);
+        params.set('prev_mode', "{{ prev_mode }}");
 
         // Guarantee the filter param so the backend can resolve date ranges
         // even if the URL was missing one.
@@ -1245,20 +1118,20 @@
 
       if (modeToggle) {
         modeToggle.addEventListener('change', (event) => {
-          const nextMode = event.target.checked ? 'parts' : 'sales';
+          const nextMode = event.target.checked ? 'parts_imaged' : 'images';
           const url = new URL(window.location.href);
           url.searchParams.set('mode', nextMode);
-          url.searchParams.set('dimension', statsDimension);
           window.location.href = url.toString();
         });
       }
 
-      if (dimensionToggle) {
-        dimensionToggle.addEventListener('change', (event) => {
-          const nextDimension = event.target.checked ? 'user' : 'department';
+      if (togglePrevModeBtn) {
+        togglePrevModeBtn.addEventListener('click', (event) => {
+          event.preventDefault();
           const url = new URL(window.location.href);
-          url.searchParams.set('dimension', nextDimension);
-          url.searchParams.set('mode', statsMode);
+          const currentPrevMode = url.searchParams.get('prev_mode') || "{{ prev_mode }}";
+          const nextPrevMode = currentPrevMode === 'month' ? 'mirror' : 'month';
+          url.searchParams.set('prev_mode', nextPrevMode);
           window.location.href = url.toString();
         });
       }
