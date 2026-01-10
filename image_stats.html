@@ -1,0 +1,1157 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Silverlake {{ mode_label }} Stats</title>
+	<link rel="icon" href="{{ url_for('static', filename='SLK Logo.png') }}">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
+    <style>
+      :root {
+        --sidebar-expanded: 260px;
+        --sidebar-collapsed: calc(var(--sidebar-expanded) * 0.3);
+        --sidebar-bg: #5c9c13;
+      }
+      body {
+        margin: 0;
+        background: url("{{ url_for('static', filename='background.jpg') }}") no-repeat center center fixed;
+        background-size: cover;
+        font-family: 'Montserrat', sans-serif;
+        color: black;
+      }
+      h1, h2, label {
+        color: #5c9c13;
+      }
+      .page-wrapper {
+        display: flex;
+        min-height: 100vh;
+      }
+      .sidebar {
+        width: var(--sidebar-collapsed);
+        background-color: var(--sidebar-bg);
+        color: #fff;
+        position: fixed;
+        inset: 0 auto 0 0;
+        overflow: hidden;
+        transition: width 0.3s ease;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        padding: 16px 12px;
+        z-index: 1000;
+      }
+      .sidebar:hover {
+        width: var(--sidebar-expanded);
+      }
+      .sidebar .brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 8px 10px;
+      }
+      .sidebar .logo-collapsed {
+        height: 34px;
+        opacity: 1;
+        transition: opacity 0.2s ease;
+      }
+      .sidebar .logo-expanded {
+        height: 34px;
+        opacity: 0;
+        transform: translateX(-6px);
+        transition: opacity 0.2s ease, transform 0.2s ease;
+      }
+      .sidebar:hover .logo-collapsed {
+        opacity: 0;
+      }
+      .sidebar:hover .logo-expanded {
+        opacity: 1;
+        transform: translateX(0);
+      }
+      .sidebar .brand-text {
+        font-weight: 700;
+        font-size: 1.05rem;
+        white-space: nowrap;
+        opacity: 0;
+        transition: opacity 0.2s ease;
+      }
+      .sidebar:hover .brand-text {
+        opacity: 1;
+      }
+      .sidebar .nav-section {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .sidebar .nav-link {
+        color: #fff;
+        font-weight: 700;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 10px 12px;
+        border-radius: 10px;
+        text-decoration: none;
+        transition: background-color 0.2s ease, color 0.2s ease;
+        font-size: 0.95rem;
+      }
+      .sidebar .nav-link i {
+        width: 20px;
+        text-align: center;
+        font-size: 1.15rem;
+      }
+      .sidebar .nav-link .link-text {
+        white-space: nowrap;
+        opacity: 0;
+        transform: translateX(-6px);
+        transition: opacity 0.2s ease, transform 0.2s ease;
+      }
+      .sidebar:hover .nav-link .link-text {
+        opacity: 1;
+        transform: translateX(0);
+      }
+      .sidebar .nav-link:hover,
+      .sidebar .nav-link.active {
+        background-color: rgba(255, 255, 255, 0.16);
+        color: #fff;
+      }
+      .sidebar-footer {
+        margin-top: auto;
+      }
+      .content {
+        flex: 1;
+        margin-left: var(--sidebar-collapsed);
+        transition: margin-left 0.3s ease;
+      }
+      .sidebar:hover ~ .content {
+        margin-left: var(--sidebar-expanded);
+      }
+      .content-inner {
+        padding: 24px;
+      }
+      .toggle-wrapper {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 1.5rem;
+      }
+      .toggle-label {
+        font-weight: 600;
+        color: #5c9c13;
+      }
+      .toggle {
+        position: relative;
+        width: 270px;
+        height: 48px;
+        background: #cde7b1;
+        border-radius: 999px;
+        box-shadow: inset 0 2px 4px rgba(0,0,0,0.15);
+        cursor: pointer;
+        border: 2px solid #5c9c13;
+        overflow: hidden;
+      }
+      .toggle input {
+        opacity: 0;
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        position: absolute;
+        inset: 0;
+        cursor: pointer;
+        z-index: 3;
+      }
+      .toggle-track {
+        position: absolute;
+        top: 4px;
+        left: 4px;
+        width: calc(50% - 8px);
+        height: calc(100% - 8px);
+        background: #5c9c13;
+        border-radius: 999px;
+        transition: transform 0.25s ease;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+        z-index: 1;
+      }
+      .toggle input:checked + .toggle-track {
+        transform: translateX(100%);
+      }
+      .toggle-labels {
+        position: relative;
+        z-index: 2;
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        height: 100%;
+        align-items: center;
+        text-align: center;
+        font-weight: 700;
+        color: #1f3b08;
+        pointer-events: none;
+      }
+      .toggle-labels span {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: color 0.2s ease;
+      }
+      .toggle input:checked ~ .toggle-labels span:first-child {
+        color: #2f2f2f;
+      }
+      .toggle input:not(:checked) ~ .toggle-labels span:last-child {
+        color: #2f2f2f;
+      }
+      .btn-primary, .btn-success {
+        background-color: #5c9c13;
+        border: none;
+      }
+      .btn-primary:hover, .btn-success:hover {
+        background-color: #4a8010;
+      }
+      .form-control {
+        background-color: #d6f5c1;
+        color: #333;
+        border: 1px solid #333;
+      }
+      .form-control:focus {
+        border-color: #5c9c13;
+        box-shadow: 0 0 5px #5c9c13;
+      }
+      table {
+        color: #f0f0f0;
+        background-color: #111;
+      }
+      th, td {
+        border-bottom: 1px solid #5c9c13;
+      }
+      .exclusion-card .exclusion-body {
+        display: none;
+      }
+      .exclusion-card:hover .exclusion-body,
+      .exclusion-card:focus-within .exclusion-body {
+        display: block;
+      }
+      .logo {
+        display: flex;
+        justify-content: flex-end;
+        margin-bottom: 20px;
+      }
+      .logo img {
+        width: 150px;
+        max-width: 50%;
+        height: auto;
+      }
+      .toggle-stack {
+        display: flex !important;
+        flex-direction: row;
+        gap: 0.75rem;
+        margin-bottom: 1.5rem;
+      }
+      @media (max-width: 768px) {
+        :root {
+          --sidebar-expanded: 220px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page-wrapper">
+      <nav class="sidebar">
+        <div class="brand">
+          <img src="{{ url_for('static', filename='SLK Logo.png') }}" alt="Silverlake Collapsed Logo" class="logo-collapsed">
+          <img src="{{ url_for('static', filename='logo-slg-strip.svg') }}" alt="Silverlake Logo" class="logo-expanded">
+        </div>
+        <div class="nav-section">
+          <a href="{{ url_for('index') }}" class="nav-link">
+            <i class="fas fa-magnifying-glass-dollar"></i>
+            <span class="link-text">Opportunity Finder</span>
+          </a>
+          <a href="{{ url_for('image_stats') }}" class="nav-link active">
+            <i class="fas fa-chart-pie"></i>
+            <span class="link-text">Image Stats</span>
+          </a>
+          <a href="{{ url_for('stats') }}" class="nav-link">
+            <i class="fas fa-chart-column"></i>
+            <span class="link-text">Sales Stats</span>
+          </a>
+          <a href="{{ url_for('crush_vehicles') }}" class="nav-link">
+            <i class="fas fa-car-burst"></i>
+            <span class="link-text">Crush Vehicles</span>
+          </a>
+          <a href="{{ url_for('logs') }}" class="nav-link">
+            <i class="fas fa-clipboard-list"></i>
+            <span class="link-text">Logs</span>
+          </a>
+        </div>
+        <div class="sidebar-footer">
+          <a href="{{ url_for('logout') }}" class="nav-link">
+            <i class="fas fa-arrow-right-from-bracket"></i>
+            <span class="link-text">Logout ({{ current_user }})</span>
+          </a>
+        </div>
+      </nav>
+      <div class="content">
+        <div class="content-inner">
+          <div class="container">
+            <div class="logo">
+              <img src="{{ url_for('static', filename='logo-slg-strip.svg') }}" alt="Silverlake Logo">
+            </div>
+
+            <h1 class="mb-4 text-center">{{ mode_label }} Stats by {{ entity_label }}</h1>
+
+            <div class="mb-3 d-flex align-items-center flex-wrap gap-2">
+              <div class="d-flex flex-wrap gap-2">
+                <a href="{{ url_for('image_stats', filter='today', mode=image_mode, prev_mode=prev_mode, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">Today</a>
+                <a href="{{ url_for('image_stats', filter='yesterday', mode=image_mode, prev_mode=prev_mode, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">Yesterday</a>
+                <a href="{{ url_for('image_stats', filter='this_month', mode=image_mode, prev_mode=prev_mode, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">This Month</a>
+                <a href="{{ url_for('image_stats', filter='last_month', mode=image_mode, prev_mode=prev_mode, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">Last Month</a>
+                <a href="{{ url_for('image_stats', filter='this_year', mode=image_mode, prev_mode=prev_mode, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">This Year</a>
+                <a href="{{ url_for('image_stats', filter='last_year', mode=image_mode, prev_mode=prev_mode, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">Last Year</a>
+                <form method="get" class="d-inline">
+                  <input type="hidden" name="filter" value="custom">
+                  <input type="hidden" name="mode" value="{{ image_mode }}">
+                  <input type="hidden" name="prev_mode" value="{{ prev_mode }}">
+                  <input type="date" name="start_date" required>
+                  <input type="date" name="end_date" required>
+                  {% if live_enabled %}
+                    <input type="hidden" name="live" value="1">
+                  {% endif %}
+                  <button type="submit" class="btn btn-sm btn-primary">Custom</button>
+                </form>
+              </div>
+              <div class="form-check ms-2">
+                <input class="form-check-input" type="checkbox" id="liveToggle" {% if live_enabled %}checked{% endif %}>
+                <label class="form-check-label text-success" for="liveToggle">Live</label>
+              </div>
+            </div>
+
+            <div class="card mb-4 shadow-sm exclusion-card">
+              <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                  <h5 class="mb-0">Exclude {{ entity_label_plural }}</h5>
+                </div>
+                <div class="exclusion-body mt-3">
+                  <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
+                    <p class="mb-0 text-muted">Hover to show user exclusions.</p>
+                    <div class="d-flex gap-2">
+                      <button type="submit" form="departmentFilterForm" class="btn btn-sm btn-primary">Apply</button>
+                      <button type="submit" form="departmentFilterForm" formaction="{{ url_for('save_stats_exclusions') }}" formmethod="post" class="btn btn-sm btn-success">Set as Default</button>
+                      <small class="text-muted align-self-center">Defaults are saved per user.</small>
+                    </div>
+                  </div>
+                  <form id="departmentFilterForm" class="row g-2" method="get" action="{{ url_for('image_stats') }}">
+                    <input type="hidden" name="filter" value="{{ filter_type }}">
+                    <input type="hidden" name="mode" value="{{ image_mode }}">
+                    <input type="hidden" name="prev_mode" value="{{ prev_mode }}">
+                    <input type="hidden" name="start_date" value="{{ start_date.isoformat() if start_date else '' }}">
+                    <input type="hidden" name="end_date" value="{{ end_date.isoformat() if end_date else '' }}">
+                    <input type="hidden" id="liveInputField" name="live" value="{{ 1 if live_enabled else '' }}">
+                    {% for dept in all_departments %}
+                      <div class="col-sm-6 col-md-4 col-lg-3">
+                        <div class="form-check">
+                          <input class="form-check-input" type="checkbox" name="exclude" value="{{ dept }}" id="dept-{{ loop.index }}" {% if dept in excluded_departments %}checked{% endif %}>
+                          <label class="form-check-label" for="dept-{{ loop.index }}">{{ dept }}</label>
+                        </div>
+                      </div>
+                    {% endfor %}
+                  </form>
+                </div>
+              </div>
+            </div>
+
+            <div class="toggle-stack">
+              <div class="toggle-wrapper">
+                <span class="toggle-label">Mode</span>
+                <label class="toggle" for="modeToggle">
+                  <input type="checkbox" id="modeToggle"
+                    {% if image_mode == 'parts_imaged' %}checked{% endif %}
+                    aria-label="Toggle between Images and Parts Imaged">
+                  <span class="toggle-track"></span>
+                  <div class="toggle-labels">
+                    <span>Images</span>
+                    <span>Parts Imaged</span>
+                  </div>
+                </label>
+              </div>
+            </div>
+
+            <div class="row g-4 mb-4">
+              <div class="col-lg-6">
+                  <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+                    <div class="d-flex flex-column">
+                      <h5 class="text-success mb-0">Showing: {{ date_range_label }}</h5>
+                      <small class="text-muted">{{ value_vat_label }}: {{ prev_date_range_label }}</small>
+                    </div>
+                    <div class="d-flex align-items-center gap-2 ms-auto">
+                      <button id="togglePrevModeBtn" class="btn btn-outline-secondary btn-sm">
+                        {{ 'Use Previous Month' if prev_mode == 'mirror' else 'Use Mirrored Range' }}
+                      </button>
+                      <button id="saveOrderBtn" class="btn btn-outline-success btn-sm">Save User Order</button>
+                      <small id="saveOrderStatus" class="text-muted"></small>
+                    </div>
+                  </div>
+                  <table class="table table-striped">
+                  <thead>
+                    <tr>
+                      <th class="text-center">Order</th>
+                      <th>{{ entity_label }}</th>
+                      <th class="text-end">{{ value_label }}</th>
+                      <th class="text-end">{{ value_vat_label }}</th>
+                    </tr>
+                  </thead>
+                  <tbody id="departmentTableBody">
+                    {% for row in rows %}
+                    <tr class="department-row" data-department="{{ row[0] }}" data-total="{{ row[1] }}" data-total-vat="{{ row[2] }}" style="cursor: pointer;">
+                      <td class="text-center">
+                        <div class="btn-group btn-group-sm" role="group">
+                          <button class="btn btn-light border move-up" title="Move up">▲</button>
+                          <button class="btn btn-light border move-down" title="Move down">▼</button>
+                        </div>
+                      </td>
+                      <td>{{ row[0] }}</td>
+                      {% if value_format == 'currency' %}
+                        <td class="text-end">£{{ '%.2f'|format(row[1]) }}</td>
+                        <td class="text-end">£{{ '%.2f'|format(row[2]) }}</td>
+                      {% else %}
+                        <td class="text-end">{{ '{:,.0f}'.format(row[1]) }}</td>
+                        <td class="text-end">{{ '{:,.0f}'.format(row[2]) }}</td>
+                      {% endif %}
+                    </tr>
+                    {% endfor %}
+                  </tbody>
+                  <tfoot>
+                    <tr class="fw-bold">
+                      <td></td>
+                      <td>Total</td>
+                      {% if value_format == 'currency' %}
+                        <td class="text-end" id="totalSumCell">£{{ '%.2f'|format(sum_total) }}</td>
+                        <td class="text-end" id="totalVatSumCell">£{{ '%.2f'|format(sum_total_vat) }}</td>
+                      {% else %}
+                        <td class="text-end" id="totalSumCell">{{ '{:,.0f}'.format(sum_total) }}</td>
+                        <td class="text-end" id="totalVatSumCell">{{ '{:,.0f}'.format(sum_total_vat) }}</td>
+                      {% endif %}
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+              <div class="col-lg-6">
+                <div class="card shadow-sm">
+                  <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                      <h5 class="card-title mb-0" id="chartTitle">{{ value_label }} by Department (Bar)</h5>
+                      <div class="d-flex gap-2">
+                        <button id="resetZoomBtn" class="btn btn-sm btn-outline-secondary">Reset Zoom</button>
+                        <button id="toggleChartBtn" class="btn btn-sm btn-success">Show Pie Chart</button>
+                      </div>
+                    </div>
+                    <canvas id="salesChart" height="180"></canvas>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="card shadow-sm mb-4 d-none" id="departmentMonthlyCard">
+              <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+                  <h5 class="card-title mb-0" id="departmentMonthlyTitle"></h5>
+                  <small class="text-muted" id="departmentMonthlySubtitle"></small>
+                </div>
+                <canvas id="departmentMonthlyChart" height="140"></canvas>
+              </div>
+            </div>
+
+            <div class="card shadow-sm mb-4 d-none" id="departmentDailyCard">
+              <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+                  <h5 class="card-title mb-0" id="departmentDailyTitle"></h5>
+                  <small class="text-muted" id="departmentDailySubtitle"></small>
+                </div>
+                <canvas id="departmentDailyChart" height="140"></canvas>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+    </div>
+
+     <script>
+      if (typeof Chart !== 'undefined' && typeof ChartDataLabels !== 'undefined') {
+        Chart.register(ChartDataLabels);
+      }
+      if (typeof Chart !== 'undefined' && typeof ChartZoom !== 'undefined') {
+        Chart.register(ChartZoom);
+      }
+
+      const imageMode = "{{ image_mode }}";
+      const filterType = "{{ filter_type }}";
+      const modeLabel = "{{ mode_label }}";
+      const valueFormat = "{{ value_format }}"; // currency | count
+      const valueLabel = "{{ value_label }}";
+      const entityLabel = "{{ entity_label }}";
+      const chartTitleBase = `${valueLabel} by ${entityLabel}`;
+
+      let labels = {{ chart_labels | tojson }};
+      let values = {{ chart_values | tojson }};
+
+      function generateColors(count) {
+        return Array.from({ length: count }).map((_, idx) => {
+          const base = [92, 156, 19];
+          const factor = 0.6 + (idx % 5) * 0.1;
+          return `rgba(${Math.floor(base[0] * factor)}, ${Math.floor(base[1] * factor)}, ${Math.floor(base[2] * factor)}, 0.8)`;
+        });
+      }
+
+      let colors = generateColors(labels.length);
+
+      const chartTitle = document.getElementById('chartTitle');
+      const toggleChartBtn = document.getElementById('toggleChartBtn');
+      const resetZoomBtn = document.getElementById('resetZoomBtn');
+      const chartCanvas = document.getElementById('salesChart');
+      const saveOrderBtn = document.getElementById('saveOrderBtn');
+      const saveOrderStatus = document.getElementById('saveOrderStatus');
+      const departmentMonthlyCard = document.getElementById('departmentMonthlyCard');
+      const departmentMonthlyTitle = document.getElementById('departmentMonthlyTitle');
+      const departmentMonthlySubtitle = document.getElementById('departmentMonthlySubtitle');
+      const departmentMonthlyCanvas = document.getElementById('departmentMonthlyChart');
+      const departmentDailyCard = document.getElementById('departmentDailyCard');
+      const departmentDailyTitle = document.getElementById('departmentDailyTitle');
+      const departmentDailySubtitle = document.getElementById('departmentDailySubtitle');
+      const departmentDailyCanvas = document.getElementById('departmentDailyChart');
+
+      let currentChartType = 'bar';
+      let chartInstance = null;
+      let departmentMonthlyChart = null;
+      let departmentDailyChart = null;
+      let selectedDepartment = null;
+      let selectedMonthNumber = null;
+      let selectedMonthLabel = null;
+      let orderDirty = false;
+
+      function formatValue(value, { includeSymbol = true } = {}) {
+        const numericValue = Number(value) || 0;
+        if (valueFormat === 'currency') {
+          const prefix = includeSymbol ? '£' : '';
+          return `${prefix}${numericValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        }
+        return numericValue.toLocaleString();
+      }
+
+      function axisLabel(value) {
+        if (valueFormat === 'currency') {
+          return '£' + value.toLocaleString();
+        }
+        return value.toLocaleString();
+      }
+
+      function buildZoomOptions(mode) {
+        return {
+          pan: {
+            enabled: true,
+            mode,
+            modifierKey: 'shift'
+          },
+          zoom: {
+            wheel: { enabled: true },
+            pinch: { enabled: true },
+            drag: { enabled: true, threshold: 6 },
+            mode
+          },
+          limits: {
+            y: { min: 0 }
+          }
+        };
+      }
+
+      function buildChartConfig(type) {
+        if (type === 'pie') {
+          return {
+            type: 'pie',
+            data: {
+              labels,
+              datasets: [{
+                data: values,
+                backgroundColor: colors
+              }]
+            },
+            options: {
+              plugins: {
+                legend: { display: false },
+                zoom: buildZoomOptions('xy'),
+                datalabels: {
+                  display: function(context) {
+                    const data = context.dataset.data || [];
+                    const value = data[context.dataIndex] || 0;
+                    const total = data.reduce((acc, val) => acc + val, 0);
+                    if (!total) return false;
+
+                    // Only show labels for slices that have enough room to avoid overlap.
+                    const percentage = value / total;
+                    return percentage >= 0.025;
+                  },
+                  color: '#ffffff',
+                  backgroundColor: 'rgba(0, 0, 0, 0.25)',
+                  borderRadius: 4,
+                  padding: 4,
+                  font: function(context) {
+                    const data = context.dataset.data || [];
+                    const meta = context.chart.getDatasetMeta(context.datasetIndex);
+                    const arc = meta && meta.data ? meta.data[context.dataIndex] : null;
+                    const radius = arc ? arc.outerRadius : 0;
+                    const size = Math.max(10, Math.min(14, radius * 0.06));
+                    return { weight: 'bold', size };
+                  },
+                  align: 'center',
+                  anchor: 'center',
+                  offset: 0,
+                  clamp: true,
+                  clip: true,
+                  formatter: function(value, context) {
+                    return context.chart.data.labels[context.dataIndex];
+                  }
+                },
+                tooltip: {
+                  callbacks: {
+                    label: function(context) {
+                      const value = context.parsed || 0;
+                      const total = context.dataset.data.reduce((acc, val) => acc + val, 0);
+                      const percentage = total ? ((value / total) * 100).toFixed(1) : 0;
+                      return `${context.label}: ${formatValue(value)} (${percentage}%)`;
+                    }
+                  }
+                }
+              }
+            }
+          };
+        }
+
+        return {
+          type: 'bar',
+          data: {
+            labels,
+            datasets: [{
+              label: valueLabel,
+              data: values,
+              backgroundColor: colors,
+            }]
+            },
+            options: {
+              responsive: true,
+              plugins: {
+                datalabels: {
+                  display: true,
+                  anchor: 'end',
+                  align: 'end',
+                  color: '#000',
+                  formatter: (value) => formatValue(value),
+                  rotation: (context) => computeDatalabelRotation(context.chart.data.labels.length)
+                },
+                legend: { display: false },
+                tooltip: {
+                  callbacks: {
+                    label: function(context) {
+                      const value = context.parsed.y || 0;
+                      return formatValue(value);
+                    }
+                  }
+                },
+                zoom: buildZoomOptions('xy')
+              },
+              layout: {
+                padding: { top: 30 }
+              },
+              scales: {
+                y: {
+                  grace: '15%',
+                  ticks: {
+                    callback: function(value) {
+                      return axisLabel(value);
+                    }
+                  },
+                  beginAtZero: true
+                }
+              }
+            }
+          };
+        }
+
+      function renderChart(type) {
+        if (chartInstance) {
+          chartInstance.destroy();
+        }
+
+        chartInstance = new Chart(chartCanvas, buildChartConfig(type));
+        currentChartType = type;
+        chartTitle.textContent = type === 'pie' ? `${chartTitleBase} (Pie)` : `${chartTitleBase} (Bar)`;
+        toggleChartBtn.textContent = type === 'pie' ? 'Show Bar Chart' : 'Show Pie Chart';
+      }
+
+      toggleChartBtn.addEventListener('click', () => {
+        const nextType = currentChartType === 'bar' ? 'pie' : 'bar';
+        renderChart(nextType);
+      });
+
+      if (resetZoomBtn) {
+        resetZoomBtn.addEventListener('click', () => {
+          if (chartInstance && typeof chartInstance.resetZoom === 'function') {
+            chartInstance.resetZoom();
+          }
+        });
+      }
+
+      function buildDepartmentBarConfig(labels, values, onBarClick, datalabelRotation = 0) {
+      return {
+        type: 'bar',
+        data: {
+          labels,
+          datasets: [{
+            label: valueLabel,
+            data: values,
+            backgroundColor: generateColors(labels.length)
+          }]
+        },
+          options: {
+            responsive: true,
+            onClick: function(evt, activeEls) {
+              if (onBarClick && activeEls.length) {
+                const index = activeEls[0].index;
+                onBarClick(index);
+              }
+            },
+            layout: {
+              padding: { top: 0 }
+            },
+            plugins: {
+              legend: { display: false },
+              datalabels: {
+                display: true,
+                anchor: 'end',
+                align: 'end',
+                color: '#000',
+                formatter: (value) => formatValue(value),
+                rotation: datalabelRotation
+              },
+              tooltip: {
+                callbacks: {
+                  label: function(context) {
+                    const value = context.parsed.y || 0;
+                    return formatValue(value);
+                  }
+                }
+              }
+            },
+            scales: {
+              y: {
+                beginAtZero: true,
+                ticks: {
+                  callback: function(value) {
+                    return axisLabel(value);
+                  }
+                }
+              }
+            }
+          }
+        };
+      }
+
+      function computeDatalabelRotation(labelCount) {
+        const minRotation = -35;
+        const maxRotation = -65;
+        const minCount = 5;
+        const maxCount = 30;
+        const clampedCount = Math.max(minCount, Math.min(maxCount, labelCount));
+        const t = (clampedCount - minCount) / (maxCount - minCount);
+        return minRotation + t * (maxRotation - minRotation);
+      }
+
+
+      function renderDepartmentMonthlyChart(labels, values, months, department) {
+        if (departmentMonthlyChart) {
+          departmentMonthlyChart.destroy();
+        }
+
+
+        departmentMonthlyTitle.textContent = `${department} - ${valueLabel} by month (current year)`;
+        departmentMonthlySubtitle.textContent = 'Click a month to see daily totals';
+        departmentMonthlyCard.classList.remove('d-none');
+
+        departmentMonthlyChart = new Chart(
+          departmentMonthlyCanvas,
+          buildDepartmentBarConfig(labels, values, (index) => {
+            const monthNumber = months[index];
+            const monthLabel = labels[index];
+            loadDepartmentDaily(department, monthNumber, monthLabel);
+          })
+        );
+      }
+
+      function renderDepartmentDailyChart(labels, values, department, year, monthLabel) {
+        if (departmentDailyChart) {
+          departmentDailyChart.destroy();
+        }
+
+        departmentDailyTitle.textContent = `${department} - ${valueLabel} for ${monthLabel} ${year}`;
+        departmentDailySubtitle.textContent = 'Click another month above to change view';
+        departmentDailyCard.classList.remove('d-none');
+
+        departmentDailyChart = new Chart(
+          departmentDailyCanvas,
+          buildDepartmentBarConfig(labels, values, undefined, computeDatalabelRotation(labels.length))
+        );
+      }
+
+      async function loadDepartmentMonthly(department, { preserveDaily = false } = {}) {
+        try {
+          const url = new URL(`/image_stats/user/${encodeURIComponent(department)}/monthly`, window.location.origin);
+          url.searchParams.set('mode', imageMode);
+          const response = await fetch(url.toString());
+          if (!response.ok) return;
+          const data = await response.json();
+          if (!data.labels.length) {
+            departmentMonthlyCard.classList.add('d-none');
+            departmentDailyCard.classList.add('d-none');
+            return;
+          }
+          renderDepartmentMonthlyChart(data.labels, data.values, data.months, department);
+          if (!preserveDaily || !selectedMonthNumber) {
+            selectedMonthNumber = null;
+            selectedMonthLabel = null;
+            departmentDailyCard.classList.add('d-none');
+          } else {
+            const monthIdx = data.months.indexOf(Number(selectedMonthNumber));
+            if (monthIdx === -1) {
+              selectedMonthNumber = null;
+              selectedMonthLabel = null;
+              departmentDailyCard.classList.add('d-none');
+            } else {
+              const monthLabel = data.labels[monthIdx];
+              await loadDepartmentDaily(department, selectedMonthNumber, monthLabel, true);
+            }
+          }
+        } catch (err) {
+          console.error('Failed to load department monthly totals', err);
+        }
+      }
+
+      async function loadDepartmentDaily(department, monthNumber, monthLabel, preserveSelection = false) {
+        try {
+          const url = new URL(`/image_stats/user/${encodeURIComponent(department)}/daily`, window.location.origin);
+          url.searchParams.set('mode', imageMode);
+          url.searchParams.set('month', monthNumber);
+          const response = await fetch(url.toString());
+          if (!response.ok) return;
+          const data = await response.json();
+          if (!preserveSelection) {
+            selectedMonthNumber = monthNumber;
+            selectedMonthLabel = monthLabel;
+          }
+          renderDepartmentDailyChart(data.labels, data.values, department, data.year, monthLabel);
+        } catch (err) {
+          console.error('Failed to load department daily totals', err);
+        }
+      }
+
+      function attachDepartmentRowHandlers() {
+        const tbody = document.getElementById('departmentTableBody');
+        if (!tbody) return;
+
+        // Use delegated listener so clicks keep working even after live table rebuilds.
+        if (!tbody.dataset.handlerAttached) {
+          tbody.addEventListener('click', (event) => {
+            const upBtn = event.target.closest('.move-up');
+            const downBtn = event.target.closest('.move-down');
+            const row = event.target.closest('tr.department-row');
+            if (upBtn || downBtn) {
+              event.stopPropagation();
+              event.preventDefault();
+              if (row) {
+                moveRow(row, upBtn ? -1 : 1);
+              }
+              return;
+            }
+
+            if (!row) return;
+            const dept = row.dataset.department;
+            if (!dept) return;
+            selectedDepartment = dept;
+            selectedMonthNumber = null;
+            selectedMonthLabel = null;
+            loadDepartmentMonthly(dept);
+          });
+          tbody.dataset.handlerAttached = 'true';
+        }
+      }
+
+      function formatTableValue(amount) {
+        if (valueFormat === 'currency') {
+          return `£${Number(amount).toFixed(2)}`;
+        }
+        return Number(amount).toLocaleString();
+      }
+
+      function renderReorderControls() {
+        return `
+          <div class="btn-group btn-group-sm" role="group">
+            <button class="btn btn-light border move-up" title="Move up">▲</button>
+            <button class="btn btn-light border move-down" title="Move down">▼</button>
+          </div>
+        `;
+      }
+
+      function rebuildTable(data) {
+        const tbody = document.getElementById('departmentTableBody');
+        tbody.innerHTML = '';
+
+        data.rows.forEach(row => {
+          const tr = document.createElement('tr');
+          tr.classList.add('department-row');
+          tr.dataset.department = row.department;
+          tr.dataset.total = row.total;
+          tr.dataset.totalVat = row.total_vat;
+          tr.style.cursor = 'pointer';
+          tr.innerHTML = `
+            <td class="text-center">${renderReorderControls()}</td>
+            <td>${row.department}</td>
+            <td class="text-end">${formatTableValue(row.total)}</td>
+            <td class="text-end">${formatTableValue(row.total_vat)}</td>
+          `;
+          tbody.appendChild(tr);
+        });
+		
+        document.getElementById('totalSumCell').textContent = formatTableValue(data.sum_total);
+        document.getElementById('totalVatSumCell').textContent = formatTableValue(data.sum_total_vat);
+        document.getElementById('chartTitle').textContent = currentChartType === 'pie'
+          ? `${chartTitleBase} (Pie)`
+          : `${chartTitleBase} (Bar)`;
+        document.querySelector('.text-success.mb-0').textContent = `Showing: ${data.date_range_label}`;
+
+        attachDepartmentRowHandlers();
+      }
+
+      function getTableRows() {
+        return Array.from(document.querySelectorAll('#departmentTableBody tr.department-row'));
+      }
+
+      function getDepartmentOrder() {
+        return getTableRows().map(row => row.dataset.department);
+      }
+
+      function moveRow(row, direction) {
+        const sibling = direction < 0 ? row.previousElementSibling : row.nextElementSibling;
+        if (!sibling) return;
+
+        if (direction < 0) {
+          row.parentElement.insertBefore(row, sibling);
+        } else {
+          row.parentElement.insertBefore(sibling, row);
+        }
+
+        updateChartFromTable();
+        flagUnsavedOrder();
+      }
+
+      function updateChartFromTable() {
+        const rows = getTableRows();
+        labels = rows.map(row => row.dataset.department);
+        values = rows.map(row => Number(row.dataset.total));
+        colors = generateColors(labels.length);
+
+        if (chartInstance) {
+          chartInstance.data.labels = labels;
+          chartInstance.data.datasets[0].data = values;
+          chartInstance.data.datasets[0].backgroundColor = colors;
+          chartInstance.update();
+        }
+      }
+
+      function flagUnsavedOrder() {
+        orderDirty = true;
+        if (saveOrderStatus) {
+          saveOrderStatus.textContent = 'Order not saved';
+          saveOrderStatus.classList.remove('text-success');
+        }
+      }
+
+      function markOrderSaved() {
+        orderDirty = false;
+        if (saveOrderStatus) {
+          saveOrderStatus.textContent = 'Order saved for you';
+          saveOrderStatus.classList.add('text-success');
+        }
+      }
+
+      async function persistDepartmentOrder() {
+        const order = getDepartmentOrder();
+        try {
+          const response = await fetch('/image_stats/order', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ order })
+          });
+
+          if (!response.ok) {
+            throw new Error('Failed to save order');
+          }
+          markOrderSaved();
+        } catch (err) {
+          console.error(err);
+          if (saveOrderStatus) {
+            saveOrderStatus.textContent = 'Could not save order';
+            saveOrderStatus.classList.remove('text-success');
+          }
+        }
+      }
+
+      function updateChartData(data) {
+        labels = data.chart_labels;
+        values = data.chart_values;
+        colors = generateColors(labels.length);
+
+        if (chartInstance) {
+          chartInstance.data.labels = labels;
+          chartInstance.data.datasets[0].data = values;
+          chartInstance.data.datasets[0].backgroundColor = colors;
+          chartInstance.update();
+        }
+      }
+
+      const liveCheckbox = document.getElementById('liveToggle');
+      const modeToggle = document.getElementById('modeToggle');
+      const togglePrevModeBtn = document.getElementById('togglePrevModeBtn');
+      const dimensionToggle = null;
+
+      function buildDataUrl() {
+        const url = new URL("{{ url_for('image_stats_data') }}", window.location.origin);
+
+        // Reuse the current page's query so live updates reflect the user's
+        // active filter and exclusion settings (including per-user defaults).
+        const params = new URLSearchParams(window.location.search);
+
+        // Ensure the current mode is always set for data refreshes.
+        params.set('mode', imageMode);
+        params.set('prev_mode', "{{ prev_mode }}");
+
+        // Guarantee the filter param so the backend can resolve date ranges
+        // even if the URL was missing one.
+        if (!params.has('filter')) {
+          params.set('filter', "{{ filter_type }}");
+        }
+
+        params.forEach((value, key) => {
+          // Preserve multi-value params like "exclude".
+          url.searchParams.append(key, value);
+        });
+
+        return url.toString();
+      }
+
+      let liveInterval = null;
+
+      async function refreshStats() {
+        try {
+          const response = await fetch(buildDataUrl(), { cache: 'no-store' });
+          if (!response.ok) return;
+          const data = await response.json();
+          rebuildTable(data);
+          updateChartData(data);
+
+          if (selectedDepartment) {
+            await loadDepartmentMonthly(selectedDepartment, { preserveDaily: true });
+          }
+        } catch (err) {
+          console.error('Live stats refresh failed', err);
+        }
+      }
+
+      function syncLiveParam(checked) {
+        const url = new URL(window.location.href);
+        if (checked) {
+          url.searchParams.set('live', '1');
+        } else {
+          url.searchParams.delete('live');
+        }
+        window.history.replaceState({}, '', url);
+      }
+
+      function startLiveUpdates() {
+        if (liveInterval) return;
+        refreshStats();
+        liveInterval = setInterval(refreshStats, 5000);
+      }
+
+      function stopLiveUpdates() {
+        if (liveInterval) {
+          clearInterval(liveInterval);
+          liveInterval = null;
+        }
+      }
+
+      function syncLiveControls(enabled) {
+        syncLiveParam(enabled);
+        const liveInput = document.getElementById('liveInputField');
+        if (liveInput) {
+          liveInput.value = enabled ? '1' : '';
+        }
+
+        document.querySelectorAll('.date-link').forEach(link => {
+          const url = new URL(link.href);
+          if (enabled) {
+            url.searchParams.set('live', '1');
+          } else {
+            url.searchParams.delete('live');
+          }
+          link.href = url.toString();
+        });
+      }
+
+      liveCheckbox.addEventListener('change', (event) => {
+        const enabled = event.target.checked;
+        syncLiveControls(enabled);
+        if (enabled) {
+          startLiveUpdates();
+        } else {
+          stopLiveUpdates();
+        }
+      });
+
+      if (modeToggle) {
+        modeToggle.addEventListener('change', (event) => {
+          const nextMode = event.target.checked ? 'parts_imaged' : 'images';
+          const url = new URL(window.location.href);
+          url.searchParams.set('mode', nextMode);
+          window.location.href = url.toString();
+        });
+      }
+
+      if (togglePrevModeBtn) {
+        togglePrevModeBtn.addEventListener('click', (event) => {
+          event.preventDefault();
+          const url = new URL(window.location.href);
+          const currentPrevMode = url.searchParams.get('prev_mode') || "{{ prev_mode }}";
+          const nextPrevMode = currentPrevMode === 'month' ? 'mirror' : 'month';
+          url.searchParams.set('prev_mode', nextPrevMode);
+          window.location.href = url.toString();
+        });
+      }
+
+      const initialLiveEnabled = {{ 'true' if live_enabled else 'false' }};
+      if (initialLiveEnabled) {
+        syncLiveControls(true);
+        startLiveUpdates();
+      }
+
+      if (saveOrderBtn) {
+        saveOrderBtn.addEventListener('click', (event) => {
+          event.preventDefault();
+          persistDepartmentOrder();
+        });
+      }
+
+      attachDepartmentRowHandlers();
+      renderChart(currentChartType);
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  </body>
+</html>
