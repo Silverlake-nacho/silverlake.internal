@@ -952,7 +952,32 @@ def fetch_department_monthly_totals(department: str, year: int) -> List[Tuple[in
     cur.close()
     conn.close()
     return rows
-----
+
+def fetch_department_parts_monthly_totals(department: str, year: int) -> List[Tuple[int, float]]:
+    start_year = date(year, 1, 1)
+    start_next_year = date(year + 1, 1, 1)
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT EXTRACT(MONTH FROM solddate)::int AS month,
+               COUNT(sold.invnumber) AS parts_sold
+        FROM sold
+        LEFT JOIN invoice inv ON inv.invoice_id = sold.invoice_id
+        WHERE solddate >= %s
+          AND solddate < %s
+          AND COALESCE(inv.departmentname, 'Unknown') = %s
+          AND sold.issold
+        GROUP BY month
+        ORDER BY month
+        """,
+        (start_year, start_next_year, department),
+    )
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    return rows
 
 def fetch_user_images_monthly_totals(user: str, year: int) -> List[Tuple[int, int]]:
     start_year = date(year, 1, 1)
