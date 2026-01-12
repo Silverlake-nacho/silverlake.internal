@@ -579,6 +579,15 @@ DB_USER = "postgres"
 DB_PASS = ""
 IMAGE_BASE_URL = "http://192.168.10.23/pinproHostedImages/"
 
+
+def normalize_image_url(relative_url: Optional[str]) -> Optional[str]:
+    if not relative_url:
+        return None
+    cleaned_relative = str(relative_url).lstrip("/")
+    if cleaned_relative.lower().startswith("http"):
+        return cleaned_relative
+    return f"{IMAGE_BASE_URL.rstrip('/')}/{cleaned_relative}"
+
 # keep tunnel global so it persists
 tunnel = None
 
@@ -851,19 +860,111 @@ def fetch_user_images(start_date: date, end_date: date) -> List[Tuple[str, int]]
     return [(row[0], int(row[1])) for row in rows]
 
 
-def fetch_user_parts_imaged(start_date: date, end_date: date) -> List[Tuple[str, int]]:
+def fetch_image_timeline(start_date: date, end_date: date) -> List[dict]:
     conn = get_db_connection()
     cur = conn.cursor()
     cur.execute(
         """
-        SELECT COALESCE(us.shortname, 'Unknown') AS shortname,
-               COUNT(DISTINCT invl.invnumber) AS parts_imaged
+        SELECT DISTINCT ON (invl.invnumber)
+            COALESCE(us.shortname, 'Unknown') AS shortname,
+            invl.invnumber,
+            invl.created,
+            thumb.relativeurl AS thumb_url,
+            fullimg.full_urls AS full_urls,
+            COALESCE(inv.tag, sold.tag, '') AS tag,
+            CASE
+                WHEN EXISTS (
+                    SELECT 1
+                    FROM sold s
+                    WHERE s.invnumber = invl.invnumber
+                      AND s.issold
+                ) THEN 'sold'
+                WHEN EXISTS (
+                    SELECT 1
+                    FROM sold s
+                    WHERE s.invnumber = invl.invnumber
+                      AND NOT s.issold
+                ) THEN 'pending'
+                WHEN EXISTS (
+                    SELECT 1
+                    FROM inventory i
+                    WHERE i.invnumber = invl.invnumber
+                ) THEN 'inventory'
+                ELSE 'inventory'
+            END AS status
+        FROM inventorylog invl
+        LEFT JOIN pinuser us ON us.user_id = invl.user_id
+        LEFT JOIN inventory inv ON inv.invnumber = invl.invnumber
+        LEFT JOIN sold ON sold.invnumber = invl.invnumber
+        LEFT JOIN LATERAL (
+            SELECT relativeurl
+            FROM image
+            WHERE invnumber = invl.invnumber
+              AND COALESCE(thumbnail, false) = true
+            ORDER BY COALESCE(displayorder, 0), relativeurl
+            LIMIT 1
+        ) thumb ON true
+        LEFT JOIN LATERAL (
+            SELECT ARRAY_AGG(relativeurl ORDER BY COALESCE(displayorder, 0), relativeurl) AS full_urls
+            FROM image
+            WHERE invnumber = invl.invnumber
+              AND COALESCE(thumbnail, false) = false
+        ) fullimg ON true
+        WHERE invl.type_id = '902'
+          AND invl.created >= %s
+          AND invl.created < %s
+          AND invl.created::time >= TIME '07:00'
+          AND invl.created::time <= TIME '18:00'
+        ORDER BY invl.invnumber, invl.created
+        """,
+        (start_date, end_date),
+    )
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    timeline = []
+    for shortname, invnumber, created, thumb_url, full_urls, tag, status in rows:
+        full_urls = full_urls or []
+        cleaned_full_urls = [
+            normalize_image_url(url)
+            for url in full_urls
+            if url and not str(url).lower().startswith("fto/")
+        ]
+        if not thumb_url:
+            normalized_thumb = cleaned_full_urls[0] if cleaned_full_urls else None
+        elif str(thumb_url).lower().startswith("fto/"):
+            normalized_thumb = cleaned_full_urls[0] if cleaned_full_urls else None
+        else:
+            normalized_thumb = normalize_image_url(thumb_url)
+        if not normalized_thumb:
+            continue
+        preview_urls = cleaned_full_urls[:5] if cleaned_full_urls else [normalized_thumb]
+        timeline.append(
+            {
+                "user": shortname,
+                "invnumber": invnumber,
+                "created": created,
+                "thumb_url": normalized_thumb,
+                "full_urls": cleaned_full_urls or [normalized_thumb],
+                "preview_urls": preview_urls,
+                "tag": tag,
+                "status": status,
+            }
+        )
+    return timeline
+
+
+def fetch_timeline_users(start_date: date, end_date: date) -> List[str]:
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT DISTINCT COALESCE(us.shortname, 'Unknown') AS shortname
         FROM inventorylog invl
         LEFT JOIN pinuser us ON us.user_id = invl.user_id
         WHERE invl.type_id = '902'
           AND invl.created >= %s
           AND invl.created < %s
-        GROUP BY shortname
         ORDER BY shortname
         """,
         (start_date, end_date),
@@ -871,8 +972,7 @@ def fetch_user_parts_imaged(start_date: date, end_date: date) -> List[Tuple[str,
     rows = cur.fetchall()
     cur.close()
     conn.close()
-    return [(row[0], int(row[1])) for row in rows]
-
+    return [row[0] for row in rows]
 
 def fetch_parts_breakdown(
     entity_value: str, start_date: date, end_date: date, dimension: str
@@ -1548,8 +1648,9 @@ def build_stats_context(
         "value_vat_label": value_vat_label,
         "entity_label": entity_label,
         "entity_label_plural": entity_label_plural,
+        "entity_label": "User",
+        "entity_label_plural": "Users",
     }
-
 
 def build_image_stats_context(
     filter_type: str,
@@ -1574,11 +1675,7 @@ def build_image_stats_context(
 
     rows = fetch_rows(start_date, end_date)
     resolved_prev_mode = normalize_prev_period_mode(prev_mode)
-    if filter_type in {"this_year", "last_year"}:
-        prev_start = shift_one_year_back(start_date)
-        prev_end = shift_one_year_back(end_date)
-        prev_inclusive_end = prev_end - timedelta(days=1)
-    elif resolved_prev_mode == "month":
+    if resolved_prev_mode == "month":
         inclusive_end = end_date - timedelta(days=1)
         prev_start = shift_one_month_back(start_date)
         prev_inclusive_end = shift_one_month_back(inclusive_end)
@@ -1643,6 +1740,77 @@ def build_image_stats_context(
         "entity_label_plural": "Users",
     }
 
+def build_image_timeline_context(
+    filter_type: str,
+    start_date_str: str,
+    end_date_str: str,
+    exclude_args: List[str],
+):
+    start_date, end_date = parse_date_filter(filter_type, start_date_str, end_date_str)
+    date_range_label = describe_date_range(filter_type, start_date, end_date)
+
+    raw_items = fetch_image_timeline(start_date, end_date)
+    current_user = session.get("username")
+    default_exclusions = load_stats_exclusions(current_user, "user")
+    excluded_users = exclude_args or default_exclusions
+    raw_items = [item for item in raw_items if item["user"] not in excluded_users]
+    raw_items = sorted(raw_items, key=lambda item: (item["user"], item["created"]))
+    all_users = fetch_timeline_users(start_date, end_date)
+
+    grouped = defaultdict(lambda: defaultdict(list))
+    for item in raw_items:
+        day_key = item["created"].date()
+        grouped[item["user"]][day_key].append(item)
+
+    timeline_users = []
+    for user in sorted(grouped.keys()):
+        days = []
+        for day in sorted(grouped[user].keys()):
+            bucket_counts = defaultdict(int)
+            day_items = []
+            for item in grouped[user][day]:
+                created = item["created"]
+                minutes = created.hour * 60 + created.minute
+                start_minutes = 7 * 60
+                end_minutes = 18 * 60
+                if minutes < start_minutes or minutes > end_minutes:
+                    continue
+                position = ((minutes - start_minutes) / (end_minutes - start_minutes)) * 100
+                bucket = minutes // 5
+                stack_index = bucket_counts[bucket]
+                bucket_counts[bucket] += 1
+                day_items.append(
+                    {
+                        "thumb_url": item["thumb_url"],
+                        "full_urls": item["full_urls"],
+                        "preview_urls": item["preview_urls"],
+                        "tag": item["tag"],
+                        "time_label": created.strftime("%H:%M"),
+                        "position": position,
+                        "stack_index": stack_index,
+                    }
+                )
+            days.append(
+                {
+                    "date_label": day.strftime("%d/%m/%Y"),
+                    "items": day_items,
+                }
+            )
+        timeline_users.append({"user": user, "days": days})
+
+    hours = [hour for hour in range(7, 19)]
+
+    return {
+        "filter_type": filter_type,
+        "start_date": start_date,
+        "end_date": end_date,
+        "date_range_label": date_range_label,
+        "timeline_users": timeline_users,
+        "hours": hours,
+        "all_users": all_users,
+        "excluded_users": excluded_users,
+    }
+
 
 @app.route("/stats", methods=["GET"])
 def stats():
@@ -1688,9 +1856,27 @@ def image_stats():
     )
 
 
+@app.route("/image_timeline", methods=["GET"])
+def image_timeline():
+    filter_type = request.args.get("filter", "today")
+    start_date_str = request.args.get("start_date")
+    end_date_str = request.args.get("end_date")
+    excluded_args = request.args.getlist("exclude")
+
+    context = build_image_timeline_context(
+        filter_type, start_date_str, end_date_str, excluded_args
+    )
+
+    return render_template(
+        "image_timeline.html",
+        **context,
+        active_page="image_timeline",
+    )
+
+
 @app.route("/stats/data", methods=["GET"])
 def stats_data():
-    filter_type = request.args.get("filter", "this_month")
+    filter_type = request.args.get("filter", "this month")
     start_date_str = request.args.get("start_date")
     end_date_str = request.args.get("end_date")
     excluded_args = request.args.getlist("exclude")
@@ -1947,6 +2133,27 @@ def save_stats_exclusions():
             mode=mode,
             dimension=dimension,
             exclude=excluded_departments,
+        )
+    )
+
+
+@app.route("/image_timeline/exclusions", methods=["POST"])
+def save_image_timeline_exclusions():
+    filter_type = request.form.get("filter", "this_month")
+    start_date = request.form.get("start_date")
+    end_date = request.form.get("end_date")
+    excluded_users = request.form.getlist("exclude")
+
+    user = session.get("username")
+    persist_stats_exclusions(user, "user", excluded_users)
+
+    return redirect(
+        url_for(
+            "image_timeline",
+            filter=filter_type,
+            start_date=start_date,
+            end_date=end_date,
+            exclude=excluded_users,
         )
     )
     
