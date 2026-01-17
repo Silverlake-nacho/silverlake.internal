@@ -318,6 +318,9 @@
       body.hide-previews .timeline-preview-strip {
         display: none;
       }
+      body.hide-thumbnails .timeline-thumb {
+        display: none;
+      }
       .zoom-controls {
         display: flex;
         align-items: center;
@@ -474,16 +477,26 @@
             <div class="card mb-4 shadow-sm timeline-card">
               <div class="card-body">
                 <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
-                  <h5 class="text-success mb-0">Timeline (7:00 - 18:00)</h5>
-                  <div class="form-check form-switch">
-                    <input class="form-check-input" type="checkbox" id="previewToggle">
-                    <label class="form-check-label text-muted" for="previewToggle">Show thumbnail strips</label>
+                  <h5 class="text-success mb-0">Timeline (6:00 - 18:00)</h5>
+                  <div class="d-flex flex-wrap gap-3">
+                    <div class="form-check form-switch">
+                      <input class="form-check-input" type="checkbox" id="thumbnailToggle">
+                      <label class="form-check-label text-muted" for="thumbnailToggle">Show thumbnails</label>
+                    </div>
+                    <div class="form-check form-switch">
+                      <input class="form-check-input" type="checkbox" id="previewToggle">
+                      <label class="form-check-label text-muted" for="previewToggle">Show thumbnail strips</label>
+                    </div>
                   </div>
                 </div>
                 {% if timeline_users %}
                   {% for user_block in timeline_users %}
                     <div class="timeline-user">
-                      <h6 class="fw-bold text-success">{{ user_block.user }}</h6>
+                      <div class="d-flex flex-wrap align-items-center gap-2">
+                        <h6 class="fw-bold text-success mb-0">{{ user_block.user }}</h6>
+                        <span class="badge bg-light text-dark">{{ user_block.image_count }} images</span>
+                        <span class="badge bg-light text-dark">{{ user_block.part_count }} parts</span>
+                      </div>
                       {% for day in user_block.days %}
                         <div class="timeline-day">
                           <div class="timeline-day-header">
@@ -502,18 +515,18 @@
                                 {% set quarter_minutes = [15, 30, 45] %}
                                 {% set ten_minutes = [10, 20, 30, 40, 50] %}
                                 {% for hour in hours %}
-                                  <div class="timeline-hour" style="left: {{ ((hour - 7) / 11 * 100) }}%;">
+                                  <div class="timeline-hour" style="left: {{ ((hour - 6) / 12 * 100) }}%;">
                                     <span>{{ "%02d:00"|format(hour) }}</span>
                                   </div>
                                 {% endfor %}
                                 {% for hour in hours[:-1] %}
                                   {% for minute in quarter_minutes %}
-                                    <div class="timeline-tick timeline-tick--quarter" style="left: {{ (((hour - 7) + (minute / 60)) / 11 * 100) }}%;">
+                                    <div class="timeline-tick timeline-tick--quarter" style="left: {{ (((hour - 6) + (minute / 60)) / 12 * 100) }}%;">
                                       <span>{{ "%02d"|format(minute) }}</span>
                                     </div>
                                   {% endfor %}
                                   {% for minute in ten_minutes %}
-                                    <div class="timeline-tick timeline-tick--ten" style="left: {{ (((hour - 7) + (minute / 60)) / 11 * 100) }}%;">
+                                    <div class="timeline-tick timeline-tick--ten" style="left: {{ (((hour - 6) + (minute / 60)) / 12 * 100) }}%;">
                                       <span>{{ "%02d"|format(minute) }}</span>
                                     </div>
                                   {% endfor %}
@@ -669,6 +682,20 @@
           const enabled = event.target.checked;
           document.body.classList.toggle('hide-previews', !enabled);
           localStorage.setItem('timelinePreviewEnabled', String(enabled));
+        });
+      }
+
+      const thumbnailToggle = document.getElementById('thumbnailToggle');
+      if (thumbnailToggle) {
+        const storedThumbnailState = localStorage.getItem('timelineThumbnailEnabled');
+        const enabled = storedThumbnailState === null ? true : storedThumbnailState === 'true';
+        thumbnailToggle.checked = enabled;
+        document.body.classList.toggle('hide-thumbnails', !enabled);
+
+        thumbnailToggle.addEventListener('change', (event) => {
+          const enabled = event.target.checked;
+          document.body.classList.toggle('hide-thumbnails', !enabled);
+          localStorage.setItem('timelineThumbnailEnabled', String(enabled));
         });
       }
     </script>
