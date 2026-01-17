@@ -192,6 +192,7 @@ USERS = {
     'stores': 'stores',
     'Stores': 'stores',
     'Josh': 'Silverlake1!',
+    'Casper': 'Silverlake1!',
     'carlo': 'Silverlake1!',
     'nacho': 'Silverlake1!'
 }
@@ -858,6 +859,29 @@ def fetch_user_images(start_date: date, end_date: date) -> List[Tuple[str, int]]
     cur.close()
     conn.close()
     return [(row[0], int(row[1])) for row in rows]
+  
+  
+def fetch_user_parts_imaged(start_date: date, end_date: date) -> List[Tuple[str, int]]:
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT COALESCE(us.shortname, 'Unknown') AS shortname,
+               COUNT(DISTINCT invl.invnumber) AS parts_imaged
+        FROM inventorylog invl
+        LEFT JOIN pinuser us ON us.user_id = invl.user_id
+        WHERE invl.type_id = '902'
+          AND invl.created >= %s
+          AND invl.created < %s
+        GROUP BY shortname
+        ORDER BY shortname
+        """,
+        (start_date, end_date),
+    )
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    return [(row[0], int(row[1])) for row in rows]
 
 
 def fetch_image_timeline(start_date: date, end_date: date) -> List[dict]:
@@ -913,7 +937,7 @@ def fetch_image_timeline(start_date: date, end_date: date) -> List[dict]:
         WHERE invl.type_id = '902'
           AND invl.created >= %s
           AND invl.created < %s
-          AND invl.created::time >= TIME '07:00'
+          AND invl.created::time >= TIME '06:00'
           AND invl.created::time <= TIME '18:00'
         ORDER BY invl.invnumber, invl.created
         """,
@@ -1764,6 +1788,9 @@ def build_image_timeline_context(
 
     timeline_users = []
     for user in sorted(grouped.keys()):
+        user_items = [item for day_items in grouped[user].values() for item in day_items]
+        part_count = len({item["invnumber"] for item in user_items})
+        image_count = sum(len(item["full_urls"]) for item in user_items)
         days = []
         for day in sorted(grouped[user].keys()):
             bucket_counts = defaultdict(int)
@@ -1771,7 +1798,7 @@ def build_image_timeline_context(
             for item in grouped[user][day]:
                 created = item["created"]
                 minutes = created.hour * 60 + created.minute
-                start_minutes = 7 * 60
+                start_minutes = 6 * 60
                 end_minutes = 18 * 60
                 if minutes < start_minutes or minutes > end_minutes:
                     continue
@@ -1796,9 +1823,16 @@ def build_image_timeline_context(
                     "items": day_items,
                 }
             )
-        timeline_users.append({"user": user, "days": days})
+        timeline_users.append(
+            {
+                "user": user,
+                "days": days,
+                "image_count": image_count,
+                "part_count": part_count,
+            }
+        )
 
-    hours = [hour for hour in range(7, 19)]
+    hours = [hour for hour in range(6, 19)]
 
     return {
         "filter_type": filter_type,
