@@ -8,3 +8,8 @@ google-api-python-client
 google-auth
 google-auth-oauthlib
 beautifulsoup4
+requests
+sshtunnel
+psycopg2-binary
+pymssql
+pyodbc
