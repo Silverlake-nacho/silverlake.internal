@@ -18,6 +18,7 @@ from calendar import monthrange
 import json
 import os
 from urllib.parse import urljoin
+import pyodbc
 
 
 def rgb_to_hex(rgb):
@@ -77,6 +78,20 @@ def _normalise_exclusion_store(raw_data) -> dict:
                 "user": [str(item) for item in payload.get("user", [])],
             }
     return normalised
+
+
+def format_inventorylog_details(details: Optional[str]) -> str:
+    if not details:
+        return ""
+    replacements = {
+        "[LocaleResources:inventoryLogMessage.changedFrom]": "From",
+        "[inventoryLogMessage.changedFrom]": "From",
+        "[LocaleResources:inventoryLogMessage.changedTo]": "To",
+        "[inventoryLogMessage.changedTo]": "To",
+    }
+    for token, replacement in replacements.items():
+        details = details.replace(token, replacement)
+    return details
 
 
 def load_stats_exclusions(user: Optional[str], dimension: str) -> List[str]:
@@ -580,6 +595,16 @@ DB_USER = "postgres"
 DB_PASS = ""
 IMAGE_BASE_URL = "http://192.168.10.23/pinproHostedImages/"
 
+ATLAS_DB_HOST = os.getenv("ATLAS_DB_HOST", "52.51.93.215")
+ATLAS_DB_PORT = int(os.getenv("ATLAS_DB_PORT", "1433"))
+ATLAS_DB_NAME = os.getenv("ATLAS_DB_NAME", "silverlake")
+ATLAS_DB_NAMES = os.getenv("ATLAS_DB_NAMES", "")
+ATLAS_DB_USER = os.getenv("ATLAS_DB_USER", "nacho")
+ATLAS_DB_PASSWORD = os.getenv("ATLAS_DB_PASSWORD", "Merry32Nacho58")
+ATLAS_DB_DRIVER = os.getenv("ATLAS_DB_DRIVER", "ODBC Driver 18 for SQL Server")
+ATLAS_DB_ENCRYPT = os.getenv("ATLAS_DB_ENCRYPT", "yes")
+ATLAS_DB_TRUST_CERT = os.getenv("ATLAS_DB_TRUST_CERT", "yes")
+
 
 def normalize_image_url(relative_url: Optional[str]) -> Optional[str]:
     if not relative_url:
@@ -614,6 +639,142 @@ def get_db_connection():
         password=DB_PASS
     )
     return conn
+
+
+def _get_atlas_db_name_candidates() -> List[str]:
+    explicit_names = [name.strip() for name in ATLAS_DB_NAMES.split(",") if name.strip()]
+    if ATLAS_DB_NAME:
+        return [ATLAS_DB_NAME, *explicit_names]
+    return explicit_names
+
+
+def get_atlas_db_connection(database_name: str):
+    conn_str = (
+        f"DRIVER={{{ATLAS_DB_DRIVER}}};"
+        f"SERVER={ATLAS_DB_HOST},{ATLAS_DB_PORT};"
+        f"DATABASE={database_name};"
+        f"UID={ATLAS_DB_USER};"
+        f"PWD={ATLAS_DB_PASSWORD};"
+        f"Encrypt={ATLAS_DB_ENCRYPT};"
+        f"TrustServerCertificate={ATLAS_DB_TRUST_CERT};"
+    )
+    return pyodbc.connect(conn_str, timeout=10)
+
+
+def _fetch_table_columns(cursor, full_table_name: str) -> List[Tuple[str, str]]:
+    cursor.execute(
+        """
+        SELECT c.name, t.name
+        FROM sys.columns AS c
+        JOIN sys.types AS t ON c.user_type_id = t.user_type_id
+        WHERE c.object_id = OBJECT_ID(?)
+        ORDER BY c.column_id
+        """,
+        (full_table_name,),
+    )
+    return cursor.fetchall()
+
+
+def _build_select_list(column_types: List[Tuple[str, str]]) -> List[str]:
+    select_columns = []
+    for column_name, type_name in column_types:
+        if type_name.lower() == "datetimeoffset":
+            select_columns.append(
+                f"CAST([{column_name}] AS datetime2) AS [{column_name}]"
+            )
+        else:
+            select_columns.append(f"[{column_name}]")
+    return select_columns
+
+
+def fetch_atlas_vehicle_stats(limit: int = 1000):
+    last_error = None
+    for database_name in _get_atlas_db_name_candidates():
+        try:
+            conn = get_atlas_db_connection(database_name)
+            cur = conn.cursor()
+            safe_limit = int(limit)
+            column_types = _fetch_table_columns(cur, "dbo.CT_Vehicles")
+            if not column_types:
+                raise RuntimeError("CT_Vehicles table not found.")
+            select_list = ", ".join(_build_select_list(column_types))
+            cur.execute(
+                f"SELECT TOP ({safe_limit}) {select_list} FROM dbo.CT_Vehicles"
+            )
+            rows = cur.fetchall()
+            columns = [desc[0] for desc in cur.description]
+            cur.close()
+            conn.close()
+            return database_name, columns, rows
+        except Exception as exc:
+            last_error = exc
+    raise last_error if last_error else RuntimeError("No Atlas database names configured.")
+
+
+def fetch_atlas_table_samples(limit: int = 5):
+    last_error = None
+    for database_name in _get_atlas_db_name_candidates():
+        try:
+            conn = get_atlas_db_connection(database_name)
+            cur = conn.cursor()
+            cur.execute(
+                """
+                SELECT s.name, t.name
+                FROM sys.tables AS t
+                JOIN sys.schemas AS s ON t.schema_id = s.schema_id
+                ORDER BY s.name, t.name
+                """
+            )
+            tables = cur.fetchall()
+            safe_limit = int(limit)
+            table_samples = []
+            for schema_name, table_name in tables:
+                full_table_name = f"{schema_name}.{table_name}"
+                try:
+                    column_types = _fetch_table_columns(cur, full_table_name)
+                    if not column_types:
+                        table_samples.append(
+                            {
+                                "schema": schema_name,
+                                "table": table_name,
+                                "columns": [],
+                                "rows": [],
+                                "error": "No columns found.",
+                            }
+                        )
+                        continue
+                    select_list = ", ".join(_build_select_list(column_types))
+                    cur.execute(
+                        f"SELECT TOP ({safe_limit}) {select_list} "
+                        f"FROM [{schema_name}].[{table_name}]"
+                    )
+                    rows = cur.fetchall()
+                    columns = [desc[0] for desc in cur.description]
+                    table_samples.append(
+                        {
+                            "schema": schema_name,
+                            "table": table_name,
+                            "columns": columns,
+                            "rows": rows,
+                            "error": None,
+                        }
+                    )
+                except Exception as exc:
+                    table_samples.append(
+                        {
+                            "schema": schema_name,
+                            "table": table_name,
+                            "columns": [],
+                            "rows": [],
+                            "error": str(exc),
+                        }
+                    )
+            cur.close()
+            conn.close()
+            return database_name, table_samples
+        except Exception as exc:
+            last_error = exc
+    raise last_error if last_error else RuntimeError("No Atlas database names configured.")
 
 @app.route("/crush_vehicles", methods=["GET", "POST"])
 def crush_vehicles():
@@ -978,6 +1139,100 @@ def fetch_image_timeline(start_date: date, end_date: date) -> List[dict]:
     return timeline
 
 
+def fetch_stores_timeline(start_date: date, end_date: date) -> List[dict]:
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT
+            COALESCE(us.shortname, 'Unknown') AS shortname,
+            invl.invnumber,
+            invl.created,
+            invl.details,
+            thumb.relativeurl AS thumb_url,
+            fullimg.full_urls AS full_urls,
+            COALESCE(inv.tag, sold.tag, '') AS tag,
+            CASE
+                WHEN EXISTS (
+                    SELECT 1
+                    FROM sold s
+                    WHERE s.invnumber = invl.invnumber
+                      AND s.issold
+                ) THEN 'sold'
+                WHEN EXISTS (
+                    SELECT 1
+                    FROM sold s
+                    WHERE s.invnumber = invl.invnumber
+                      AND NOT s.issold
+                ) THEN 'pending'
+                WHEN EXISTS (
+                    SELECT 1
+                    FROM inventory i
+                    WHERE i.invnumber = invl.invnumber
+                ) THEN 'inventory'
+                ELSE 'inventory'
+            END AS status
+        FROM inventorylog invl
+        LEFT JOIN pinuser us ON us.user_id = invl.user_id
+        LEFT JOIN inventory inv ON inv.invnumber = invl.invnumber
+        LEFT JOIN sold ON sold.invnumber = invl.invnumber
+        LEFT JOIN LATERAL (
+            SELECT relativeurl
+            FROM image
+            WHERE invnumber = invl.invnumber
+              AND COALESCE(thumbnail, false) = true
+            ORDER BY COALESCE(displayorder, 0), relativeurl
+            LIMIT 1
+        ) thumb ON true
+        LEFT JOIN LATERAL (
+            SELECT ARRAY_AGG(relativeurl ORDER BY COALESCE(displayorder, 0), relativeurl) AS full_urls
+            FROM image
+            WHERE invnumber = invl.invnumber
+              AND COALESCE(thumbnail, false) = false
+        ) fullimg ON true
+        WHERE invl.type_id = '442'
+          AND invl.created >= %s
+          AND invl.created < %s
+          AND invl.created::time >= TIME '06:00'
+          AND invl.created::time <= TIME '18:00'
+        ORDER BY invl.created
+        """,
+        (start_date, end_date),
+    )
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    timeline = []
+    for shortname, invnumber, created, details, thumb_url, full_urls, tag, status in rows:
+        full_urls = full_urls or []
+        cleaned_full_urls = [
+            normalize_image_url(url)
+            for url in full_urls
+            if url and not str(url).lower().startswith("fto/")
+        ]
+        if not thumb_url:
+            normalized_thumb = cleaned_full_urls[0] if cleaned_full_urls else None
+        elif str(thumb_url).lower().startswith("fto/"):
+            normalized_thumb = cleaned_full_urls[0] if cleaned_full_urls else None
+        else:
+            normalized_thumb = normalize_image_url(thumb_url)
+        if not normalized_thumb:
+            continue
+        timeline.append(
+            {
+                "user": shortname,
+                "invnumber": invnumber,
+                "created": created,
+                "thumb_url": normalized_thumb,
+                "full_urls": cleaned_full_urls or [normalized_thumb],
+                "tag": tag,
+                "status": status,
+                "details": format_inventorylog_details(details),
+            }
+        )
+    return timeline
+
+
 def fetch_timeline_users(start_date: date, end_date: date) -> List[str]:
     conn = get_db_connection()
     cur = conn.cursor()
@@ -987,6 +1242,27 @@ def fetch_timeline_users(start_date: date, end_date: date) -> List[str]:
         FROM inventorylog invl
         LEFT JOIN pinuser us ON us.user_id = invl.user_id
         WHERE invl.type_id = '902'
+          AND invl.created >= %s
+          AND invl.created < %s
+        ORDER BY shortname
+        """,
+        (start_date, end_date),
+    )
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    return [row[0] for row in rows]
+
+
+def fetch_stores_timeline_users(start_date: date, end_date: date) -> List[str]:
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT DISTINCT COALESCE(us.shortname, 'Unknown') AS shortname
+        FROM inventorylog invl
+        LEFT JOIN pinuser us ON us.user_id = invl.user_id
+        WHERE invl.type_id = '442'
           AND invl.created >= %s
           AND invl.created < %s
         ORDER BY shortname
@@ -1846,6 +2122,89 @@ def build_image_timeline_context(
     }
 
 
+def build_stores_timeline_context(
+    filter_type: str,
+    start_date_str: str,
+    end_date_str: str,
+    exclude_args: List[str],
+):
+    start_date, end_date = parse_date_filter(filter_type, start_date_str, end_date_str)
+    date_range_label = describe_date_range(filter_type, start_date, end_date)
+
+    raw_items = fetch_stores_timeline(start_date, end_date)
+    current_user = session.get("username")
+    default_exclusions = load_stats_exclusions(current_user, "user")
+    excluded_users = exclude_args or default_exclusions
+    raw_items = [item for item in raw_items if item["user"] not in excluded_users]
+    raw_items = sorted(raw_items, key=lambda item: (item["user"], item["created"]))
+    all_users = fetch_stores_timeline_users(start_date, end_date)
+
+    grouped = defaultdict(lambda: defaultdict(list))
+    for item in raw_items:
+        day_key = item["created"].date()
+        grouped[item["user"]][day_key].append(item)
+
+    timeline_users = []
+    for user in sorted(grouped.keys()):
+        user_items = [item for day_items in grouped[user].values() for item in day_items]
+        movement_count = len(user_items)
+        part_count = len({item["invnumber"] for item in user_items})
+        days = []
+        for day in sorted(grouped[user].keys()):
+            bucket_counts = defaultdict(int)
+            day_items = []
+            for item in grouped[user][day]:
+                created = item["created"]
+                minutes = created.hour * 60 + created.minute + (created.second / 60)
+                start_minutes = 6 * 60
+                end_minutes = 18 * 60
+                if minutes < start_minutes or minutes > end_minutes:
+                    continue
+                position = ((minutes - start_minutes) / (end_minutes - start_minutes)) * 100
+                bucket = created.hour * 60 + created.minute
+                stack_index = bucket_counts[bucket]
+                bucket_counts[bucket] += 1
+                day_items.append(
+                    {
+                        "thumb_url": item["thumb_url"],
+                        "full_urls": item["full_urls"],
+                        "tag": item["tag"],
+                        "time_label": created.strftime("%H:%M:%S"),
+                        "position": position,
+                        "stack_index": stack_index,
+                        "details": item["details"],
+                        "status": item["status"],
+                    }
+                )
+            days.append(
+                {
+                    "date_label": day.strftime("%d/%m/%Y"),
+                    "items": day_items,
+                }
+            )
+        timeline_users.append(
+            {
+                "user": user,
+                "days": days,
+                "movement_count": movement_count,
+                "part_count": part_count,
+            }
+        )
+
+    hours = [hour for hour in range(6, 19)]
+
+    return {
+        "filter_type": filter_type,
+        "start_date": start_date,
+        "end_date": end_date,
+        "date_range_label": date_range_label,
+        "timeline_users": timeline_users,
+        "hours": hours,
+        "all_users": all_users,
+        "excluded_users": excluded_users,
+    }
+
+
 @app.route("/stats", methods=["GET"])
 def stats():
     filter_type = request.args.get("filter", "this_month")
@@ -1868,6 +2227,51 @@ def stats():
     )
 
 
+def atlas_vehicle_stats():
+    error_message = None
+    database_name = None
+    columns = []
+    rows = []
+    try:
+        database_name, columns, rows = fetch_atlas_vehicle_stats()
+    except Exception as exc:
+        error_message = f"Unable to load Atlas vehicle stats: {exc}"
+
+    return render_template(
+        "atlas_vehicle_stats.html",
+        database_name=database_name,
+        columns=columns,
+        rows=rows,
+        error_message=error_message,
+        active_page="atlas_vehicle_stats",
+    )
+
+
+def atlas_table_samples():
+    error_message = None
+    database_name = None
+    table_samples = []
+    try:
+        database_name, table_samples = fetch_atlas_table_samples()
+    except Exception as exc:
+        error_message = f"Unable to load Atlas table samples: {exc}"
+
+    return render_template(
+        "atlas_table_samples.html",
+        database_name=database_name,
+        table_samples=table_samples,
+        error_message=error_message,
+        active_page="atlas_table_samples",
+    )
+
+
+if "atlas_vehicle_stats" not in app.view_functions:
+    app.add_url_rule("/atlas_vehicle_stats", view_func=atlas_vehicle_stats)
+
+if "atlas_table_samples" not in app.view_functions:
+    app.add_url_rule("/atlas_table_samples", view_func=atlas_table_samples)
+
+
 @app.route("/image_stats", methods=["GET"])
 def image_stats():
     filter_type = request.args.get("filter", "this_month")
@@ -1883,10 +2287,31 @@ def image_stats():
     live_enabled = str(request.args.get("live", "")).lower() in {"1", "true", "yes", "on"}
 
     return render_template(
-        "image_stats.html",
+        "stats.html",
         **context,
         live_enabled=live_enabled,
-        active_page="image_stats",
+        active_page="stats",
+    )
+
+
+@app.route("/atlas_vehicle_stats", methods=["GET"])
+def atlas_vehicle_stats():
+    error_message = None
+    database_name = None
+    columns = []
+    rows = []
+    try:
+        database_name, columns, rows = fetch_atlas_vehicle_stats()
+    except Exception as exc:
+        error_message = f"Unable to load Atlas vehicle stats: {exc}"
+
+    return render_template(
+        "atlas_vehicle_stats.html",
+        database_name=database_name,
+        columns=columns,
+        rows=rows,
+        error_message=error_message,
+        active_page="atlas_vehicle_stats",
     )
 
 
@@ -1905,6 +2330,24 @@ def image_timeline():
         "image_timeline.html",
         **context,
         active_page="image_timeline",
+    )
+
+
+@app.route("/stores_timeline", methods=["GET"])
+def stores_timeline():
+    filter_type = request.args.get("filter", "today")
+    start_date_str = request.args.get("start_date")
+    end_date_str = request.args.get("end_date")
+    excluded_args = request.args.getlist("exclude")
+
+    context = build_stores_timeline_context(
+        filter_type, start_date_str, end_date_str, excluded_args
+    )
+
+    return render_template(
+        "stores_timeline.html",
+        **context,
+        active_page="stores_timeline",
     )
 
 
@@ -2184,6 +2627,27 @@ def save_image_timeline_exclusions():
     return redirect(
         url_for(
             "image_timeline",
+            filter=filter_type,
+            start_date=start_date,
+            end_date=end_date,
+            exclude=excluded_users,
+        )
+    )
+
+
+@app.route("/stores_timeline/exclusions", methods=["POST"])
+def save_stores_timeline_exclusions():
+    filter_type = request.form.get("filter", "this_month")
+    start_date = request.form.get("start_date")
+    end_date = request.form.get("end_date")
+    excluded_users = request.form.getlist("exclude")
+
+    user = session.get("username")
+    persist_stats_exclusions(user, "user", excluded_users)
+
+    return redirect(
+        url_for(
+            "stores_timeline",
             filter=filter_type,
             start_date=start_date,
             end_date=end_date,
