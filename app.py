@@ -693,14 +693,40 @@ def fetch_atlas_vehicle_stats(limit: int = 1000):
         try:
             conn = get_atlas_db_connection(database_name)
             cur = conn.cursor()
-            safe_limit = int(limit)
-            column_types = _fetch_table_columns(cur, "dbo.CT_Vehicles")
-            if not column_types:
-                raise RuntimeError("CT_Vehicles table not found.")
-            select_list = ", ".join(_build_select_list(column_types))
-            cur.execute(
-                f"SELECT TOP ({safe_limit}) {select_list} FROM dbo.CT_Vehicles"
-            )
+            query = """
+                SELECT
+                    v.Id,
+                    CAST(v.DateEntered AS datetime2) AS DateEntered,
+                    m.Name AS Manufacturer,
+                    mg.Name AS Model,
+                    dd.TrimLevel,
+                    col.Name AS colour,
+                    dm.Name AS Derivative,
+                    ib.Name AS InsuranceBranch,
+                    ic.Name AS InsuranceCompany,
+                    c.Code AS Category_Code,
+                    c.Name AS Category,
+                    CAST(sc.DateCleared AS datetime2) AS DateCleared,
+                    CAST(scn.DateCancelled AS datetime2) AS DateCancelled,
+                    CAST(ss.DateSold AS datetime2) AS DateSold,
+                    ss.IncVAT AS Sold_price
+                FROM CT_Vehicles v
+                INNER JOIN SalvageRecoveries sr ON v.SalvageRecoveryId = sr.Id
+                LEFT JOIN PartDataManufacturers m ON v.ManufacturerId = m.Id
+                LEFT JOIN PartDataModelGroups mg ON v.ModelGroupId = mg.Id
+                LEFT JOIN PartDataDerivativeDetails dd ON v.DerivativeId = dd.Id
+                LEFT JOIN PartDataModels dm ON v.DerivativeId = dm.Id
+                INNER JOIN InsuranceBranches ib ON v.InsuranceBranchId = ib.Id
+                INNER JOIN InsuranceCompanies ic ON ib.InsuranceCompanyId = ic.Id
+                LEFT JOIN Categories c ON v.CategoryId = c.Id
+                LEFT JOIN SalvageClears sc ON v.Id = sc.CtVehicleId
+                LEFT JOIN SalvagesCancelled scn ON v.Id = scn.CtVehicleId
+                LEFT JOIN SalvageSales ss ON v.Id = ss.CtVehicleId
+                LEFT JOIN PartDataColours col ON v.ColourId = col.Id
+                WHERE v.Id >= 679000
+                ORDER BY v.Id DESC, CAST(sr.DateRecovered AS datetime2) DESC
+            """
+            cur.execute(query)
             rows = cur.fetchall()
             columns = [desc[0] for desc in cur.description]
             cur.close()
@@ -711,7 +737,7 @@ def fetch_atlas_vehicle_stats(limit: int = 1000):
     raise last_error if last_error else RuntimeError("No Atlas database names configured.")
 
 
-def fetch_atlas_table_samples(limit: int = 5):
+def fetch_atlas_table_samples(limit: int = 20):
     last_error = None
     for database_name in _get_atlas_db_name_candidates():
         try:
@@ -2292,28 +2318,6 @@ def image_stats():
         live_enabled=live_enabled,
         active_page="stats",
     )
-
-
-@app.route("/atlas_vehicle_stats", methods=["GET"])
-def atlas_vehicle_stats():
-    error_message = None
-    database_name = None
-    columns = []
-    rows = []
-    try:
-        database_name, columns, rows = fetch_atlas_vehicle_stats()
-    except Exception as exc:
-        error_message = f"Unable to load Atlas vehicle stats: {exc}"
-
-    return render_template(
-        "atlas_vehicle_stats.html",
-        database_name=database_name,
-        columns=columns,
-        rows=rows,
-        error_message=error_message,
-        active_page="atlas_vehicle_stats",
-    )
-
 
 @app.route("/image_timeline", methods=["GET"])
 def image_timeline():
