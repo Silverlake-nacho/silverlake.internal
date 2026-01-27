@@ -150,6 +150,13 @@
         margin-bottom: 20px;
         box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
       }
+      .exclusion-card .exclusion-body {
+        display: none;
+      }
+      .exclusion-card:hover .exclusion-body,
+      .exclusion-card:focus-within .exclusion-body {
+        display: block;
+      }
       .exclusion-card {
         background: rgba(255, 255, 255, 0.92);
       }
@@ -234,12 +241,15 @@
             <div class="summary-card">
               <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
                 <div class="d-flex flex-wrap align-items-center gap-2">
-                  <a href="{{ url_for('vehicle_stats', filter='today', live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">Today</a>
-                  <a href="{{ url_for('vehicle_stats', filter='yesterday', live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">Yesterday</a>
-                  <a href="{{ url_for('vehicle_stats', filter='this_month', live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">This Month</a>
-                  <a href="{{ url_for('vehicle_stats', filter='last_month', live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">Last Month</a>
+                  <a href="{{ url_for('vehicle_stats', filter='today', group=group_mode, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">Today</a>
+                  <a href="{{ url_for('vehicle_stats', filter='yesterday', group=group_mode, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">Yesterday</a>
+                  <a href="{{ url_for('vehicle_stats', filter='this_week', group=group_mode, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">This Week</a>
+                  <a href="{{ url_for('vehicle_stats', filter='last_week', group=group_mode, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">Last Week</a>
+                  <a href="{{ url_for('vehicle_stats', filter='this_month', group=group_mode, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">This Month</a>
+                  <a href="{{ url_for('vehicle_stats', filter='last_month', group=group_mode, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">Last Month</a>
                   <form method="get" class="d-inline">
                     <input type="hidden" name="filter" value="custom">
+                    <input type="hidden" name="group" value="{{ group_mode }}">
                     <input type="date" name="start_date" required>
                     <input type="date" name="end_date" required>
                     {% if live_enabled %}
@@ -247,6 +257,11 @@
                     {% endif %}
                     <button type="submit" class="btn btn-sm btn-primary">Custom</button>
                   </form>
+                  {% if group_mode == 'contract' %}
+                    <a href="{{ url_for('vehicle_stats', filter=filter_type, start_date=start_date.isoformat() if start_date else None, end_date=end_date.isoformat() if end_date else None, group='company', exclude=excluded_companies, live=1 if live_enabled else None) }}" class="btn btn-sm btn-outline-primary">Group by Insurance</a>
+                  {% else %}
+                    <a href="{{ url_for('vehicle_stats', filter=filter_type, start_date=start_date.isoformat() if start_date else None, end_date=end_date.isoformat() if end_date else None, group='contract', exclude=excluded_companies, live=1 if live_enabled else None) }}" class="btn btn-sm btn-outline-primary">Group Contracts</a>
+                  {% endif %}
                 </div>
                 <div class="form-check ms-2">
                   <input class="form-check-input" type="checkbox" id="liveToggle" {% if live_enabled %}checked{% endif %}>
@@ -271,6 +286,7 @@
                   </div>
                   <form id="companyFilterForm" class="row g-2" method="get" action="{{ url_for('vehicle_stats') }}">
                     <input type="hidden" name="filter" value="{{ filter_type }}">
+                    <input type="hidden" name="group" value="{{ group_mode }}">
                     <input type="hidden" name="start_date" value="{{ start_date.isoformat() if start_date else '' }}">
                     <input type="hidden" name="end_date" value="{{ end_date.isoformat() if end_date else '' }}">
                     <input type="hidden" id="liveInputField" name="live" value="{{ 1 if live_enabled else '' }}">
@@ -295,7 +311,7 @@
                 <table class="table table-striped">
                   <thead>
                     <tr>
-                      <th>Insurance Company</th>
+                      <th>{{ entity_label }}</th>
                       <th class="text-end">Vehicles</th>
                     </tr>
                   </thead>
@@ -319,7 +335,7 @@
                 <div class="card shadow-sm">
                   <div class="card-body">
                     <div class="d-flex justify-content-between align-items-center mb-3">
-                      <h5 class="card-title mb-0" id="chartTitle">Vehicles by Insurance Company (Bar)</h5>
+                      <h5 class="card-title mb-0" id="chartTitle">{{ chart_title_base }} </h5>
                       <div class="d-flex gap-2">
                         <button id="resetZoomBtn" class="btn btn-sm btn-outline-secondary">Reset Zoom</button>
                         <button id="toggleChartBtn" class="btn btn-sm btn-success">Show Pie Chart</button>
@@ -373,7 +389,7 @@
       const toggleChartBtn = document.getElementById('toggleChartBtn');
       const liveCheckbox = document.getElementById('liveToggle');
       const vehicleDetailsTableBody = document.getElementById('vehicleDetailsTableBody');
-      const chartTitleBase = 'Vehicles by Insurance Company';
+      const chartTitleBase = {{ chart_title_base|tojson }}
 
       let chartInstance = null;
       let currentChartType = 'bar';
@@ -484,7 +500,7 @@
         data.rows.forEach((row) => {
           const tr = document.createElement('tr');
           tr.innerHTML = `
-            <td>${row.company}</td>
+            <td>${row.label}</td>
             <td class="text-end">${Number(row.total).toLocaleString()}</td>
           `;
           tbody.appendChild(tr);
