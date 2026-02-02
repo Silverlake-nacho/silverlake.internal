@@ -322,14 +322,15 @@
 
             <div class="mb-3 d-flex align-items-center flex-wrap gap-2">
               <div class="d-flex flex-wrap gap-2">
-                <a href="{{ url_for('stats', filter='today', mode=stats_mode, dimension=stats_dimension, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">Today</a>
-                <a href="{{ url_for('stats', filter='yesterday', mode=stats_mode, dimension=stats_dimension, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">Yesterday</a>
-                <a href="{{ url_for('stats', filter='this_month', mode=stats_mode, dimension=stats_dimension, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">This Month</a>
-                <a href="{{ url_for('stats', filter='last_month', mode=stats_mode, dimension=stats_dimension, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">Last Month</a>
+                <a href="{{ url_for('stats', filter='today', mode=stats_mode, dimension=stats_dimension, prev_mode=prev_mode, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">Today</a>
+                <a href="{{ url_for('stats', filter='yesterday', mode=stats_mode, dimension=stats_dimension, prev_mode=prev_mode, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">Yesterday</a>
+                <a href="{{ url_for('stats', filter='this_month', mode=stats_mode, dimension=stats_dimension, prev_mode=prev_mode, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">This Month</a>
+                <a href="{{ url_for('stats', filter='last_month', mode=stats_mode, dimension=stats_dimension, prev_mode=prev_mode, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">Last Month</a>
                 <form method="get" class="d-inline">
                   <input type="hidden" name="filter" value="custom">
                   <input type="hidden" name="mode" value="{{ stats_mode }}">
                   <input type="hidden" name="dimension" value="{{ stats_dimension }}">
+                  <input type="hidden" name="prev_mode" value="{{ prev_mode }}">
                   <input type="date" name="start_date" required>
                   <input type="date" name="end_date" required>
                   {% if live_enabled %}
@@ -362,6 +363,7 @@
                     <input type="hidden" name="filter" value="{{ filter_type }}">
                     <input type="hidden" name="mode" value="{{ stats_mode }}">
                     <input type="hidden" name="dimension" value="{{ stats_dimension }}">
+                    <input type="hidden" name="prev_mode" value="{{ prev_mode }}">
                     <input type="hidden" name="start_date" value="{{ start_date.isoformat() if start_date else '' }}">
                     <input type="hidden" name="end_date" value="{{ end_date.isoformat() if end_date else '' }}">
                     <input type="hidden" id="liveInputField" name="live" value="{{ 1 if live_enabled else '' }}">
@@ -411,8 +413,14 @@
             <div class="row g-4 mb-4">
               <div class="col-lg-6">
                   <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
-                    <h5 class="text-success mb-0">Showing: {{ date_range_label }}</h5>
+                    <div class="d-flex flex-column">
+                      <h5 class="text-success mb-0">Showing: {{ date_range_label }}</h5>
+                      <small class="text-muted" id="prevDateRangeLabel">{{ value_vat_label }}: {{ prev_date_range_label }}</small>
+                    </div>
                     <div class="d-flex align-items-center gap-2 ms-auto">
+                      <button id="togglePrevModeBtn" class="btn btn-outline-secondary btn-sm">
+                        {{ 'Use Previous Month' if prev_mode == 'mirror' else 'Use Mirrored Range' }}
+                      </button>
                       <button id="saveOrderBtn" class="btn btn-outline-success btn-sm">Save Department Order</button>
                       <small id="saveOrderStatus" class="text-muted"></small>
                     </div>
@@ -543,6 +551,7 @@
       const modeLabel = "{{ mode_label }}";
       const valueFormat = "{{ value_format }}"; // currency | count
       const valueLabel = "{{ value_label }}";
+      const valueVatLabel = "{{ value_vat_label }}";
       const entityLabel = "{{ entity_label }}";
       const chartTitleBase = `${valueLabel} by ${entityLabel}`;
 
@@ -1066,6 +1075,10 @@
           ? `${chartTitleBase} (Pie)`
           : `${chartTitleBase} (Bar)`;
         document.querySelector('.text-success.mb-0').textContent = `Showing: ${data.date_range_label}`;
+        const prevRangeLabel = document.getElementById('prevDateRangeLabel');
+        if (prevRangeLabel && data.prev_date_range_label) {
+          prevRangeLabel.textContent = `${valueVatLabel}: ${data.prev_date_range_label}`;
+        }
 
         attachDepartmentRowHandlers();
       }
@@ -1160,6 +1173,7 @@
       const liveCheckbox = document.getElementById('liveToggle');
       const modeToggle = document.getElementById('modeToggle');
       const dimensionToggle = document.getElementById('dimensionToggle');
+      const togglePrevModeBtn = document.getElementById('togglePrevModeBtn');
 
       function buildDataUrl() {
         const url = new URL("{{ url_for('stats_data') }}", window.location.origin);
@@ -1171,6 +1185,7 @@
         // Ensure the current mode is always set for data refreshes.
         params.set('mode', statsMode);
         params.set('dimension', statsDimension);
+        params.set('prev_mode', "{{ prev_mode }}");
 
         // Guarantee the filter param so the backend can resolve date ranges
         // even if the URL was missing one.
@@ -1271,6 +1286,17 @@
           const url = new URL(window.location.href);
           url.searchParams.set('dimension', nextDimension);
           url.searchParams.set('mode', statsMode);
+          window.location.href = url.toString();
+        });
+      }
+
+      if (togglePrevModeBtn) {
+        togglePrevModeBtn.addEventListener('click', (event) => {
+          event.preventDefault();
+          const url = new URL(window.location.href);
+          const currentPrevMode = url.searchParams.get('prev_mode') || "{{ prev_mode }}";
+          const nextPrevMode = currentPrevMode === 'month' ? 'mirror' : 'month';
+          url.searchParams.set('prev_mode', nextPrevMode);
           window.location.href = url.toString();
         });
       }
