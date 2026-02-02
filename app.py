@@ -2047,6 +2047,7 @@ def build_stats_context(
     exclude_args: List[str],
     mode: str,
     dimension: str,
+    prev_mode: str,
 ):
     start_date, end_date = parse_date_filter(filter_type, start_date_str, end_date_str)
     date_range_label = describe_date_range(filter_type, start_date, end_date)
@@ -2056,28 +2057,41 @@ def build_stats_context(
     mode_label = "Parts Sold" if resolved_mode == "parts" else "Sales"
     value_format = "count" if resolved_mode == "parts" else "currency"
     value_label = "Parts Sold" if resolved_mode == "parts" else "Sales Total"
-    value_vat_label = (
-        "Parts Sold (Prev Period)" if resolved_mode == "parts" else "Total with VAT"
-    )
+    value_vat_label = f"{value_label} (Prev Period)"
 
     entity_label = "Department" if resolved_dimension == "department" else "User"
     entity_label_plural = "Departments" if resolved_dimension == "department" else "Users"
 
     if resolved_dimension == "department":
-        fetch_rows = fetch_department_parts_sold if resolved_mode == "parts" else fetch_department_sales
-        fetch_prev_rows = fetch_department_parts_sold
+        fetch_rows = (
+            fetch_department_parts_sold
+            if resolved_mode == "parts"
+            else fetch_department_sales
+        )
     else:
-        fetch_rows = fetch_user_parts_sold if resolved_mode == "parts" else fetch_user_sales
-        fetch_prev_rows = fetch_user_parts_sold
+        fetch_rows = (
+            fetch_user_parts_sold if resolved_mode == "parts" else fetch_user_sales
+        )
 
     rows = fetch_rows(start_date, end_date)
-    prev_rows = []
-    prev_row_map = {}
-    if resolved_mode == "parts":
+    resolved_prev_mode = normalize_prev_period_mode(prev_mode)
+    if resolved_prev_mode == "month":
+        inclusive_end = end_date - timedelta(days=1)
         prev_start = shift_one_month_back(start_date)
-        prev_end = shift_one_month_back(end_date)
-        prev_rows = fetch_prev_rows(prev_start, prev_end)
-        prev_row_map = {row[0]: float(row[1]) for row in prev_rows}
+        prev_inclusive_end = shift_one_month_back(inclusive_end)
+        prev_end = prev_inclusive_end + timedelta(days=1)
+    else:
+        range_delta = end_date - start_date
+        prev_end = start_date
+        prev_start = start_date - range_delta
+        prev_inclusive_end = prev_end - timedelta(days=1)
+    prev_date_range_label = (
+        f"Prev Period ({prev_start.strftime('%d/%m/%Y')} - {prev_inclusive_end.strftime('%d/%m/%Y')})"
+        if prev_start != prev_inclusive_end
+        else f"Prev Period ({prev_start.strftime('%d/%m/%Y')})"
+    )
+    prev_rows = fetch_rows(prev_start, prev_end)
+    prev_row_map = {row[0]: float(row[1]) for row in prev_rows}
     current_user = session.get("username")
     saved_order = load_department_order(current_user)
     order_index = {name: idx for idx, name in enumerate(saved_order)}
@@ -2090,11 +2104,8 @@ def build_stats_context(
     for row in rows:
         if row[0] in excluded_departments:
             continue
-        if resolved_mode == "parts":
-            prev_value = prev_row_map.get(row[0], 0.0)
-            filtered_rows.append((row[0], float(row[1]), float(prev_value)))
-        else:
-            filtered_rows.append(row)
+        prev_value = prev_row_map.get(row[0], 0.0)
+        filtered_rows.append((row[0], float(row[1]), float(prev_value)))
     filtered_rows = sorted(
         filtered_rows,
         key=lambda row: (order_index.get(row[0], float("inf")), row[0]),
@@ -2122,10 +2133,12 @@ def build_stats_context(
         "excluded_departments": excluded_departments,
         "stats_mode": resolved_mode,
         "stats_dimension": resolved_dimension,
+        "prev_mode": resolved_prev_mode,
         "mode_label": mode_label,
         "value_format": value_format,
         "value_label": value_label,
         "value_vat_label": value_vat_label,
+        "prev_date_range_label": prev_date_range_label,
         "entity_label": entity_label,
         "entity_label_plural": entity_label_plural,
         "entity_label": "User",
@@ -2467,9 +2480,16 @@ def stats():
     excluded_args = request.args.getlist("exclude")
     mode = request.args.get("mode", "sales")
     dimension = request.args.get("dimension", "department")
+    prev_mode = request.args.get("prev_mode", "mirror")
 
     context = build_stats_context(
-        filter_type, start_date_str, end_date_str, excluded_args, mode, dimension
+        filter_type,
+        start_date_str,
+        end_date_str,
+        excluded_args,
+        mode,
+        dimension,
+        prev_mode,
     )
     live_enabled = str(request.args.get("live", "")).lower() in {"1", "true", "yes", "on"}
 
@@ -2587,10 +2607,10 @@ def image_stats():
     live_enabled = str(request.args.get("live", "")).lower() in {"1", "true", "yes", "on"}
 
     return render_template(
-        "stats.html",
+        "image_stats.html",
         **context,
         live_enabled=live_enabled,
-        active_page="stats",
+        active_page="image_stats",
     )
 
 @app.route("/image_timeline", methods=["GET"])
@@ -2637,9 +2657,16 @@ def stats_data():
     excluded_args = request.args.getlist("exclude")
     mode = request.args.get("mode", "sales")
     dimension = request.args.get("dimension", "department")
+    prev_mode = request.args.get("prev_mode", "mirror")
 
     context = build_stats_context(
-        filter_type, start_date_str, end_date_str, excluded_args, mode, dimension
+        filter_type,
+        start_date_str,
+        end_date_str,
+        excluded_args,
+        mode,
+        dimension,
+        prev_mode,
     )
 
     return jsonify(
@@ -2657,6 +2684,7 @@ def stats_data():
             "sum_total_vat": context["sum_total_vat"],
             "chart_labels": context["chart_labels"],
             "chart_values": context["chart_values"],
+            "prev_date_range_label": context["prev_date_range_label"],
         }
     )
 
@@ -2709,9 +2737,10 @@ def image_stats_data():
     end_date_str = request.args.get("end_date")
     excluded_args = request.args.getlist("exclude")
     mode = request.args.get("mode", "images")
+    prev_mode = request.args.get("prev_mode", "mirror")
 
     context = build_image_stats_context(
-        filter_type, start_date_str, end_date_str, excluded_args, mode
+        filter_type, start_date_str, end_date_str, excluded_args, mode, prev_mode
     )
 
     return jsonify(
@@ -2729,6 +2758,7 @@ def image_stats_data():
             "sum_total_vat": context["sum_total_vat"],
             "chart_labels": context["chart_labels"],
             "chart_values": context["chart_values"],
+            "prev_date_range_label": context["prev_date_range_label"],
         }
     )
 
