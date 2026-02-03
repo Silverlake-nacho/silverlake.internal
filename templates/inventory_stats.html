@@ -1,0 +1,786 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Silverlake Inventory Stats</title>
+    <link rel="icon" href="{{ url_for('static', filename='SLK Logo.png') }}">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
+    <style>
+      :root {
+        --sidebar-expanded: 260px;
+        --sidebar-collapsed: calc(var(--sidebar-expanded) * 0.3);
+        --sidebar-bg: #5c9c13;
+      }
+      body {
+        margin: 0;
+        background: url("{{ url_for('static', filename='background.jpg') }}") no-repeat center center fixed;
+        background-size: cover;
+        font-family: 'Montserrat', sans-serif;
+        color: black;
+      }
+      h1, h2, label {
+        color: #5c9c13;
+      }
+      .page-wrapper {
+        display: flex;
+        min-height: 100vh;
+      }
+      .sidebar {
+        width: var(--sidebar-collapsed);
+        background-color: var(--sidebar-bg);
+        color: #fff;
+        position: fixed;
+        inset: 0 auto 0 0;
+        overflow: hidden;
+        transition: width 0.3s ease;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        padding: 16px 12px;
+        z-index: 1000;
+      }
+      .sidebar:hover {
+        width: var(--sidebar-expanded);
+      }
+      .sidebar .brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 8px 10px;
+      }
+      .sidebar .logo-collapsed {
+        height: 34px;
+        opacity: 1;
+        transition: opacity 0.2s ease;
+      }
+      .sidebar .logo-expanded {
+        height: 34px;
+        opacity: 0;
+        transform: translateX(-6px);
+        transition: opacity 0.2s ease, transform 0.2s ease;
+      }
+      .sidebar:hover .logo-collapsed {
+        opacity: 0;
+      }
+      .sidebar:hover .logo-expanded {
+        opacity: 1;
+        transform: translateX(0);
+      }
+      .sidebar .brand-text {
+        font-weight: 700;
+        font-size: 1.05rem;
+        white-space: nowrap;
+        opacity: 0;
+        transition: opacity 0.2s ease;
+      }
+      .sidebar:hover .brand-text {
+        opacity: 1;
+      }
+      .sidebar .nav-section {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .sidebar .nav-link {
+        color: #fff;
+        font-weight: 700;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 10px 12px;
+        border-radius: 10px;
+        text-decoration: none;
+        transition: background-color 0.2s ease, color 0.2s ease;
+        font-size: 0.95rem;
+      }
+      .sidebar .nav-link i {
+        width: 20px;
+        text-align: center;
+        font-size: 1.15rem;
+      }
+      .sidebar .nav-link .link-text {
+        white-space: nowrap;
+        opacity: 0;
+        transform: translateX(-6px);
+        transition: opacity 0.2s ease, transform 0.2s ease;
+      }
+      .sidebar:hover .nav-link .link-text {
+        opacity: 1;
+        transform: translateX(0);
+      }
+      .sidebar .nav-link:hover,
+      .sidebar .nav-link.active {
+        background-color: rgba(255, 255, 255, 0.16);
+        color: #fff;
+      }
+      .sidebar-footer {
+        margin-top: auto;
+      }
+      .content {
+        flex: 1;
+        margin-left: var(--sidebar-collapsed);
+        transition: margin-left 0.3s ease;
+      }
+      .sidebar:hover ~ .content {
+        margin-left: var(--sidebar-expanded);
+      }
+      .content-inner {
+        padding: 24px;
+      }
+      .toggle-wrapper {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .toggle-label {
+        font-weight: 600;
+        color: #5c9c13;
+      }
+      .toggle {
+        position: relative;
+        width: 270px;
+        height: 48px;
+        background: #cde7b1;
+        border-radius: 999px;
+        box-shadow: inset 0 2px 4px rgba(0,0,0,0.15);
+        cursor: pointer;
+        border: 2px solid #5c9c13;
+        overflow: hidden;
+      }
+      .toggle input {
+        opacity: 0;
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        position: absolute;
+        inset: 0;
+        cursor: pointer;
+        z-index: 3;
+      }
+      .toggle-track {
+        position: absolute;
+        top: 4px;
+        left: 4px;
+        width: calc(50% - 8px);
+        height: calc(100% - 8px);
+        background: #5c9c13;
+        border-radius: 999px;
+        transition: transform 0.25s ease;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+        z-index: 1;
+      }
+      .toggle input:checked + .toggle-track {
+        transform: translateX(100%);
+      }
+      .toggle-labels {
+        position: relative;
+        z-index: 2;
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        height: 100%;
+        align-items: center;
+        text-align: center;
+        font-weight: 700;
+        color: #1f3b08;
+        pointer-events: none;
+      }
+      .toggle-labels span {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: color 0.2s ease;
+      }
+      .toggle input:checked ~ .toggle-labels span:first-child {
+        color: #2f2f2f;
+      }
+      .toggle input:not(:checked) ~ .toggle-labels span:last-child {
+        color: #2f2f2f;
+      }
+      .btn-primary, .btn-success {
+        background-color: #5c9c13;
+        border: none;
+      }
+      .btn-primary:hover, .btn-success:hover {
+        background-color: #4a8010;
+      }
+      .form-control, .form-select {
+        background-color: #d6f5c1;
+        color: #333;
+        border: 1px solid #333;
+      }
+      .form-control:focus, .form-select:focus {
+        border-color: #5c9c13;
+        box-shadow: 0 0 5px #5c9c13;
+      }
+      table {
+        color: #f0f0f0;
+        background-color: #111;
+      }
+      th, td {
+        border-bottom: 1px solid #5c9c13;
+      }
+      .inventory-row td {
+        vertical-align: middle;
+      }
+      .logo {
+        display: flex;
+        justify-content: flex-end;
+        margin-bottom: 20px;
+      }
+      .logo img {
+        width: 150px;
+        max-width: 50%;
+        height: auto;
+      }
+      .toggle-stack {
+        display: flex !important;
+        flex-direction: row;
+        gap: 0.75rem;
+        margin-bottom: 1.5rem;
+        flex-wrap: wrap;
+        align-items: center;
+      }
+      .value-cell {
+        min-width: 220px;
+      }
+      .item-cell {
+        min-width: 360px;
+      }
+      .bar-track {
+        height: 12px;
+        background: rgba(92, 156, 19, 0.15);
+        border-radius: 999px;
+        overflow: hidden;
+        margin-top: 6px;
+      }
+      .bar {
+        height: 100%;
+        width: 0%;
+        background: #5c9c13;
+        border-radius: 999px;
+        transition: width 0.2s ease;
+      }
+      .trend-section {
+        background: #f8f9fa;
+        border-radius: 12px;
+        padding: 16px;
+        margin-bottom: 1rem;
+      }
+      @media (max-width: 768px) {
+        :root {
+          --sidebar-expanded: 240px;
+          --sidebar-collapsed: 72px;
+        }
+        .content-inner {
+          padding: 16px;
+        }
+        .toggle {
+          width: 220px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page-wrapper">
+      <aside class="sidebar">
+        <div class="brand">
+          <img src="{{ url_for('static', filename='SLK Logo.png') }}" alt="Silverlake Collapsed Logo" class="logo-collapsed">
+          <img src="{{ url_for('static', filename='logo-slg-strip.svg') }}" alt="Silverlake Logo" class="logo-expanded">
+        </div>
+        <div class="nav-section">
+          <a href="{{ url_for('index') }}" class="nav-link{% if active_page == 'index' %} active{% endif %}">
+            <i class="fas fa-magnifying-glass-dollar"></i>
+            <span class="link-text">Opportunity Finder</span>
+          </a>
+          <a href="{{ url_for('image_stats') }}" class="nav-link{% if active_page == 'image_stats' %} active{% endif %}">
+            <i class="fas fa-chart-pie"></i>
+            <span class="link-text">Image Stats</span>
+          </a>
+          <a href="{{ url_for('image_timeline') }}" class="nav-link{% if active_page == 'image_timeline' %} active{% endif %}">
+            <i class="fas fa-clock"></i>
+            <span class="link-text">Image Timeline</span>
+          </a>
+          <a href="{{ url_for('stores_timeline') }}" class="nav-link{% if active_page == 'stores_timeline' %} active{% endif %}">
+            <i class="fas fa-warehouse"></i>
+            <span class="link-text">Stores Timeline</span>
+          </a>
+          <a href="{{ url_for('stats') }}" class="nav-link{% if active_page == 'stats' %} active{% endif %}">
+            <i class="fas fa-chart-column"></i>
+            <span class="link-text">Sales Stats</span>
+          </a>
+          <a href="{{ url_for('inventory_stats') }}" class="nav-link{% if active_page == 'inventory_stats' %} active{% endif %}">
+            <i class="fas fa-boxes-stacked"></i>
+            <span class="link-text">Inventory Stats</span>
+          </a>
+          <a href="{{ url_for('vehicle_stats') }}" class="nav-link{% if active_page == 'vehicle_stats' %} active{% endif %}">
+            <i class="fas fa-car-side"></i>
+            <span class="link-text">Vehicle Stats</span>
+          </a>
+          <a href="{{ url_for('crush_vehicles') }}" class="nav-link{% if active_page == 'crush_vehicles' %} active{% endif %}">
+            <i class="fas fa-car-burst"></i>
+            <span class="link-text">Crush Vehicles</span>
+          </a>
+          <a href="{{ url_for('logs') }}" class="nav-link{% if active_page == 'logs' %} active{% endif %}">
+            <i class="fas fa-clipboard-list"></i>
+            <span class="link-text">Logs</span>
+          </a>
+        </div>
+        <div class="sidebar-footer">
+          <a href="{{ url_for('logout') }}" class="nav-link">
+            <i class="fas fa-arrow-right-from-bracket"></i>
+            <span class="link-text">Logout ({{ current_user }})</span>
+          </a>
+        </div>
+      </aside>
+
+      <main class="content">
+        <div class="content-inner">
+          <div class="logo">
+            <img src="{{ url_for('static', filename='logo-slg-strip.svg') }}" alt="Silverlake Logo">
+          </div>
+          <h1 class="mb-4">Inventory Stats</h1>
+
+          <div class="d-flex align-items-center gap-3 flex-wrap mb-3">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" id="excludeOnCarToggle" {% if exclude_oncar %}checked{% endif %}>
+              <label class="form-check-label text-success" for="excludeOnCarToggle">Exclude On Car parts</label>
+            </div>
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" id="withImagesToggle" {% if with_images %}checked{% endif %}>
+              <label class="form-check-label text-success" for="withImagesToggle">With images</label>
+            </div>
+          </div>
+
+          <div class="toggle-stack">
+            <div class="toggle-wrapper">
+              <span class="toggle-label">Mode</span>
+              <label class="toggle" for="modeToggle">
+                <input type="checkbox" id="modeToggle"
+                  {% if inventory_mode == 'value' %}checked{% endif %}
+                  aria-label="Toggle between Count of Items and Inventory Value">
+                <span class="toggle-track"></span>
+                <div class="toggle-labels">
+                  <span>Count of Items</span>
+                  <span>Value</span>
+                </div>
+              </label>
+            </div>
+
+            <div class="d-flex align-items-center gap-2">
+              <label class="toggle-label" for="orderSelect">Order</label>
+              <select id="orderSelect" class="form-select form-select-sm" style="width: 220px;">
+                <option value="name" {% if inventory_order == 'name' %}selected{% endif %}>Item Name (A-Z)</option>
+                <option value="value" {% if inventory_order == 'value' %}selected{% endif %}>Figures (High to Low)</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="row g-4 mb-4">
+            <div class="col-12">
+              <table class="table table-striped">
+                <thead>
+                  <tr>
+                    <th>Item Name</th>
+                    <th class="text-end">{{ value_label }}</th>
+                  </tr>
+                </thead>
+                <tbody id="inventoryTableBody">
+                  {% for row in rows %}
+                  <tr class="inventory-row" data-itemname="{{ row[0] }}" data-count="{{ row[1] }}" data-value="{{ row[2] }}" style="cursor: pointer;">
+                    <td class="item-cell">
+                      {{ row[0] }}
+                      <div class="bar-track" aria-hidden="true">
+                        <div class="bar"></div>
+                      </div>
+                    </td>
+                    {% if value_format == 'currency' %}
+                      <td class="text-end value-cell">£{{ '%.2f'|format(row[2]) }}</td>
+                    {% else %}
+                      <td class="text-end value-cell">{{ '{:,.0f}'.format(row[1]) }}</td>
+                    {% endif %}
+                  </tr>
+                  {% endfor %}
+                </tbody>
+                <tfoot>
+                  <tr class="fw-bold">
+                    <td>Total</td>
+                    {% if value_format == 'currency' %}
+                      <td class="text-end" id="totalSumCell">£{{ '%.2f'|format(sum_total) }}</td>
+                    {% else %}
+                      <td class="text-end" id="totalSumCell">{{ '{:,.0f}'.format(sum_total) }}</td>
+                    {% endif %}
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <div class="modal fade" id="inventoryTrendModal" tabindex="-1" aria-labelledby="inventoryTrendModalLabel" aria-hidden="true">
+      <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+          <div class="modal-header">
+            <div>
+              <h5 class="modal-title mb-0" id="inventoryTrendModalLabel">Inventory trend</h5>
+              <small class="text-muted" id="inventoryTrendModalSubtitle"></small>
+            </div>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <div class="trend-section">
+              <h6 class="mb-3" id="trendMonthlyTitle"></h6>
+              <canvas id="trendMonthlyChart" height="140"></canvas>
+            </div>
+            <div class="trend-section d-none" id="trendDailySection">
+              <h6 class="mb-3" id="trendDailyTitle"></h6>
+              <canvas id="trendDailyChart" height="140"></canvas>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+      if (typeof Chart !== 'undefined' && typeof ChartDataLabels !== 'undefined') {
+        Chart.register(ChartDataLabels);
+      }
+      if (typeof Chart !== 'undefined' && typeof ChartZoom !== 'undefined') {
+        Chart.register(ChartZoom);
+      }
+
+      const inventoryMode = "{{ inventory_mode }}";
+      const inventoryOrder = "{{ inventory_order }}";
+      const valueFormat = "{{ value_format }}";
+      const valueLabel = "{{ value_label }}";
+      const excludeOnCarDefault = {{ 'true' if exclude_oncar else 'false' }};
+      const withImagesDefault = {{ 'true' if with_images else 'false' }};
+
+      const trendModalEl = document.getElementById('inventoryTrendModal');
+      const trendModalLabel = document.getElementById('inventoryTrendModalLabel');
+      const trendModalSubtitle = document.getElementById('inventoryTrendModalSubtitle');
+      const trendMonthlyTitle = document.getElementById('trendMonthlyTitle');
+      const trendMonthlyCanvas = document.getElementById('trendMonthlyChart');
+      const trendDailySection = document.getElementById('trendDailySection');
+      const trendDailyTitle = document.getElementById('trendDailyTitle');
+      const trendDailyCanvas = document.getElementById('trendDailyChart');
+
+      let trendModal = null;
+      let monthlyChart = null;
+      let dailyChart = null;
+      let selectedMonthKey = null;
+
+      function formatValue(value, { includeSymbol = true } = {}) {
+        const numericValue = Number(value) || 0;
+        if (valueFormat === 'currency') {
+          const prefix = includeSymbol ? '£' : '';
+          return `${prefix}${numericValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        }
+        return numericValue.toLocaleString();
+      }
+
+      function axisLabel(value) {
+        if (valueFormat === 'currency') {
+          return '£' + value.toLocaleString();
+        }
+        return value.toLocaleString();
+      }
+
+      function computeDatalabelRotation(labelCount) {
+        const minRotation = -35;
+        const maxRotation = -65;
+        const minCount = 5;
+        const maxCount = 30;
+        const clampedCount = Math.max(minCount, Math.min(maxCount, labelCount));
+        const t = (clampedCount - minCount) / (maxCount - minCount);
+        return minRotation + t * (maxRotation - minRotation);
+      }
+
+      function buildItemBarConfig(labels, values, onBarClick, datalabelRotation = 0) {
+        return {
+          type: 'bar',
+          data: {
+            labels,
+            datasets: [{
+              label: valueLabel,
+              data: values,
+              backgroundColor: '#5c9c13'
+            }]
+          },
+          options: {
+            responsive: true,
+            onClick: function(evt, activeEls) {
+              if (onBarClick && activeEls.length) {
+                const index = activeEls[0].index;
+                onBarClick(index);
+              }
+            },
+            layout: {
+              padding: { top: 0 }
+            },
+            plugins: {
+              legend: { display: false },
+              datalabels: {
+                display: true,
+                anchor: 'end',
+                align: 'end',
+                color: '#000',
+                formatter: (value) => formatValue(value),
+                rotation: datalabelRotation
+              },
+              tooltip: {
+                callbacks: {
+                  label: function(context) {
+                    const value = context.parsed.y || 0;
+                    return formatValue(value);
+                  }
+                }
+              }
+            },
+            scales: {
+              y: {
+                beginAtZero: true,
+                ticks: {
+                  callback: function(value) {
+                    return axisLabel(value);
+                  }
+                }
+              }
+            }
+          }
+        };
+      }
+
+      function renderItemMonthlyChart(labels, values, monthKeys, itemname) {
+        if (monthlyChart) {
+          monthlyChart.destroy();
+        }
+
+        trendMonthlyTitle.textContent = `${itemname} - ${valueLabel} by month (last 12 months)`;
+        trendDailySection.classList.add('d-none');
+
+        monthlyChart = new Chart(
+          trendMonthlyCanvas,
+          buildItemBarConfig(labels, values, (index) => {
+            const monthKey = monthKeys[index];
+            if (!monthKey) return;
+            loadItemDaily(itemname, monthKey.year, monthKey.month, labels[index]);
+          }, computeDatalabelRotation(labels.length))
+        );
+      }
+
+      function renderItemDailyChart(labels, values, itemname, year, monthLabel) {
+        if (dailyChart) {
+          dailyChart.destroy();
+        }
+
+        trendDailyTitle.textContent = `${itemname} - ${valueLabel} for ${monthLabel} ${year}`;
+        trendDailySection.classList.remove('d-none');
+
+        dailyChart = new Chart(
+          trendDailyCanvas,
+          buildItemBarConfig(labels, values, undefined, computeDatalabelRotation(labels.length))
+        );
+      }
+
+      function getTrendModal() {
+        if (!trendModalEl || !window.bootstrap || !window.bootstrap.Modal) return null;
+        if (!trendModal) {
+          trendModal = window.bootstrap.Modal.getOrCreateInstance(trendModalEl);
+        }
+        return trendModal;
+      }
+
+      async function loadItemMonthly(itemname, { preserveDaily = false } = {}) {
+        try {
+          const url = new URL(`/inventory_stats/item/${encodeURIComponent(itemname)}/monthly`, window.location.origin);
+          url.searchParams.set('mode', inventoryMode);
+          applyFiltersToUrl(url);
+          const response = await fetch(url.toString());
+          if (!response.ok) return;
+          const data = await response.json();
+          if (!data.labels.length) {
+            trendDailySection.classList.add('d-none');
+            return;
+          }
+          renderItemMonthlyChart(data.labels, data.values, data.month_keys, itemname);
+          if (!preserveDaily || !selectedMonthKey) {
+            selectedMonthKey = null;
+            trendDailySection.classList.add('d-none');
+          } else {
+            const monthIdx = data.month_keys.findIndex(key => key.year === selectedMonthKey.year && key.month === selectedMonthKey.month);
+            if (monthIdx === -1) {
+              selectedMonthKey = null;
+              trendDailySection.classList.add('d-none');
+            } else {
+              await loadItemDaily(itemname, selectedMonthKey.year, selectedMonthKey.month, data.labels[monthIdx], true);
+            }
+          }
+        } catch (err) {
+          console.error('Failed to load item monthly totals', err);
+        }
+      }
+
+      async function loadItemDaily(itemname, year, month, monthLabel, preserveSelection = false) {
+        try {
+          const url = new URL(`/inventory_stats/item/${encodeURIComponent(itemname)}/daily`, window.location.origin);
+          url.searchParams.set('mode', inventoryMode);
+          url.searchParams.set('month', month);
+          url.searchParams.set('year', year);
+          applyFiltersToUrl(url);
+          const response = await fetch(url.toString());
+          if (!response.ok) return;
+          const data = await response.json();
+          if (!preserveSelection) {
+            selectedMonthKey = { year, month };
+          }
+          renderItemDailyChart(data.labels, data.values, itemname, data.year, monthLabel);
+        } catch (err) {
+          console.error('Failed to load item daily totals', err);
+        }
+      }
+
+      function getTableRows() {
+        return Array.from(document.querySelectorAll('#inventoryTableBody tr.inventory-row'));
+      }
+
+      function getRowMetric(row) {
+        return inventoryMode === 'value'
+          ? Number(row.dataset.value)
+          : Number(row.dataset.count);
+      }
+
+      function sortTableRows(order) {
+        const tbody = document.getElementById('inventoryTableBody');
+        const rows = getTableRows();
+
+        rows.sort((a, b) => {
+          if (order === 'name') {
+            return (a.dataset.itemname || '').localeCompare(b.dataset.itemname || '');
+          }
+          const diff = getRowMetric(b) - getRowMetric(a);
+          if (diff !== 0) return diff;
+          return (a.dataset.itemname || '').localeCompare(b.dataset.itemname || '');
+        });
+
+        rows.forEach(row => tbody.appendChild(row));
+      }
+
+      function updateInlineBars() {
+        const rows = getTableRows();
+        const maxValue = rows.reduce((acc, row) => Math.max(acc, getRowMetric(row)), 0);
+        rows.forEach(row => {
+          const bar = row.querySelector('.bar');
+          if (!bar) return;
+          const metric = getRowMetric(row);
+          const ratio = maxValue ? metric / maxValue : 0;
+          const width = Math.max(4, Math.round(ratio * 100));
+          bar.style.width = `${width}%`;
+        });
+      }
+
+      function attachRowHandlers() {
+        const tbody = document.getElementById('inventoryTableBody');
+        if (!tbody) return;
+        if (!tbody.dataset.handlerAttached) {
+          tbody.addEventListener('click', (event) => {
+            const row = event.target.closest('tr.inventory-row');
+            if (!row) return;
+            const itemname = row.dataset.itemname;
+            if (!itemname) return;
+            selectedMonthKey = null;
+            if (trendModalLabel) {
+              trendModalLabel.textContent = `${itemname} - Inventory trend`;
+            }
+            if (trendModalSubtitle) {
+              trendModalSubtitle.textContent = inventoryMode === 'value' ? 'Showing total value by month' : 'Showing count of items by month';
+            }
+            const modal = getTrendModal();
+            if (modal) {
+              modal.show();
+            }
+            loadItemMonthly(itemname);
+          });
+          tbody.dataset.handlerAttached = 'true';
+        }
+      }
+
+      const modeToggle = document.getElementById('modeToggle');
+      const orderSelect = document.getElementById('orderSelect');
+      const excludeOnCarToggle = document.getElementById('excludeOnCarToggle');
+      const withImagesToggle = document.getElementById('withImagesToggle');
+
+      function applyFiltersToUrl(url) {
+        if (excludeOnCarToggle) {
+          if (excludeOnCarToggle.checked) {
+            url.searchParams.set('exclude_oncar', '1');
+          } else {
+            url.searchParams.delete('exclude_oncar');
+          }
+        } else if (excludeOnCarDefault) {
+          url.searchParams.set('exclude_oncar', '1');
+        }
+        if (withImagesToggle) {
+          if (withImagesToggle.checked) {
+            url.searchParams.set('with_images', '1');
+          } else {
+            url.searchParams.delete('with_images');
+          }
+        } else if (withImagesDefault) {
+          url.searchParams.set('with_images', '1');
+        }
+      }
+
+      function refreshWithFilters() {
+        const url = new URL(window.location.href);
+        applyFiltersToUrl(url);
+        if (orderSelect && orderSelect.value) {
+          url.searchParams.set('order', orderSelect.value);
+        }
+        url.searchParams.set('mode', modeToggle.checked ? 'value' : 'count');
+        window.location.href = url.toString();
+      }
+
+      modeToggle.addEventListener('change', () => {
+        refreshWithFilters();
+      });
+
+      if (orderSelect) {
+        orderSelect.addEventListener('change', (event) => {
+          const order = event.target.value;
+          sortTableRows(order);
+          updateInlineBars();
+          const url = new URL(window.location.href);
+          url.searchParams.set('order', order);
+          applyFiltersToUrl(url);
+          url.searchParams.set('mode', modeToggle.checked ? 'value' : 'count');
+          window.history.replaceState({}, '', url);
+        });
+      }
+
+      if (excludeOnCarToggle) {
+        excludeOnCarToggle.addEventListener('change', () => {
+          refreshWithFilters();
+        });
+      }
+
+      if (withImagesToggle) {
+        withImagesToggle.addEventListener('change', () => {
+          refreshWithFilters();
+        });
+      }
+
+      sortTableRows(inventoryOrder);
+      updateInlineBars();
+      attachRowHandlers();
+    </script>
+  </body>
+</html>

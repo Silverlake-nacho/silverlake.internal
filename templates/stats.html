@@ -291,6 +291,10 @@
             <i class="fas fa-chart-column"></i>
             <span class="link-text">Sales Stats</span>
           </a>
+          <a href="{{ url_for('inventory_stats') }}" class="nav-link{% if active_page == 'inventory_stats' %} active{% endif %}">
+            <i class="fas fa-boxes-stacked"></i>
+            <span class="link-text">Inventory Stats</span>
+          </a>
           <a href="{{ url_for('vehicle_stats') }}" class="nav-link{% if active_page == 'vehicle_stats' %} active{% endif %}">
             <i class="fas fa-car-side"></i>
             <span class="link-text">Vehicle Stats</span>
@@ -331,8 +335,8 @@
                   <input type="hidden" name="mode" value="{{ stats_mode }}">
                   <input type="hidden" name="dimension" value="{{ stats_dimension }}">
                   <input type="hidden" name="prev_mode" value="{{ prev_mode }}">
-                  <input type="date" name="start_date" required>
-                  <input type="date" name="end_date" required>
+                  <input type="date" name="start_date" id="customStartDate" required>
+                  <input type="date" name="end_date" id="customEndDate" required>
                   {% if live_enabled %}
                     <input type="hidden" name="live" value="1">
                   {% endif %}
@@ -436,14 +440,14 @@
                   </thead>
                   <tbody id="departmentTableBody">
                     {% for row in rows %}
-                    <tr class="department-row" data-department="{{ row[0] }}" data-total="{{ row[1] }}" data-total-vat="{{ row[2] }}" style="cursor: pointer;">
+                    <tr class="department-row" data-department="{{ row[0] or 'Unknown' }}" data-total="{{ row[1] }}" data-total-vat="{{ row[2] }}" style="cursor: pointer;">
                       <td class="text-center">
                         <div class="btn-group btn-group-sm" role="group">
                           <button class="btn btn-light border move-up" title="Move up">▲</button>
                           <button class="btn btn-light border move-down" title="Move down">▼</button>
                         </div>
                       </td>
-                      <td>{{ row[0] }}</td>
+                      <td>{{ row[0] or 'Unknown' }}</td>
                       {% if value_format == 'currency' %}
                         <td class="text-end">£{{ '%.2f'|format(row[1]) }}</td>
                         <td class="text-end">£{{ '%.2f'|format(row[2]) }}</td>
@@ -595,6 +599,7 @@
       let departmentDailyChart = null;
       let selectedDepartment = null;
       let selectedMonthNumber = null;
+      let selectedMonthYear = null;
       let selectedMonthLabel = null;
       let orderDirty = false;
 
@@ -728,7 +733,7 @@
                 zoom: buildZoomOptions('xy')
               },
               layout: {
-                padding: { top: 30 }
+                padding: { top: 60 }
               },
               scales: {
                 y: {
@@ -789,7 +794,7 @@
               }
             },
             layout: {
-              padding: { top: 0 }
+              padding: { top: 75 }
             },
             plugins: {
               legend: { display: false },
@@ -900,13 +905,12 @@
         }
       }
 
-      function renderDepartmentMonthlyChart(labels, values, months, department) {
+      function renderDepartmentMonthlyChart(labels, values, months, years, department) {
         if (departmentMonthlyChart) {
           departmentMonthlyChart.destroy();
         }
 
-
-        departmentMonthlyTitle.textContent = `${department} - ${valueLabel} by month (current year)`;
+        departmentMonthlyTitle.textContent = `${department} - ${valueLabel} by month (last 12 months)`;
         departmentMonthlySubtitle.textContent = 'Click a month to see daily totals';
         departmentMonthlyCard.classList.remove('d-none');
 
@@ -915,17 +919,18 @@
           buildDepartmentBarConfig(labels, values, (index) => {
             const monthNumber = months[index];
             const monthLabel = labels[index];
-            loadDepartmentDaily(department, monthNumber, monthLabel);
+            const monthYear = years[index];
+            loadDepartmentDaily(department, monthNumber, monthYear, monthLabel);
           })
         );
       }
 
-      function renderDepartmentDailyChart(labels, values, department, year, monthLabel) {
+      function renderDepartmentDailyChart(labels, values, department, monthLabel) {
         if (departmentDailyChart) {
           departmentDailyChart.destroy();
         }
 
-        departmentDailyTitle.textContent = `${department} - ${valueLabel} for ${monthLabel} ${year}`;
+        departmentDailyTitle.textContent = `${department} - ${valueLabel} for ${monthLabel}`;
         departmentDailySubtitle.textContent = 'Click another month above to change view';
         departmentDailyCard.classList.remove('d-none');
 
@@ -948,20 +953,24 @@
             departmentDailyCard.classList.add('d-none');
             return;
           }
-          renderDepartmentMonthlyChart(data.labels, data.values, data.months, department);
-          if (!preserveDaily || !selectedMonthNumber) {
+          renderDepartmentMonthlyChart(data.labels, data.values, data.months, data.years, department);
+          if (!preserveDaily || !selectedMonthNumber || !selectedMonthYear) {
             selectedMonthNumber = null;
+            selectedMonthYear = null;
             selectedMonthLabel = null;
             departmentDailyCard.classList.add('d-none');
           } else {
-            const monthIdx = data.months.indexOf(Number(selectedMonthNumber));
+            const monthIdx = data.months.findIndex((month, index) => (
+              Number(month) === Number(selectedMonthNumber) && Number(data.years[index]) === Number(selectedMonthYear)
+            ));
             if (monthIdx === -1) {
               selectedMonthNumber = null;
+              selectedMonthYear = null;
               selectedMonthLabel = null;
               departmentDailyCard.classList.add('d-none');
             } else {
               const monthLabel = data.labels[monthIdx];
-              await loadDepartmentDaily(department, selectedMonthNumber, monthLabel, true);
+              await loadDepartmentDaily(department, selectedMonthNumber, selectedMonthYear, monthLabel, true);
             }
           }
         } catch (err) {
@@ -969,20 +978,28 @@
         }
       }
 
-      async function loadDepartmentDaily(department, monthNumber, monthLabel, preserveSelection = false) {
+      async function loadDepartmentDaily(
+        department,
+        monthNumber,
+        monthYear,
+        monthLabel,
+        preserveSelection = false
+      ) {
         try {
           const url = new URL(`/stats/department/${encodeURIComponent(department)}/daily`, window.location.origin);
           url.searchParams.set('mode', statsMode);
           url.searchParams.set('dimension', statsDimension);
           url.searchParams.set('month', monthNumber);
+          url.searchParams.set('year', monthYear);
           const response = await fetch(url.toString());
           if (!response.ok) return;
           const data = await response.json();
           if (!preserveSelection) {
             selectedMonthNumber = monthNumber;
+            selectedMonthYear = monthYear;
             selectedMonthLabel = monthLabel;
           }
-          renderDepartmentDailyChart(data.labels, data.values, department, data.year, monthLabel);
+          renderDepartmentDailyChart(data.labels, data.values, department, monthLabel);
         } catch (err) {
           console.error('Failed to load department daily totals', err);
         }
@@ -1024,6 +1041,7 @@
             if (!dept) return;
             selectedDepartment = dept;
             selectedMonthNumber = null;
+            selectedMonthYear = null;
             selectedMonthLabel = null;
             loadDepartmentMonthly(dept);
           });
@@ -1174,6 +1192,20 @@
       const modeToggle = document.getElementById('modeToggle');
       const dimensionToggle = document.getElementById('dimensionToggle');
       const togglePrevModeBtn = document.getElementById('togglePrevModeBtn');
+      const customStartDate = document.getElementById('customStartDate');
+      const customEndDate = document.getElementById('customEndDate');
+
+      function syncCustomEndDate() {
+        if (!customStartDate || !customEndDate) return;
+        if (!customEndDate.value && customStartDate.value) {
+          customEndDate.value = customStartDate.value;
+        }
+      }
+
+      if (customStartDate && customEndDate) {
+        customStartDate.addEventListener('change', syncCustomEndDate);
+        customEndDate.addEventListener('focus', syncCustomEndDate);
+      }
 
       function buildDataUrl() {
         const url = new URL("{{ url_for('stats_data') }}", window.location.origin);

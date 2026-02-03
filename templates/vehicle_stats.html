@@ -191,6 +191,10 @@
             <i class="fas fa-chart-column"></i>
             <span class="link-text">Sales Stats</span>
           </a>
+          <a href="{{ url_for('inventory_stats') }}" class="nav-link{% if active_page == 'inventory_stats' %} active{% endif %}">
+            <i class="fas fa-boxes-stacked"></i>
+            <span class="link-text">Inventory Stats</span>
+          </a>
           <a href="{{ url_for('vehicle_stats') }}" class="nav-link{% if active_page == 'vehicle_stats' %} active{% endif %}">
             <i class="fas fa-car-side"></i>
             <span class="link-text">Vehicle Stats</span>
@@ -250,8 +254,8 @@
                   <form method="get" class="d-inline">
                     <input type="hidden" name="filter" value="custom">
                     <input type="hidden" name="group" value="{{ group_mode }}">
-                    <input type="date" name="start_date" required>
-                    <input type="date" name="end_date" required>
+                    <input type="date" name="start_date" id="customStartDate" required>
+                    <input type="date" name="end_date" id="customEndDate" required>
                     {% if live_enabled %}
                       <input type="hidden" name="live" value="1">
                     {% endif %}
@@ -388,6 +392,20 @@
       const resetZoomBtn = document.getElementById('resetZoomBtn');
       const toggleChartBtn = document.getElementById('toggleChartBtn');
       const liveCheckbox = document.getElementById('liveToggle');
+      const customStartDate = document.getElementById('customStartDate');
+      const customEndDate = document.getElementById('customEndDate');
+
+      function syncCustomEndDate() {
+        if (!customStartDate || !customEndDate) return;
+        if (!customEndDate.value && customStartDate.value) {
+          customEndDate.value = customStartDate.value;
+        }
+      }
+
+      if (customStartDate && customEndDate) {
+        customStartDate.addEventListener('change', syncCustomEndDate);
+        customEndDate.addEventListener('focus', syncCustomEndDate);
+      }
       const vehicleDetailsTableBody = document.getElementById('vehicleDetailsTableBody');
       const chartTitleBase = {{ chart_title_base|tojson }}
 
