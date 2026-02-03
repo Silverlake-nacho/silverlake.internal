@@ -1088,7 +1088,7 @@ def fetch_department_sales(start_date: date, end_date: date) -> List[Tuple[str, 
     cur = conn.cursor()
     cur.execute(
         """
-        SELECT departmentname,
+        SELECT COALESCE(departmentname, 'Unknown') AS departmentname,
                SUM(total) AS sum_total,
                SUM(total + totaltax1) AS sum_total_vat
         FROM invoice
@@ -1487,6 +1487,160 @@ def fetch_parts_breakdown(
     conn.close()
     return [(row[0], int(row[1])) for row in rows]
 
+
+INVENTORY_ITEMNAME_EXPR = (
+    "COALESCE(REPLACE(REPLACE(REPLACE(it.itemname, '[', ''), ']', ''), '_', ' '), 'Unknown')"
+)
+
+
+def normalize_inventory_mode(mode: str) -> str:
+    return "value" if str(mode).lower() in {"value", "price", "amount"} else "count"
+
+
+def normalize_inventory_order(order: str) -> str:
+    return "name" if str(order).lower() in {"name", "item", "itemname"} else "value"
+
+
+def shift_month(value: date, months: int) -> date:
+    month_index = value.month - 1 + months
+    year = value.year + month_index // 12
+    month = month_index % 12 + 1
+    day = min(value.day, monthrange(year, month)[1])
+    return date(year, month, day)
+
+
+def fetch_inventory_summary(exclude_oncar: bool, with_images: bool) -> List[Tuple[str, int, float]]:
+    conn = get_db_connection()
+    cur = conn.cursor()
+    filters = []
+    params: List[object] = []
+    if exclude_oncar:
+        filters.append("COALESCE(inv.oncar, false) = false")
+    if with_images:
+        filters.append(
+            """
+            EXISTS (
+                SELECT 1
+                FROM image img
+                WHERE img.invnumber = inv.invnumber
+            )
+            """
+        )
+    where_clause = f"WHERE {' AND '.join(filters)}" if filters else ""
+    cur.execute(
+        f"""
+        SELECT
+            {INVENTORY_ITEMNAME_EXPR} AS itemname,
+            COUNT(inv.invnumber) AS item_count,
+            COALESCE(SUM(COALESCE(inv.price, 0)), 0) AS total_value
+        FROM inventory inv
+        LEFT JOIN itemtype it ON it.itemtype_id = inv.itemtype_id
+        {where_clause}
+        GROUP BY itemname
+        ORDER BY itemname
+        """,
+        params,
+    )
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    return [(row[0], int(row[1]), float(row[2])) for row in rows]
+
+
+def fetch_inventory_item_monthly_totals(
+    itemname: str,
+    start_date: date,
+    end_date: date,
+    exclude_oncar: bool,
+    with_images: bool,
+) -> List[Tuple[date, int, float]]:
+    conn = get_db_connection()
+    cur = conn.cursor()
+    filters = [
+        "inv.invdate >= %s",
+        "inv.invdate < %s",
+        f"{INVENTORY_ITEMNAME_EXPR} = %s",
+    ]
+    params: List[object] = [start_date, end_date, itemname]
+    if exclude_oncar:
+        filters.append("COALESCE(inv.oncar, false) = false")
+    if with_images:
+        filters.append(
+            """
+            EXISTS (
+                SELECT 1
+                FROM image img
+                WHERE img.invnumber = inv.invnumber
+            )
+            """
+        )
+    cur.execute(
+        f"""
+        SELECT
+            DATE_TRUNC('month', inv.invdate)::date AS month_start,
+            COUNT(inv.invnumber) AS item_count,
+            COALESCE(SUM(COALESCE(inv.price, 0)), 0) AS total_value
+        FROM inventory inv
+        LEFT JOIN itemtype it ON it.itemtype_id = inv.itemtype_id
+        WHERE {" AND ".join(filters)}
+        GROUP BY month_start
+        ORDER BY month_start
+        """,
+        params,
+    )
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    return [(row[0], int(row[1]), float(row[2])) for row in rows]
+
+
+def fetch_inventory_item_daily_totals(
+    itemname: str,
+    start_date: date,
+    end_date: date,
+    exclude_oncar: bool,
+    with_images: bool,
+) -> List[Tuple[int, int, float]]:
+    conn = get_db_connection()
+    cur = conn.cursor()
+    filters = [
+        "inv.invdate >= %s",
+        "inv.invdate < %s",
+        f"{INVENTORY_ITEMNAME_EXPR} = %s",
+    ]
+    params: List[object] = [start_date, end_date, itemname]
+    if exclude_oncar:
+        filters.append("COALESCE(inv.oncar, false) = false")
+    if with_images:
+        filters.append(
+            """
+            EXISTS (
+                SELECT 1
+                FROM image img
+                WHERE img.invnumber = inv.invnumber
+            )
+            """
+        )
+    cur.execute(
+        f"""
+        SELECT
+            EXTRACT(DAY FROM inv.invdate)::int AS day,
+            COUNT(inv.invnumber) AS item_count,
+            COALESCE(SUM(COALESCE(inv.price, 0)), 0) AS total_value
+        FROM inventory inv
+        LEFT JOIN itemtype it ON it.itemtype_id = inv.itemtype_id
+        WHERE {" AND ".join(filters)}
+        GROUP BY day
+        ORDER BY day
+        """,
+        params,
+    )
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    return [(int(row[0]), int(row[1]), float(row[2])) for row in rows]
+
+
 def shift_one_month_back(value: date) -> date:
     """Return the same calendar day in the previous month, clamped to month length."""
 
@@ -1499,6 +1653,18 @@ def shift_one_month_back(value: date) -> date:
     day = min(value.day, monthrange(year, month)[1])
     return date(year, month, day)
 
+def shift_one_month_forward(value: date) -> date:
+    """Return the same calendar day in the next month, clamped to month length."""
+
+    year = value.year
+    month = value.month + 1
+    if month == 13:
+        month = 1
+        year += 1
+
+    day = min(value.day, monthrange(year, month)[1])
+    return date(year, month, day)
+
 
 def fetch_department_monthly_totals(department: str, year: int) -> List[Tuple[int, float]]:
     start_year = date(year, 1, 1)
@@ -1507,15 +1673,15 @@ def fetch_department_monthly_totals(department: str, year: int) -> List[Tuple[in
     conn = get_db_connection()
     cur = conn.cursor()
     cur.execute(
-        """
-        SELECT EXTRACT(MONTH FROM datecreated)::int AS month,
-               SUM(total) AS sum_total
-        FROM invoice
-        WHERE datecreated >= %s
-          AND datecreated < %s
-          AND departmentname = %s
-        GROUP BY month
-        ORDER BY month
+        """␊
+        SELECT EXTRACT(MONTH FROM datecreated)::int AS month,␊
+               SUM(total) AS sum_total␊
+        FROM invoice␊
+        WHERE datecreated >= %s␊
+          AND datecreated < %s␊
+          AND COALESCE(departmentname, 'Unknown') = %s
+        GROUP BY month␊
+        ORDER BY month␊
         """,
         (start_year, start_next_year, department),
     )
@@ -1524,15 +1690,15 @@ def fetch_department_monthly_totals(department: str, year: int) -> List[Tuple[in
     conn.close()
     return rows
 
-def fetch_department_parts_monthly_totals(department: str, year: int) -> List[Tuple[int, float]]:
-    start_year = date(year, 1, 1)
-    start_next_year = date(year + 1, 1, 1)
-
+def fetch_department_parts_monthly_totals(
+    department: str, start_date: date, end_date: date
+) -> List[Tuple[int, int, float]]:
     conn = get_db_connection()
     cur = conn.cursor()
     cur.execute(
         """
-        SELECT EXTRACT(MONTH FROM solddate)::int AS month,
+        SELECT EXTRACT(YEAR FROM solddate)::int AS year,
+               EXTRACT(MONTH FROM solddate)::int AS month,
                COUNT(sold.invnumber) AS parts_sold
         FROM sold
         LEFT JOIN invoice inv ON inv.invoice_id = sold.invoice_id
@@ -1540,10 +1706,10 @@ def fetch_department_parts_monthly_totals(department: str, year: int) -> List[Tu
           AND solddate < %s
           AND COALESCE(inv.departmentname, 'Unknown') = %s
           AND sold.issold
-        GROUP BY month
-        ORDER BY month
+        GROUP BY year, month
+        ORDER BY year, month
         """,
-        (start_year, start_next_year, department),
+        (start_date, end_date, department),
     )
     rows = cur.fetchall()
     cur.close()
@@ -1632,25 +1798,25 @@ def fetch_department_daily_totals(department: str, year: int, month: int) -> Lis
     return rows
 
 
-def fetch_user_monthly_totals(user: str, year: int) -> List[Tuple[int, float]]:
-    start_year = date(year, 1, 1)
-    start_next_year = date(year + 1, 1, 1)
-
+def fetch_user_monthly_totals(
+    user: str, start_date: date, end_date: date
+) -> List[Tuple[int, int, float]]:
     conn = get_db_connection()
     cur = conn.cursor()
     cur.execute(
         """
-        SELECT EXTRACT(MONTH FROM datecreated)::int AS month,
+        SELECT EXTRACT(YEAR FROM datecreated)::int AS year,
+               EXTRACT(MONTH FROM datecreated)::int AS month,
                SUM(total) AS sum_total
         FROM invoice inv
         JOIN pinuser us ON us.user_id = inv.whocreated_id
         WHERE datecreated >= %s
           AND datecreated < %s
           AND us.shortname = %s
-        GROUP BY month
-        ORDER BY month
+        GROUP BY year, month
+        ORDER BY year, month
         """,
-        (start_year, start_next_year, user),
+        (start_date, end_date, user),
     )
     rows = cur.fetchall()
     cur.close()
@@ -1658,27 +1824,27 @@ def fetch_user_monthly_totals(user: str, year: int) -> List[Tuple[int, float]]:
     return rows
 
 
-def fetch_user_parts_monthly_totals(user: str, year: int) -> List[Tuple[int, float]]:
-    start_year = date(year, 1, 1)
-    start_next_year = date(year + 1, 1, 1)
-
+def fetch_user_parts_monthly_totals(
+    user: str, start_date: date, end_date: date
+) -> List[Tuple[int, int, float]]:
     conn = get_db_connection()
     cur = conn.cursor()
     cur.execute(
         """
-        SELECT EXTRACT(MONTH FROM solddate)::int AS month,
+        SELECT EXTRACT(YEAR FROM solddate)::int AS year,
+               EXTRACT(MONTH FROM solddate)::int AS month,
                COUNT(sold.invnumber) AS parts_sold
-        FROM sold
+        FROM sold␊
         LEFT JOIN invoice inv ON inv.invoice_id = sold.invoice_id
         LEFT JOIN pinuser us ON us.user_id = inv.whocreated_id
         WHERE solddate >= %s
           AND solddate < %s
           AND us.shortname = %s
           AND sold.issold
-        GROUP BY month
-        ORDER BY month
+        GROUP BY year, month
+        ORDER BY year, month
         """,
-        (start_year, start_next_year, user),
+        (start_date, end_date, user),
     )
     rows = cur.fetchall()
     cur.close()
@@ -1702,7 +1868,7 @@ def fetch_department_daily_totals(department: str, year: int, month: int) -> Lis
         FROM invoice
         WHERE datecreated >= %s
           AND datecreated < %s
-          AND departmentname = %s
+          AND COALESCE(departmentname, 'Unknown') = %s
         GROUP BY day
         ORDER BY day
         """,
@@ -2141,8 +2307,50 @@ def build_stats_context(
         "prev_date_range_label": prev_date_range_label,
         "entity_label": entity_label,
         "entity_label_plural": entity_label_plural,
-        "entity_label": "User",
-        "entity_label_plural": "Users",
+    }
+
+
+def build_inventory_stats_context(
+    mode: str,
+    order: str,
+    exclude_oncar: bool,
+    with_images: bool,
+):
+    resolved_mode = normalize_inventory_mode(mode)
+    resolved_order = normalize_inventory_order(order)
+    rows = fetch_inventory_summary(exclude_oncar, with_images)
+
+    def metric_value(row):
+        return row[2] if resolved_mode == "value" else row[1]
+
+    if resolved_order == "name":
+        rows = sorted(rows, key=lambda row: (row[0] or ""))
+    else:
+        rows = sorted(rows, key=lambda row: (-metric_value(row), row[0] or ""))
+
+    sum_count = sum(row[1] for row in rows)
+    sum_value = sum(row[2] for row in rows)
+    sum_total = sum_value if resolved_mode == "value" else sum_count
+
+    chart_labels = [row[0] for row in rows]
+    chart_values = [float(metric_value(row)) for row in rows]
+
+    value_format = "currency" if resolved_mode == "value" else "count"
+    value_label = "Inventory Value" if resolved_mode == "value" else "Count of Items"
+
+    return {
+        "rows": rows,
+        "chart_labels": chart_labels,
+        "chart_values": chart_values,
+        "sum_count": sum_count,
+        "sum_value": sum_value,
+        "sum_total": sum_total,
+        "inventory_mode": resolved_mode,
+        "inventory_order": resolved_order,
+        "exclude_oncar": exclude_oncar,
+        "with_images": with_images,
+        "value_format": value_format,
+        "value_label": value_label,
     }
 
 
@@ -2501,6 +2709,31 @@ def stats():
     )
 
 
+@app.route("/inventory_stats", methods=["GET"])
+def inventory_stats():
+    mode = request.args.get("mode", "count")
+    order = request.args.get("order", "value")
+    exclude_oncar = str(request.args.get("exclude_oncar", "")).lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    with_images = str(request.args.get("with_images", "")).lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    context = build_inventory_stats_context(mode, order, exclude_oncar, with_images)
+
+    return render_template(
+        "inventory_stats.html",
+        **context,
+        active_page="inventory_stats",
+    )
+
+
 @app.route("/vehicle_stats", methods=["GET"])
 def vehicle_stats():
     filter_type = request.args.get("filter", "today")
@@ -2826,7 +3059,12 @@ def save_image_user_order():
 
 @app.route("/stats/department/<path:department>/monthly", methods=["GET"])
 def stats_department_monthly(department):
-    current_year = date.today().year
+    today = date.today()
+    current_month_start = date(today.year, today.month, 1)
+    start_month = current_month_start
+    for _ in range(11):
+        start_month = shift_one_month_back(start_month)
+    end_month = shift_one_month_forward(current_month_start)
     mode = normalize_stats_mode(request.args.get("mode", "sales"))
     dimension = normalize_stats_dimension(request.args.get("dimension", "department"))
     if dimension == "user":
@@ -2842,17 +3080,33 @@ def stats_department_monthly(department):
             else fetch_department_monthly_totals
         )
 
-    rows = fetch_rows(department, current_year)
+    rows = fetch_rows(department, start_month, end_month)
+    row_map = {(int(row[0]), int(row[1])): float(row[2]) for row in rows}
 
     labels = []
     values = []
     months = []
-    for month, total in rows:
-        labels.append(datetime(1900, month, 1).strftime("%b"))
-        values.append(float(total))
+    years = []
+    month_cursor = start_month
+    while month_cursor <= current_month_start:
+        year = month_cursor.year
+        month = month_cursor.month
+        labels.append(month_cursor.strftime("%b %Y"))
+        values.append(row_map.get((year, month), 0.0))
         months.append(month)
+        years.append(year)
+        month_cursor = shift_one_month_forward(month_cursor)
 
-    return jsonify({"labels": labels, "values": values, "months": months, "year": current_year})
+    return jsonify(
+        {
+            "labels": labels,
+            "values": values,
+            "months": months,
+            "years": years,
+            "start_month": start_month.isoformat(),
+            "end_month": current_month_start.isoformat(),
+        }
+    )
 
 
 @app.route("/image_stats/user/<path:user>/monthly", methods=["GET"])
@@ -2885,7 +3139,10 @@ def stats_department_daily(department):
     except ValueError:
         month = 1
 
-    current_year = date.today().year
+    try:
+        year = int(request.args.get("year", str(date.today().year)))
+    except ValueError:
+        year = date.today().year
     mode = normalize_stats_mode(request.args.get("mode", "sales"))
     dimension = normalize_stats_dimension(request.args.get("dimension", "department"))
     if dimension == "user":
@@ -2901,7 +3158,7 @@ def stats_department_daily(department):
             else fetch_department_daily_totals
         )
 
-    rows = fetch_rows(department, current_year, month)
+    rows = fetch_rows(department, year, month)
 
     labels = []
     values = []
@@ -2910,6 +3167,106 @@ def stats_department_daily(department):
         values.append(float(total))
 
     return jsonify({"labels": labels, "values": values, "year": current_year, "month": month})
+
+
+@app.route("/inventory_stats/item/<path:itemname>/monthly", methods=["GET"])
+def inventory_item_monthly(itemname):
+    mode = normalize_inventory_mode(request.args.get("mode", "count"))
+    exclude_oncar = str(request.args.get("exclude_oncar", "")).lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    with_images = str(request.args.get("with_images", "")).lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    today = date.today()
+    current_month_start = date(today.year, today.month, 1)
+    start_month = shift_month(current_month_start, -11)
+    end_month = shift_month(current_month_start, 1)
+
+    rows = fetch_inventory_item_monthly_totals(
+        itemname,
+        start_month,
+        end_month,
+        exclude_oncar,
+        with_images,
+    )
+    row_map = {(row[0].year, row[0].month): (row[1], row[2]) for row in rows}
+
+    labels = []
+    values = []
+    month_keys = []
+    for idx in range(12):
+        month_start = shift_month(start_month, idx)
+        month_key = (month_start.year, month_start.month)
+        count_value, total_value = row_map.get(month_key, (0, 0.0))
+        labels.append(month_start.strftime("%b %Y"))
+        values.append(float(total_value if mode == "value" else count_value))
+        month_keys.append({"year": month_start.year, "month": month_start.month})
+
+    return jsonify(
+        {
+            "labels": labels,
+            "values": values,
+            "month_keys": month_keys,
+            "start_label": start_month.strftime("%b %Y"),
+            "end_label": end_month.strftime("%b %Y"),
+        }
+    )
+
+
+@app.route("/inventory_stats/item/<path:itemname>/daily", methods=["GET"])
+def inventory_item_daily(itemname):
+    mode = normalize_inventory_mode(request.args.get("mode", "count"))
+    exclude_oncar = str(request.args.get("exclude_oncar", "")).lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    with_images = str(request.args.get("with_images", "")).lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    try:
+        month = int(request.args.get("month", date.today().month))
+        year = int(request.args.get("year", date.today().year))
+    except ValueError:
+        today = date.today()
+        month = today.month
+        year = today.year
+
+    start_month = date(year, month, 1)
+    end_month = shift_month(start_month, 1)
+
+    rows = fetch_inventory_item_daily_totals(
+        itemname,
+        start_month,
+        end_month,
+        exclude_oncar,
+        with_images,
+    )
+    labels = []
+    values = []
+    for day, count_value, total_value in rows:
+        labels.append(str(day))
+        values.append(float(total_value if mode == "value" else count_value))
+
+    return jsonify(
+        {
+            "labels": labels,
+            "values": values,
+            "year": year,
+            "month": month,
+        }
+    )
 
 
 @app.route("/image_stats/user/<path:user>/daily", methods=["GET"])
