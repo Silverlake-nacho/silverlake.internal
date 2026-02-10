@@ -291,6 +291,10 @@
             <i class="fas fa-chart-column"></i>
             <span class="link-text">Sales Stats</span>
           </a>
+          <a href="{{ url_for('inventory_stats') }}" class="nav-link{% if active_page == 'inventory_stats' %} active{% endif %}">
+            <i class="fas fa-boxes-stacked"></i>
+            <span class="link-text">Inventory Stats</span>
+          </a>
           <a href="{{ url_for('vehicle_stats') }}" class="nav-link{% if active_page == 'vehicle_stats' %} active{% endif %}">
             <i class="fas fa-car-side"></i>
             <span class="link-text">Vehicle Stats</span>
@@ -436,14 +440,14 @@
                   </thead>
                   <tbody id="departmentTableBody">
                     {% for row in rows %}
-                    <tr class="department-row" data-department="{{ row[0] }}" data-total="{{ row[1] }}" data-total-vat="{{ row[2] }}" style="cursor: pointer;">
+                    <tr class="department-row" data-department="{{ row[0] or 'Unknown' }}" data-total="{{ row[1] }}" data-total-vat="{{ row[2] }}" style="cursor: pointer;">
                       <td class="text-center">
                         <div class="btn-group btn-group-sm" role="group">
                           <button class="btn btn-light border move-up" title="Move up">▲</button>
                           <button class="btn btn-light border move-down" title="Move down">▼</button>
                         </div>
                       </td>
-                      <td>{{ row[0] }}</td>
+                      <td>{{ row[0] or 'Unknown' }}</td>
                       {% if value_format == 'currency' %}
                         <td class="text-end">£{{ '%.2f'|format(row[1]) }}</td>
                         <td class="text-end">£{{ '%.2f'|format(row[2]) }}</td>
@@ -454,10 +458,10 @@
                     </tr>
                     {% endfor %}
                   </tbody>
-                  <tfoot>
-                    <tr class="fw-bold">
-                      <td></td>
-                      <td>Total</td>
+                  <tfoot>␊
+                    <tr class="fw-bold" id="departmentTotalRow" style="cursor: pointer;">
+                      <td></td>␊
+                      <td>Total</td>␊
                       {% if value_format == 'currency' %}
                         <td class="text-end" id="totalSumCell">£{{ '%.2f'|format(sum_total) }}</td>
                         <td class="text-end" id="totalVatSumCell">£{{ '%.2f'|format(sum_total_vat) }}</td>
@@ -901,23 +905,33 @@
         }
       }
 
-      function renderDepartmentMonthlyChart(labels, values, months, years, department) {
+      function renderDepartmentMonthlyChart(labels, values, months, department, options = {}) {
         if (departmentMonthlyChart) {
           departmentMonthlyChart.destroy();
         }
 
+        const {
+          enableDaily = true,
+          subtitle = 'Click a month to see daily totals'
+        } = options;
+
         departmentMonthlyTitle.textContent = `${department} - ${valueLabel} by month (last 12 months)`;
-        departmentMonthlySubtitle.textContent = 'Click a month to see daily totals';
+        departmentMonthlySubtitle.textContent = subtitle;
         departmentMonthlyCard.classList.remove('d-none');
 
         departmentMonthlyChart = new Chart(
           departmentMonthlyCanvas,
-          buildDepartmentBarConfig(labels, values, (index) => {
-            const monthNumber = months[index];
-            const monthLabel = labels[index];
-            const monthYear = years[index];
-            loadDepartmentDaily(department, monthNumber, monthYear, monthLabel);
-          })
+          buildDepartmentBarConfig(
+            labels,
+            values,
+            enableDaily
+              ? (index) => {
+                  const monthNumber = months[index];
+                  const monthLabel = labels[index];
+                  loadDepartmentDaily(department, monthNumber, monthLabel);
+                }
+              : undefined
+          )
         );
       }
 
