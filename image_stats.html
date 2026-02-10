@@ -264,23 +264,35 @@
           <img src="{{ url_for('static', filename='logo-slg-strip.svg') }}" alt="Silverlake Logo" class="logo-expanded">
         </div>
         <div class="nav-section">
-          <a href="{{ url_for('index') }}" class="nav-link">
+          <a href="{{ url_for('index') }}" class="nav-link{% if active_page == 'index' %} active{% endif %}">
             <i class="fas fa-magnifying-glass-dollar"></i>
             <span class="link-text">Opportunity Finder</span>
           </a>
-          <a href="{{ url_for('image_stats') }}" class="nav-link active">
+          <a href="{{ url_for('image_stats') }}" class="nav-link{% if active_page == 'image_stats' %} active{% endif %}">
             <i class="fas fa-chart-pie"></i>
             <span class="link-text">Image Stats</span>
           </a>
-          <a href="{{ url_for('stats') }}" class="nav-link">
+          <a href="{{ url_for('image_timeline') }}" class="nav-link{% if active_page == 'image_timeline' %} active{% endif %}">
+            <i class="fas fa-clock"></i>
+            <span class="link-text">Image Timeline</span>
+          </a>
+          <a href="{{ url_for('stores_timeline') }}" class="nav-link{% if active_page == 'stores_timeline' %} active{% endif %}">
+            <i class="fas fa-warehouse"></i>
+            <span class="link-text">Stores Timeline</span>
+          </a>
+          <a href="{{ url_for('stats') }}" class="nav-link{% if active_page == 'stats' %} active{% endif %}">
             <i class="fas fa-chart-column"></i>
             <span class="link-text">Sales Stats</span>
           </a>
-          <a href="{{ url_for('crush_vehicles') }}" class="nav-link">
+          <a href="{{ url_for('inventory_stats') }}" class="nav-link{% if active_page == 'inventory_stats' %} active{% endif %}">
+            <i class="fas fa-boxes-stacked"></i>
+            <span class="link-text">Inventory Stats</span>
+          </a>
+          <a href="{{ url_for('crush_vehicles') }}" class="nav-link{% if active_page == 'crush_vehicles' %} active{% endif %}">
             <i class="fas fa-car-burst"></i>
             <span class="link-text">Crush Vehicles</span>
           </a>
-          <a href="{{ url_for('logs') }}" class="nav-link">
+          <a href="{{ url_for('logs') }}" class="nav-link{% if active_page == 'logs' %} active{% endif %}">
             <i class="fas fa-clipboard-list"></i>
             <span class="link-text">Logs</span>
           </a>
@@ -313,8 +325,8 @@
                   <input type="hidden" name="filter" value="custom">
                   <input type="hidden" name="mode" value="{{ image_mode }}">
                   <input type="hidden" name="prev_mode" value="{{ prev_mode }}">
-                  <input type="date" name="start_date" required>
-                  <input type="date" name="end_date" required>
+                  <input type="date" name="start_date" id="customStartDate" required>
+                  <input type="date" name="end_date" id="customEndDate" required>
                   {% if live_enabled %}
                     <input type="hidden" name="live" value="1">
                   {% endif %}
@@ -1020,6 +1032,20 @@
       const liveCheckbox = document.getElementById('liveToggle');
       const modeToggle = document.getElementById('modeToggle');
       const togglePrevModeBtn = document.getElementById('togglePrevModeBtn');
+      const customStartDate = document.getElementById('customStartDate');
+      const customEndDate = document.getElementById('customEndDate');
+
+      function syncCustomEndDate() {
+        if (!customStartDate || !customEndDate) return;
+        if (!customEndDate.value && customStartDate.value) {
+          customEndDate.value = customStartDate.value;
+        }
+      }
+
+      if (customStartDate && customEndDate) {
+        customStartDate.addEventListener('change', syncCustomEndDate);
+        customEndDate.addEventListener('focus', syncCustomEndDate);
+      }
       const dimensionToggle = null;
 
       function buildDataUrl() {
