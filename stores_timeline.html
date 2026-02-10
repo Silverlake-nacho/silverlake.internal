@@ -1,0 +1,792 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Silverlake Stores Timeline</title>
+    <link rel="icon" href="{{ url_for('static', filename='SLK Logo.png') }}">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+    <style>
+      :root {
+        --sidebar-expanded: 260px;
+        --sidebar-collapsed: calc(var(--sidebar-expanded) * 0.3);
+        --sidebar-bg: #5c9c13;
+      }
+      body {
+        margin: 0;
+        background: url("{{ url_for('static', filename='background.jpg') }}") no-repeat center center fixed;
+        background-size: cover;
+        font-family: 'Montserrat', sans-serif;
+        color: black;
+      }
+      h1, h2, label {
+        color: #5c9c13;
+      }
+      .page-wrapper {
+        display: flex;
+        min-height: 100vh;
+      }
+      .sidebar {
+        width: var(--sidebar-collapsed);
+        background-color: var(--sidebar-bg);
+        color: #fff;
+        position: fixed;
+        inset: 0 auto 0 0;
+        overflow: hidden;
+        transition: width 0.3s ease;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        padding: 16px 12px;
+        z-index: 1000;
+      }
+      .sidebar:hover {
+        width: var(--sidebar-expanded);
+      }
+      .sidebar .brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 8px 10px;
+      }
+      .sidebar .logo-collapsed {
+        height: 34px;
+        opacity: 1;
+        transition: opacity 0.2s ease;
+      }
+      .sidebar .logo-expanded {
+        height: 34px;
+        opacity: 0;
+        transform: translateX(-6px);
+        transition: opacity 0.2s ease, transform 0.2s ease;
+      }
+      .sidebar:hover .logo-collapsed {
+        opacity: 0;
+      }
+      .sidebar:hover .logo-expanded {
+        opacity: 1;
+        transform: translateX(0);
+      }
+      .sidebar .brand-text {
+        font-weight: 700;
+        font-size: 1.05rem;
+        white-space: nowrap;
+        opacity: 0;
+        transition: opacity 0.2s ease;
+      }
+      .sidebar:hover .brand-text {
+        opacity: 1;
+      }
+      .sidebar .nav-section {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .sidebar .nav-link {
+        color: #fff;
+        font-weight: 700;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 10px 12px;
+        border-radius: 10px;
+        text-decoration: none;
+        transition: background-color 0.2s ease, color 0.2s ease;
+        font-size: 0.95rem;
+      }
+      .sidebar .nav-link i {
+        width: 20px;
+        text-align: center;
+        font-size: 1.15rem;
+      }
+      .sidebar .nav-link .link-text {
+        white-space: nowrap;
+        opacity: 0;
+        transform: translateX(-6px);
+        transition: opacity 0.2s ease, transform 0.2s ease;
+      }
+      .sidebar:hover .nav-link .link-text {
+        opacity: 1;
+        transform: translateX(0);
+      }
+      .sidebar .nav-link:hover,
+      .sidebar .nav-link.active {
+        background-color: rgba(255, 255, 255, 0.16);
+        color: #fff;
+      }
+      .sidebar-footer {
+        margin-top: auto;
+      }
+      .content {
+        flex: 1;
+        margin-left: var(--sidebar-collapsed);
+        transition: margin-left 0.3s ease;
+      }
+      .sidebar:hover ~ .content {
+        margin-left: var(--sidebar-expanded);
+      }
+      .content-inner {
+        padding: 24px;
+      }
+      .btn-primary, .btn-success {
+        background-color: #5c9c13;
+        border: none;
+      }
+      .btn-primary:hover, .btn-success:hover {
+        background-color: #4a8010;
+      }
+      .form-control {
+        background-color: #d6f5c1;
+        color: #333;
+        border: 1px solid #333;
+      }
+      .form-control:focus {
+        border-color: #5c9c13;
+        box-shadow: 0 0 5px #5c9c13;
+      }
+      .logo {
+        text-align: center;
+        margin-bottom: 20px;
+      }
+      .logo img {
+        width: 150px;
+        max-width: 50%;
+        height: auto;
+      }
+      .timeline-card {
+        background: #fff;
+        border-radius: 12px;
+      }
+      .timeline-user {
+        margin-bottom: 2rem;
+      }
+      .timeline-day {
+        margin-bottom: 1.5rem;
+      }
+      .timeline-day-header {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 0.5rem;
+      }
+      .timeline-grid {
+        position: relative;
+        background: #f7f9f2;
+        border-radius: 12px;
+        border: 1px solid rgba(92, 156, 19, 0.35);
+        padding: 28px 16px 20px;
+        --timeline-zoom: 1;
+      }
+      .timeline-axis-wrapper {
+        position: sticky;
+        top: 0;
+        z-index: 2;
+        background: #f7f9f2;
+        padding-top: 2px;
+        overflow-x: auto;
+      }
+      .timeline-axis {
+        position: relative;
+        inset: auto;
+        height: 28px;
+        width: calc(100% * var(--timeline-zoom));
+        min-width: 100%;
+      }
+      .timeline-hour {
+        position: absolute;
+        top: 0;
+        transform: translateX(-50%);
+        font-size: 0.7rem;
+        color: #4a8010;
+        font-weight: 600;
+      }
+      .timeline-hour::after {
+        content: "";
+        position: absolute;
+        top: 16px;
+        left: 50%;
+        width: 1px;
+        height: 80px;
+        background: rgba(92, 156, 19, 0.2);
+      }
+      .timeline-tick {
+        position: absolute;
+        top: 2px;
+        transform: translateX(-50%);
+        font-size: 0.6rem;
+        color: #4a8010;
+        font-weight: 600;
+      }
+      .timeline-tick::after {
+        content: "";
+        position: absolute;
+        top: 14px;
+        left: 50%;
+        width: 1px;
+        height: 40px;
+        background: rgba(92, 156, 19, 0.18);
+      }
+      .timeline-tick--quarter,
+      .timeline-tick--ten,
+      .timeline-tick--five,
+      .timeline-tick--minute {
+        display: none;
+      }
+      .timeline-grid[data-zoom-level="quarter"] .timeline-tick--quarter {
+        display: block;
+      }
+      .timeline-grid[data-zoom-level="ten"] .timeline-tick--ten {
+        display: block;
+      }
+      .timeline-grid[data-zoom-level="five"] .timeline-tick--five {
+        display: block;
+      }
+      .timeline-grid[data-zoom-level="minute"] .timeline-tick--minute {
+        display: block;
+      }
+      .timeline-track-scroll {
+        overflow-x: auto;
+        padding-bottom: 8px;
+      }
+      .timeline-track {
+        position: relative;
+        height: 240px;
+        margin-top: 20px;
+        width: calc(100% * var(--timeline-zoom));
+        min-width: 100%;
+      }
+      .timeline-item {
+        position: absolute;
+        top: 50%;
+        transform: translate(-50%, -50%) translateY(var(--stack-offset, 0px));
+        border: none;
+        background: transparent;
+        padding: 0;
+        cursor: pointer;
+        text-align: center;
+      }
+      .timeline-marker {
+        position: relative;
+        width: 0;
+        height: 0;
+        border-left: 9px solid transparent;
+        border-right: 9px solid transparent;
+        border-top: 14px solid #5c9c13;
+        margin: 0 auto 4px;
+      }
+      .timeline-marker--sold {
+        border-top-color: #c62828;
+      }
+      .timeline-marker--pending {
+        border-top-color: #1e5bb8;
+      }
+      .timeline-time {
+        position: absolute;
+        top: -36px;
+        left: 50%;
+        transform: translateX(-50%);
+        font-size: 0.7rem;
+        font-weight: 700;
+        color: #1f3b08;
+        background: rgba(255, 255, 255, 0.9);
+        padding: 2px 6px;
+        border-radius: 6px;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+        white-space: nowrap;
+      }
+      .timeline-tag {
+        position: absolute;
+        top: -20px;
+        left: -14px;
+        font-size: 0.7rem;
+        font-weight: 700;
+        color: #1f3b08;
+        transform: rotate(-45deg);
+        background: rgba(255, 255, 255, 0.9);
+        padding: 2px 4px;
+        border-radius: 4px;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+      }
+      .timeline-thumb {
+        width: 72px;
+        height: 72px;
+        object-fit: cover;
+        border-radius: 12px;
+        border: 2px solid #5c9c13;
+        box-shadow: 0 6px 12px rgba(0, 0, 0, 0.12);
+        background: #fff;
+      }
+      .timeline-detail {
+        margin-top: 6px;
+        padding: 6px 8px;
+        background: rgba(92, 156, 19, 0.08);
+        border-radius: 8px;
+        font-size: 0.7rem;
+        font-weight: 600;
+        color: #1f3b08;
+        max-width: 160px;
+        margin-left: auto;
+        margin-right: auto;
+      }
+      body.hide-details .timeline-detail {
+        display: none;
+      }
+      body.hide-thumbnails .timeline-thumb {
+        display: none;
+      }
+      .zoom-controls {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin-bottom: 0.75rem;
+        flex-wrap: wrap;
+      }
+      .zoom-controls input[type="range"] {
+        max-width: 200px;
+      }
+      .exclusion-card .exclusion-body {
+        display: none;
+      }
+      .exclusion-card:hover .exclusion-body,
+      .exclusion-card:focus-within .exclusion-body {
+        display: block;
+      }
+      .modal-preview-strip {
+        display: flex;
+        justify-content: center;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-top: 12px;
+      }
+      .modal-preview-strip button {
+        border: none;
+        background: transparent;
+        padding: 0;
+      }
+      .modal-preview-strip img {
+        width: 54px;
+        height: 54px;
+        object-fit: cover;
+        border-radius: 8px;
+        border: 2px solid rgba(92, 156, 19, 0.6);
+      }
+      @media (max-width: 768px) {
+        :root {
+          --sidebar-expanded: 220px;
+        }
+        .timeline-thumb {
+          width: 60px;
+          height: 60px;
+        }
+        .timeline-hour::after {
+          height: 70px;
+        }
+        .timeline-detail {
+          font-size: 0.65rem;
+          max-width: 140px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page-wrapper">
+      <nav class="sidebar">
+        <div class="brand">
+          <img src="{{ url_for('static', filename='SLK Logo.png') }}" alt="Silverlake Collapsed Logo" class="logo-collapsed">
+          <img src="{{ url_for('static', filename='logo-slg-strip.svg') }}" alt="Silverlake Logo" class="logo-expanded">
+        </div>
+        <div class="nav-section">
+          <a href="{{ url_for('index') }}" class="nav-link{% if active_page == 'index' %} active{% endif %}">
+            <i class="fas fa-magnifying-glass-dollar"></i>
+            <span class="link-text">Opportunity Finder</span>
+          </a>
+          <a href="{{ url_for('image_stats') }}" class="nav-link{% if active_page == 'image_stats' %} active{% endif %}">
+            <i class="fas fa-chart-pie"></i>
+            <span class="link-text">Image Stats</span>
+          </a>
+          <a href="{{ url_for('image_timeline') }}" class="nav-link{% if active_page == 'image_timeline' %} active{% endif %}">
+            <i class="fas fa-clock"></i>
+            <span class="link-text">Image Timeline</span>
+          </a>
+          <a href="{{ url_for('stores_timeline') }}" class="nav-link{% if active_page == 'stores_timeline' %} active{% endif %}">
+            <i class="fas fa-warehouse"></i>
+            <span class="link-text">Stores Timeline</span>
+          </a>
+          <a href="{{ url_for('stats') }}" class="nav-link{% if active_page == 'stats' %} active{% endif %}">
+            <i class="fas fa-chart-column"></i>
+            <span class="link-text">Sales Stats</span>
+          </a>
+          <a href="{{ url_for('inventory_stats') }}" class="nav-link{% if active_page == 'inventory_stats' %} active{% endif %}">
+            <i class="fas fa-boxes-stacked"></i>
+            <span class="link-text">Inventory Stats</span>
+          </a>
+          <a href="{{ url_for('crush_vehicles') }}" class="nav-link{% if active_page == 'crush_vehicles' %} active{% endif %}">
+            <i class="fas fa-car-burst"></i>
+            <span class="link-text">Crush Vehicles</span>
+          </a>
+          <a href="{{ url_for('logs') }}" class="nav-link{% if active_page == 'logs' %} active{% endif %}">
+            <i class="fas fa-clipboard-list"></i>
+            <span class="link-text">Logs</span>
+          </a>
+        </div>
+        <div class="sidebar-footer">
+          <a href="{{ url_for('logout') }}" class="nav-link">
+            <i class="fas fa-arrow-right-from-bracket"></i>
+            <span class="link-text">Logout ({{ current_user }})</span>
+          </a>
+        </div>
+      </nav>
+      <div class="content">
+        <div class="content-inner">
+          <div class="container">
+            <div class="logo">
+              <img src="{{ url_for('static', filename='logo-slg-strip.svg') }}" alt="Silverlake Logo">
+            </div>
+
+            <h1 class="mb-2 text-center">Stores Timeline</h1>
+            <p class="text-center text-muted mb-4">{{ date_range_label }}</p>
+
+            <div class="mb-3 d-flex align-items-center flex-wrap gap-2">
+              <div class="d-flex flex-wrap gap-2">
+                <a href="{{ url_for('stores_timeline', filter='today', exclude=excluded_users) }}" class="btn btn-sm btn-primary">Today</a>
+                <a href="{{ url_for('stores_timeline', filter='yesterday', exclude=excluded_users) }}" class="btn btn-sm btn-primary">Yesterday</a>
+                <a href="{{ url_for('stores_timeline', filter='this_month', exclude=excluded_users) }}" class="btn btn-sm btn-primary">This Month</a>
+                <a href="{{ url_for('stores_timeline', filter='last_month', exclude=excluded_users) }}" class="btn btn-sm btn-primary">Last Month</a>
+                <form method="get" class="d-inline">
+                  <input type="hidden" name="filter" value="custom">
+                  {% for user in excluded_users %}
+                    <input type="hidden" name="exclude" value="{{ user }}">
+                  {% endfor %}
+                  <input type="date" name="start_date" required>
+                  <input type="date" name="end_date" required>
+                  <button type="submit" class="btn btn-sm btn-primary">Custom</button>
+                </form>
+              </div>
+            </div>
+
+            <div class="card mb-4 shadow-sm exclusion-card">
+              <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                  <h5 class="mb-0">Exclude Users</h5>
+                </div>
+                <div class="exclusion-body mt-3">
+                  <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
+                    <p class="mb-0 text-muted">Hide users from the timeline.</p>
+                    <div class="d-flex gap-2">
+                      <button type="submit" form="timelineFilterForm" class="btn btn-sm btn-primary">Apply</button>
+                      <button type="submit" form="timelineFilterForm" formaction="{{ url_for('save_stores_timeline_exclusions') }}" formmethod="post" class="btn btn-sm btn-success">Set as Default</button>
+                      <small class="text-muted align-self-center">Defaults are saved per user.</small>
+                    </div>
+                  </div>
+                  <form id="timelineFilterForm" class="row g-2" method="get" action="{{ url_for('stores_timeline') }}">
+                    <input type="hidden" name="filter" value="{{ filter_type }}">
+                    <input type="hidden" name="start_date" value="{{ start_date.isoformat() if start_date else '' }}">
+                    <input type="hidden" name="end_date" value="{{ end_date.isoformat() if end_date else '' }}">
+                    {% for user in all_users %}
+                      <div class="col-sm-6 col-md-4 col-lg-3">
+                        <div class="form-check">
+                          <input class="form-check-input" type="checkbox" name="exclude" value="{{ user }}" id="user-{{ loop.index }}" {% if user in excluded_users %}checked{% endif %}>
+                          <label class="form-check-label" for="user-{{ loop.index }}">{{ user }}</label>
+                        </div>
+                      </div>
+                    {% endfor %}
+                  </form>
+                </div>
+              </div>
+            </div>
+
+            <div class="card mb-4 shadow-sm timeline-card">
+              <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+                  <h5 class="text-success mb-0">Timeline (6:00 - 18:00)</h5>
+                  <div class="d-flex flex-wrap gap-3">
+                    <div class="form-check form-switch">
+                      <input class="form-check-input" type="checkbox" id="thumbnailToggle">
+                      <label class="form-check-label text-muted" for="thumbnailToggle">Show thumbnails</label>
+                    </div>
+                    <div class="form-check form-switch">
+                      <input class="form-check-input" type="checkbox" id="detailsToggle">
+                      <label class="form-check-label text-muted" for="detailsToggle">Show movement details</label>
+                    </div>
+                  </div>
+                </div>
+                {% if timeline_users %}
+                  {% for user_block in timeline_users %}
+                    <div class="timeline-user">
+                      <div class="d-flex flex-wrap align-items-center gap-2">
+                        <h6 class="fw-bold text-success mb-0">{{ user_block.user }}</h6>
+                        <span class="badge bg-light text-dark">{{ user_block.movement_count }} movements</span>
+                        <span class="badge bg-light text-dark">{{ user_block.part_count }} parts located</span>
+                      </div>
+                      {% for day in user_block.days %}
+                        <div class="timeline-day">
+                          <div class="timeline-day-header">
+                            <span class="badge bg-light text-dark">{{ day.date_label }}</span>
+                          </div>
+                          <div class="zoom-controls" data-zoom-controls>
+                            <span class="text-success fw-semibold">Zoom</span>
+                            <button type="button" class="btn btn-sm btn-outline-success" data-zoom-out>-</button>
+                            <input type="range" min="1" max="300" step="0.25" value="1" data-zoom-range>
+                            <button type="button" class="btn btn-sm btn-outline-success" data-zoom-in>+</button>
+                            <span class="text-muted small" data-zoom-label>100%</span>
+                          </div>
+                          <div class="timeline-grid" data-zoom-level="base">
+                            <div class="timeline-axis-wrapper" data-axis-scroll>
+                              <div class="timeline-axis">
+                                {% set quarter_minutes = [15, 30, 45] %}
+                                {% set ten_minutes = [10, 20, 30, 40, 50] %}
+                                {% set five_minutes = [5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55] %}
+                                {% set one_minutes = range(1, 60) %}
+                                {% for hour in hours %}
+                                  <div class="timeline-hour" style="left: {{ ((hour - 6) / 12 * 100) }}%;">
+                                    <span>{{ "%02d:00"|format(hour) }}</span>
+                                  </div>
+                                {% endfor %}
+                                {% for hour in hours[:-1] %}
+                                  {% for minute in quarter_minutes %}
+                                    <div class="timeline-tick timeline-tick--quarter" style="left: {{ (((hour - 6) + (minute / 60)) / 12 * 100) }}%;">
+                                      <span>{{ "%02d"|format(minute) }}</span>
+                                    </div>
+                                  {% endfor %}
+                                  {% for minute in ten_minutes %}
+                                    <div class="timeline-tick timeline-tick--ten" style="left: {{ (((hour - 6) + (minute / 60)) / 12 * 100) }}%;">
+                                      <span>{{ "%02d"|format(minute) }}</span>
+                                    </div>
+                                  {% endfor %}
+                                  {% for minute in five_minutes %}
+                                    <div class="timeline-tick timeline-tick--five" style="left: {{ (((hour - 6) + (minute / 60)) / 12 * 100) }}%;">
+                                      <span>{{ "%02d"|format(minute) }}</span>
+                                    </div>
+                                  {% endfor %}
+                                  {% for minute in one_minutes %}
+                                    <div class="timeline-tick timeline-tick--minute" style="left: {{ (((hour - 6) + (minute / 60)) / 12 * 100) }}%;">
+                                      <span>{{ "%02d"|format(minute) }}</span>
+                                    </div>
+                                  {% endfor %}
+                                {% endfor %}
+                              </div>
+                            </div>
+                            <div class="timeline-track-scroll" data-track-scroll>
+                              <div class="timeline-track">
+                                {% for item in day["items"] %}
+                                  <button type="button" class="timeline-item" style="left: {{ item.position }}%; --stack-offset: {{ item.stack_index * 158 }}px;" data-bs-toggle="modal" data-bs-target="#imageModal" data-images='{{ item.full_urls|tojson }}' data-tag="{{ item.tag }}" data-time="{{ item.time_label }}" title="{{ item.time_label }} - Tag {{ item.tag }}{% if item.details %} - {{ item.details }}{% endif %}">
+                                    <div class="timeline-marker timeline-marker--{{ item.status }}">
+                                      <span class="timeline-time">{{ item.time_label }}</span>
+                                      <span class="timeline-tag">{{ item.tag }}</span>
+                                    </div>
+                                    <img src="{{ item.thumb_url }}" alt="Thumbnail {{ item.tag }}" class="timeline-thumb">
+                                    <div class="timeline-detail">
+                                      {% if item.details %}
+                                        {{ item.details }}
+                                      {% else %}
+                                        <span class="text-muted">No movement details.</span>
+                                      {% endif %}
+                                    </div>
+                                  </button>
+                                {% endfor %}
+                              </div>
+                            </div>
+                          </div>
+                          {% if not day["items"] %}
+                            <p class="text-muted small mt-2 mb-0">No movements recorded during this window.</p>
+                          {% endif %}
+                        </div>
+                      {% endfor %}
+                    </div>
+                  {% endfor %}
+                {% else %}
+                  <p class="text-muted mb-0">No movements found for this date range.</p>
+                {% endif %}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal fade" id="imageModal" tabindex="-1" aria-labelledby="imageModalLabel" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="imageModalLabel">Image Preview</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body text-center">
+            <div id="imageCarousel" class="carousel slide" data-bs-ride="false">
+              <div class="carousel-inner" id="imageCarouselInner"></div>
+              <button class="carousel-control-prev" type="button" data-bs-target="#imageCarousel" data-bs-slide="prev">
+                <span class="carousel-control-prev-icon" aria-hidden="true"></span>
+                <span class="visually-hidden">Previous</span>
+              </button>
+              <button class="carousel-control-next" type="button" data-bs-target="#imageCarousel" data-bs-slide="next">
+                <span class="carousel-control-next-icon" aria-hidden="true"></span>
+                <span class="visually-hidden">Next</span>
+              </button>
+            </div>
+            <div class="modal-preview-strip" id="imageCarouselPreviews"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+      const imageModal = document.getElementById('imageModal');
+      const carouselInner = document.getElementById('imageCarouselInner');
+      const carouselPreviews = document.getElementById('imageCarouselPreviews');
+      let carouselInstance = null;
+
+      document.querySelectorAll('[data-zoom-controls]').forEach((controls) => {
+        const zoomRange = controls.querySelector('[data-zoom-range]');
+        const zoomValueLabel = controls.querySelector('[data-zoom-label]');
+        const zoomInBtn = controls.querySelector('[data-zoom-in]');
+        const zoomOutBtn = controls.querySelector('[data-zoom-out]');
+        const timelineGrid = controls.nextElementSibling;
+        const axisScroll = timelineGrid?.querySelector('[data-axis-scroll]');
+        const trackScroll = timelineGrid?.querySelector('[data-track-scroll]');
+
+        const getScrollCenter = (element) => {
+          if (!element) {
+            return { ratio: 0, width: 0 };
+          }
+          const width = element.scrollWidth || 1;
+          const center = element.scrollLeft + element.clientWidth / 2;
+          return { ratio: center / width, width };
+        };
+
+        const restoreScrollCenter = (element, ratio) => {
+          if (!element) {
+            return;
+          }
+          const width = element.scrollWidth || 1;
+          const target = ratio * width - element.clientWidth / 2;
+          element.scrollLeft = Math.max(0, target);
+        };
+
+        const updateZoom = (value) => {
+          const zoomValue = Number(value);
+          const axisCenter = getScrollCenter(axisScroll);
+          const trackCenter = getScrollCenter(trackScroll);
+          if (timelineGrid) {
+            timelineGrid.style.setProperty('--timeline-zoom', zoomValue);
+            if (zoomValue > 40) {
+              timelineGrid.dataset.zoomLevel = 'minute';
+            } else if (zoomValue > 20) {
+              timelineGrid.dataset.zoomLevel = 'five';
+            } else if (zoomValue >= 10) {
+              timelineGrid.dataset.zoomLevel = 'ten';
+            } else if (zoomValue >= 6.5) {
+              timelineGrid.dataset.zoomLevel = 'quarter';
+            } else {
+              timelineGrid.dataset.zoomLevel = 'base';
+            }
+          }
+          zoomValueLabel.textContent = `${Math.round(zoomValue * 100)}%`;
+          requestAnimationFrame(() => {
+            restoreScrollCenter(axisScroll, axisCenter.ratio);
+            restoreScrollCenter(trackScroll, trackCenter.ratio);
+          });
+        };
+
+        zoomRange.addEventListener('input', (event) => updateZoom(event.target.value));
+        zoomInBtn.addEventListener('click', () => {
+          const nextValue = Math.min(300, Number(zoomRange.value) + 0.25);
+          zoomRange.value = nextValue;
+          updateZoom(nextValue);
+        });
+        zoomOutBtn.addEventListener('click', () => {
+          const nextValue = Math.max(1, Number(zoomRange.value) - 0.25);
+          zoomRange.value = nextValue;
+          updateZoom(nextValue);
+        });
+        updateZoom(zoomRange.value);
+
+        if (axisScroll && trackScroll) {
+          let isSyncing = false;
+          axisScroll.addEventListener('scroll', () => {
+            if (isSyncing) {
+              return;
+            }
+            isSyncing = true;
+            trackScroll.scrollLeft = axisScroll.scrollLeft;
+            isSyncing = false;
+          });
+          trackScroll.addEventListener('scroll', () => {
+            if (isSyncing) {
+              return;
+            }
+            isSyncing = true;
+            axisScroll.scrollLeft = trackScroll.scrollLeft;
+            isSyncing = false;
+          });
+        }
+      });
+
+      imageModal.addEventListener('show.bs.modal', (event) => {
+        const button = event.relatedTarget;
+        const tag = button.getAttribute('data-tag');
+        const time = button.getAttribute('data-time');
+        const images = JSON.parse(button.getAttribute('data-images') || '[]');
+        const modalTitle = imageModal.querySelector('.modal-title');
+        modalTitle.textContent = `Tag ${tag} · ${time}`;
+
+        carouselInner.innerHTML = '';
+        carouselPreviews.innerHTML = '';
+
+        images.forEach((url, index) => {
+          const item = document.createElement('div');
+          item.className = `carousel-item${index === 0 ? ' active' : ''}`;
+          item.innerHTML = `<img src="${url}" class="d-block w-100 rounded" alt="Image ${index + 1} for ${tag}">`;
+          carouselInner.appendChild(item);
+        });
+
+        images.forEach((url, index) => {
+          const buttonEl = document.createElement('button');
+          buttonEl.type = 'button';
+          buttonEl.innerHTML = `<img src="${url}" alt="Preview ${index + 1} for ${tag}">`;
+          buttonEl.addEventListener('click', () => {
+            if (carouselInstance) {
+              carouselInstance.to(index);
+            }
+          });
+          carouselPreviews.appendChild(buttonEl);
+        });
+
+        if (carouselInstance) {
+          carouselInstance.dispose();
+        }
+        carouselInstance = new bootstrap.Carousel(document.getElementById('imageCarousel'));
+      });
+
+      const detailsToggle = document.getElementById('detailsToggle');
+      if (detailsToggle) {
+        const storedDetailsState = localStorage.getItem('timelineDetailsEnabled');
+        const enabled = storedDetailsState === null ? true : storedDetailsState === 'true';
+        detailsToggle.checked = enabled;
+        document.body.classList.toggle('hide-details', !enabled);
+
+        detailsToggle.addEventListener('change', (event) => {
+          const enabled = event.target.checked;
+          document.body.classList.toggle('hide-details', !enabled);
+          localStorage.setItem('timelineDetailsEnabled', String(enabled));
+        });
+      }
+
+      const thumbnailToggle = document.getElementById('thumbnailToggle');
+      if (thumbnailToggle) {
+        const storedThumbnailState = localStorage.getItem('timelineThumbnailEnabled');
+        const enabled = storedThumbnailState === null ? true : storedThumbnailState === 'true';
+        thumbnailToggle.checked = enabled;
+        document.body.classList.toggle('hide-thumbnails', !enabled);
+
+        thumbnailToggle.addEventListener('change', (event) => {
+          const enabled = event.target.checked;
+          document.body.classList.toggle('hide-thumbnails', !enabled);
+          localStorage.setItem('timelineThumbnailEnabled', String(enabled));
+        });
+      }
+    </script>
+  </body>
+</html>
