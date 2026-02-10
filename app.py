@@ -1666,24 +1666,31 @@ def shift_one_month_forward(value: date) -> date:
     return date(year, month, day)
 
 
-def fetch_department_monthly_totals(department: str, year: int) -> List[Tuple[int, float]]:
-    start_year = date(year, 1, 1)
-    start_next_year = date(year + 1, 1, 1)
+def fetch_department_monthly_totals(
+    department: str, year_or_start: date | int, end_date: date | None = None
+) -> List[Tuple[int, int, float]]:
+    if end_date is None:
+        year = int(year_or_start)
+        start_date = date(year, 1, 1)
+        end_date = date(year + 1, 1, 1)
+    else:
+        start_date = year_or_start
 
     conn = get_db_connection()
     cur = conn.cursor()
     cur.execute(
-        """␊
-        SELECT EXTRACT(MONTH FROM datecreated)::int AS month,␊
-               SUM(total) AS sum_total␊
-        FROM invoice␊
-        WHERE datecreated >= %s␊
-          AND datecreated < %s␊
+        """
+        SELECT EXTRACT(YEAR FROM datecreated)::int AS year,
+               EXTRACT(MONTH FROM datecreated)::int AS month,
+               SUM(total) AS sum_total
+        FROM invoice
+        WHERE datecreated >= %s
+          AND datecreated < %s
           AND COALESCE(departmentname, 'Unknown') = %s
-        GROUP BY month␊
-        ORDER BY month␊
+        GROUP BY year, month
+        ORDER BY year, month
         """,
-        (start_year, start_next_year, department),
+        (start_date, end_date, department),
     )
     rows = cur.fetchall()
     cur.close()
@@ -1691,8 +1698,15 @@ def fetch_department_monthly_totals(department: str, year: int) -> List[Tuple[in
     return rows
 
 def fetch_department_parts_monthly_totals(
-    department: str, start_date: date, end_date: date
+    department: str, year_or_start: date | int, end_date: date | None = None
 ) -> List[Tuple[int, int, float]]:
+    if end_date is None:
+        year = int(year_or_start)
+        start_date = date(year, 1, 1)
+        end_date = date(year + 1, 1, 1)
+    else:
+        start_date = year_or_start
+
     conn = get_db_connection()
     cur = conn.cursor()
     cur.execute(
@@ -1834,7 +1848,7 @@ def fetch_user_parts_monthly_totals(
         SELECT EXTRACT(YEAR FROM solddate)::int AS year,
                EXTRACT(MONTH FROM solddate)::int AS month,
                COUNT(sold.invnumber) AS parts_sold
-        FROM sold␊
+        FROM sold
         LEFT JOIN invoice inv ON inv.invoice_id = sold.invoice_id
         LEFT JOIN pinuser us ON us.user_id = inv.whocreated_id
         WHERE solddate >= %s
@@ -3073,15 +3087,23 @@ def stats_department_monthly(department):
             if mode == "parts"
             else fetch_user_monthly_totals
         )
+        rows = fetch_rows(department, today.year)
     else:
         fetch_rows = (
             fetch_department_parts_monthly_totals
             if mode == "parts"
             else fetch_department_monthly_totals
         )
+        rows = fetch_rows(department, start_month, end_month)
 
-    rows = fetch_rows(department, start_month, end_month)
-    row_map = {(int(row[0]), int(row[1])): float(row[2]) for row in rows}
+    row_map = {}
+    for row in rows:
+        if len(row) == 2:
+            month, total = row
+            year = today.year
+        else:
+            year, month, total = row
+        row_map[(int(year), int(month))] = float(total)
 
     labels = []
     values = []
@@ -3134,15 +3156,13 @@ def image_user_monthly(user):
 
 @app.route("/stats/department/<path:department>/daily", methods=["GET"])
 def stats_department_daily(department):
+    current_year = date.today().year
+    year = current_year
     try:
         month = int(request.args.get("month", "1"))
     except ValueError:
         month = 1
 
-    try:
-        year = int(request.args.get("year", str(date.today().year)))
-    except ValueError:
-        year = date.today().year
     mode = normalize_stats_mode(request.args.get("mode", "sales"))
     dimension = normalize_stats_dimension(request.args.get("dimension", "department"))
     if dimension == "user":
