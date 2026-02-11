@@ -13,7 +13,7 @@ from bs4 import BeautifulSoup
 from flask import request, render_template_string
 from collections import defaultdict
 from sshtunnel import SSHTunnelForwarder
-from typing import List, Tuple, Optional
+from typing import List, Tuple, Optional, Union
 from calendar import monthrange
 import json
 import os
@@ -214,6 +214,7 @@ USERS = {
     'Josh': 'Silverlake1!',
     'Casper': 'Silverlake1!',
     'carlo': 'Silverlake1!',
+    'markc': 'markc1!',
     'nacho': 'Silverlake1!'
 }
 
@@ -3157,11 +3158,14 @@ def image_user_monthly(user):
 @app.route("/stats/department/<path:department>/daily", methods=["GET"])
 def stats_department_daily(department):
     current_year = date.today().year
-    year = current_year
     try:
         month = int(request.args.get("month", "1"))
     except ValueError:
         month = 1
+    try:
+        year = int(request.args.get("year", str(current_year)))
+    except ValueError:
+        year = current_year
 
     mode = normalize_stats_mode(request.args.get("mode", "sales"))
     dimension = normalize_stats_dimension(request.args.get("dimension", "department"))
