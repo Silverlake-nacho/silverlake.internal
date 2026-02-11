@@ -3088,7 +3088,7 @@ def stats_department_monthly(department):
             if mode == "parts"
             else fetch_user_monthly_totals
         )
-        rows = fetch_rows(department, today.year)
+        rows = fetch_rows(department, start_month, end_month)
     else:
         fetch_rows = (
             fetch_department_parts_monthly_totals
