@@ -1667,6 +1667,12 @@ def shift_one_month_forward(value: date) -> date:
     return date(year, month, day)
 
 
+def is_complete_calendar_month(start_date: date, end_date: date) -> bool:
+    """Return whether a [start_date, end_date) range covers one full calendar month."""
+
+    return start_date.day == 1 and end_date == shift_one_month_forward(start_date)
+
+
 def fetch_department_monthly_totals(
     department: str, year_or_start: date | int, end_date: date | None = None
 ) -> List[Tuple[int, int, float]]:
@@ -2257,10 +2263,15 @@ def build_stats_context(
     rows = fetch_rows(start_date, end_date)
     resolved_prev_mode = normalize_prev_period_mode(prev_mode)
     if resolved_prev_mode == "month":
-        inclusive_end = end_date - timedelta(days=1)
-        prev_start = shift_one_month_back(start_date)
-        prev_inclusive_end = shift_one_month_back(inclusive_end)
-        prev_end = prev_inclusive_end + timedelta(days=1)
+        if is_complete_calendar_month(start_date, end_date):
+            prev_end = start_date
+            prev_start = shift_one_month_back(start_date)
+            prev_inclusive_end = prev_end - timedelta(days=1)
+        else:
+            inclusive_end = end_date - timedelta(days=1)
+            prev_start = shift_one_month_back(start_date)
+            prev_inclusive_end = shift_one_month_back(inclusive_end)
+            prev_end = prev_inclusive_end + timedelta(days=1)
     else:
         range_delta = end_date - start_date
         prev_end = start_date
@@ -2466,10 +2477,15 @@ def build_image_stats_context(
     rows = fetch_rows(start_date, end_date)
     resolved_prev_mode = normalize_prev_period_mode(prev_mode)
     if resolved_prev_mode == "month":
-        inclusive_end = end_date - timedelta(days=1)
-        prev_start = shift_one_month_back(start_date)
-        prev_inclusive_end = shift_one_month_back(inclusive_end)
-        prev_end = prev_inclusive_end + timedelta(days=1)
+        if is_complete_calendar_month(start_date, end_date):
+            prev_end = start_date
+            prev_start = shift_one_month_back(start_date)
+            prev_inclusive_end = prev_end - timedelta(days=1)
+        else:
+            inclusive_end = end_date - timedelta(days=1)
+            prev_start = shift_one_month_back(start_date)
+            prev_inclusive_end = shift_one_month_back(inclusive_end)
+            prev_end = prev_inclusive_end + timedelta(days=1)
     else:
         range_delta = end_date - start_date
         prev_end = start_date
