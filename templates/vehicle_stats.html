@@ -160,6 +160,69 @@
       .exclusion-card {
         background: rgba(255, 255, 255, 0.92);
       }
+      .toggle-stack {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-bottom: 20px;
+      }
+      .toggle-wrapper {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .toggle-label {
+        margin: 0;
+        font-weight: 600;
+      }
+      .toggle {
+        position: relative;
+        display: inline-flex;
+        align-items: center;
+        width: 270px;
+        height: 40px;
+        border-radius: 999px;
+        background: rgba(92, 156, 19, 0.15);
+        cursor: pointer;
+        padding: 4px;
+      }
+      .toggle input {
+        position: absolute;
+        inset: 0;
+        margin: 0;
+        opacity: 0;
+        cursor: pointer;
+      }
+      .toggle-track {
+        position: absolute;
+        top: 4px;
+        left: 4px;
+        width: calc(50% - 4px);
+        height: calc(100% - 8px);
+        border-radius: 999px;
+        background: #5c9c13;
+        transition: transform 0.2s ease;
+      }
+      .toggle input:checked + .toggle-track {
+        transform: translateX(100%);
+      }
+      .toggle-labels {
+        position: relative;
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        width: 100%;
+        font-size: 0.78rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.02em;
+        z-index: 1;
+      }
+      .toggle-labels span {
+        text-align: center;
+        color: rgba(31, 59, 8, 0.7);
+        transition: color 0.2s ease;
+        user-select: none;
+      }
       @media (max-width: 768px) {
         :root {
           --sidebar-expanded: 220px;
@@ -241,15 +304,16 @@
             <div class="summary-card">
               <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
                 <div class="d-flex flex-wrap align-items-center gap-2">
-                  <a href="{{ url_for('vehicle_stats', filter='today', group=group_mode, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">Today</a>
-                  <a href="{{ url_for('vehicle_stats', filter='yesterday', group=group_mode, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">Yesterday</a>
-                  <a href="{{ url_for('vehicle_stats', filter='this_week', group=group_mode, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">This Week</a>
-                  <a href="{{ url_for('vehicle_stats', filter='last_week', group=group_mode, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">Last Week</a>
-                  <a href="{{ url_for('vehicle_stats', filter='this_month', group=group_mode, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">This Month</a>
-                  <a href="{{ url_for('vehicle_stats', filter='last_month', group=group_mode, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">Last Month</a>
+                  <a href="{{ url_for('vehicle_stats', filter='today', group=group_mode, date_mode=date_mode, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">Today</a>
+                  <a href="{{ url_for('vehicle_stats', filter='yesterday', group=group_mode, date_mode=date_mode, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">Yesterday</a>
+                  <a href="{{ url_for('vehicle_stats', filter='this_week', group=group_mode, date_mode=date_mode, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">This Week</a>
+                  <a href="{{ url_for('vehicle_stats', filter='last_week', group=group_mode, date_mode=date_mode, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">Last Week</a>
+                  <a href="{{ url_for('vehicle_stats', filter='this_month', group=group_mode, date_mode=date_mode, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">This Month</a>
+                  <a href="{{ url_for('vehicle_stats', filter='last_month', group=group_mode, date_mode=date_mode, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">Last Month</a>
                   <form method="get" class="d-inline">
                     <input type="hidden" name="filter" value="custom">
                     <input type="hidden" name="group" value="{{ group_mode }}">
+                    <input type="hidden" name="date_mode" value="{{ date_mode }}">
                     <input type="date" name="start_date" id="customStartDate" required>
                     <input type="date" name="end_date" id="customEndDate" required>
                     {% if live_enabled %}
@@ -257,10 +321,14 @@
                     {% endif %}
                     <button type="submit" class="btn btn-sm btn-primary">Custom</button>
                   </form>
-                  {% if group_mode == 'contract' %}
-                    <a href="{{ url_for('vehicle_stats', filter=filter_type, start_date=start_date.isoformat() if start_date else None, end_date=end_date.isoformat() if end_date else None, group='company', exclude=excluded_companies, live=1 if live_enabled else None) }}" class="btn btn-sm btn-outline-primary">Group by Insurance</a>
-                  {% else %}
-                    <a href="{{ url_for('vehicle_stats', filter=filter_type, start_date=start_date.isoformat() if start_date else None, end_date=end_date.isoformat() if end_date else None, group='contract', exclude=excluded_companies, live=1 if live_enabled else None) }}" class="btn btn-sm btn-outline-primary">Group Contracts</a>
+                  {% if group_mode != 'company' %}
+                    <a href="{{ url_for('vehicle_stats', filter=filter_type, start_date=start_date.isoformat() if start_date else None, end_date=end_date.isoformat() if end_date else None, group='company', date_mode=date_mode, exclude=excluded_companies, live=1 if live_enabled else None) }}" class="btn btn-sm btn-outline-primary">Group by Insurance</a>
+                  {% endif %}
+                  {% if group_mode != 'contract' %}
+                    <a href="{{ url_for('vehicle_stats', filter=filter_type, start_date=start_date.isoformat() if start_date else None, end_date=end_date.isoformat() if end_date else None, group='contract', date_mode=date_mode, exclude=excluded_companies, live=1 if live_enabled else None) }}" class="btn btn-sm btn-outline-primary">Group Contracts</a>
+                  {% endif %}
+                  {% if group_mode != 'status' %}
+                    <a href="{{ url_for('vehicle_stats', filter=filter_type, start_date=start_date.isoformat() if start_date else None, end_date=end_date.isoformat() if end_date else None, group='status', date_mode=date_mode, exclude=excluded_companies, live=1 if live_enabled else None) }}" class="btn btn-sm btn-outline-primary">Group by Status</a>
                   {% endif %}
                 </div>
                 <div class="form-check ms-2">
@@ -273,11 +341,11 @@
             <div class="card mb-4 shadow-sm exclusion-card">
               <div class="card-body">
                 <div class="d-flex justify-content-between align-items-center">
-                  <h5 class="mb-0">Exclude Insurance Companies</h5>
+                  <h5 class="mb-0">Exclude {{ exclusion_label or "Insurance Companies" }}</h5>
                 </div>
                 <div class="exclusion-body mt-3">
                   <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
-                    <p class="mb-0 text-muted">Hover to show insurance company exclusions.</p>
+                    <p class="mb-0 text-muted">Hover to show {{ (exclusion_label or "Insurance Companies")|lower }} exclusions.</p>
                     <div class="d-flex gap-2">
                       <button type="submit" form="companyFilterForm" class="btn btn-sm btn-primary">Apply</button>
                       <button type="submit" form="companyFilterForm" formaction="{{ url_for('save_vehicle_stats_exclusions') }}" formmethod="post" class="btn btn-sm btn-success">Set as Default</button>
@@ -287,6 +355,7 @@
                   <form id="companyFilterForm" class="row g-2" method="get" action="{{ url_for('vehicle_stats') }}">
                     <input type="hidden" name="filter" value="{{ filter_type }}">
                     <input type="hidden" name="group" value="{{ group_mode }}">
+                    <input type="hidden" name="date_mode" value="{{ date_mode }}">
                     <input type="hidden" name="start_date" value="{{ start_date.isoformat() if start_date else '' }}">
                     <input type="hidden" name="end_date" value="{{ end_date.isoformat() if end_date else '' }}">
                     <input type="hidden" id="liveInputField" name="live" value="{{ 1 if live_enabled else '' }}">
@@ -300,6 +369,20 @@
                     {% endfor %}
                   </form>
                 </div>
+              </div>
+            </div>
+
+            <div class="toggle-stack">
+              <div class="toggle-wrapper">
+                <span class="toggle-label">Date Type</span>
+                <label class="toggle" for="dateModeToggle">
+                  <input type="checkbox" id="dateModeToggle" {% if date_mode == 'collected' %}checked{% endif %} aria-label="Toggle between Date Recovered and CollectedDate">
+                  <span class="toggle-track"></span>
+                  <div class="toggle-labels">
+                    <span>Recovered</span>
+                    <span>Collected</span>
+                  </div>
+                </label>
               </div>
             </div>
 
@@ -388,6 +471,7 @@
       const resetZoomBtn = document.getElementById('resetZoomBtn');
       const toggleChartBtn = document.getElementById('toggleChartBtn');
       const liveCheckbox = document.getElementById('liveToggle');
+      const dateModeToggle = document.getElementById('dateModeToggle');
       const customStartDate = document.getElementById('customStartDate');
       const customEndDate = document.getElementById('customEndDate');
 
@@ -544,6 +628,7 @@
         if (!params.has('filter')) {
           params.set('filter', "{{ filter_type }}");
         }
+        params.set('date_mode', dateModeToggle && dateModeToggle.checked ? 'collected' : 'recovered');
         params.forEach((value, key) => {
           url.searchParams.append(key, value);
         });
@@ -630,6 +715,14 @@
           if (chartInstance) {
             chartInstance.resetZoom();
           }
+        });
+      }
+
+      if (dateModeToggle) {
+        dateModeToggle.addEventListener('change', () => {
+          const url = new URL(window.location.href);
+          url.searchParams.set('date_mode', dateModeToggle.checked ? 'collected' : 'recovered');
+          window.location.href = url.toString();
         });
       }
 
