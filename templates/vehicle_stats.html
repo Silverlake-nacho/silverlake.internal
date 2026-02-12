@@ -223,6 +223,37 @@
         transition: color 0.2s ease;
         user-select: none;
       }
+      .toggle-links {
+        position: relative;
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        width: 100%;
+        font-size: 0.78rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.02em;
+        z-index: 1;
+      }
+      .toggle-links a {
+        text-align: center;
+        text-decoration: none;
+        color: rgba(31, 59, 8, 0.7);
+        line-height: 32px;
+      }
+      .toggle-three .toggle-track {
+        width: calc(33.333% - 3px);
+      }
+      .toggle-three.group-company .toggle-track {
+        transform: translateX(100%);
+      }
+      .toggle-three.group-status .toggle-track {
+        transform: translateX(200%);
+      }
+      .toggle-three.group-contract .toggle-links a.contract-link,
+      .toggle-three.group-company .toggle-links a.company-link,
+      .toggle-three.group-status .toggle-links a.status-link {
+        color: #fff;
+      }
       @media (max-width: 768px) {
         :root {
           --sidebar-expanded: 220px;
@@ -321,16 +352,7 @@
                     {% endif %}
                     <button type="submit" class="btn btn-sm btn-primary">Custom</button>
                   </form>
-                  {% if group_mode != 'company' %}
-                    <a href="{{ url_for('vehicle_stats', filter=filter_type, start_date=start_date.isoformat() if start_date else None, end_date=end_date.isoformat() if end_date else None, group='company', date_mode=date_mode, exclude=excluded_companies, live=1 if live_enabled else None) }}" class="btn btn-sm btn-outline-primary">Group by Insurance</a>
-                  {% endif %}
-                  {% if group_mode != 'contract' %}
-                    <a href="{{ url_for('vehicle_stats', filter=filter_type, start_date=start_date.isoformat() if start_date else None, end_date=end_date.isoformat() if end_date else None, group='contract', date_mode=date_mode, exclude=excluded_companies, live=1 if live_enabled else None) }}" class="btn btn-sm btn-outline-primary">Group Contracts</a>
-                  {% endif %}
-                  {% if group_mode != 'status' %}
-                    <a href="{{ url_for('vehicle_stats', filter=filter_type, start_date=start_date.isoformat() if start_date else None, end_date=end_date.isoformat() if end_date else None, group='status', date_mode=date_mode, exclude=excluded_companies, live=1 if live_enabled else None) }}" class="btn btn-sm btn-outline-primary">Group by Status</a>
-                  {% endif %}
-                </div>
+                 </div>
                 <div class="form-check ms-2">
                   <input class="form-check-input" type="checkbox" id="liveToggle" {% if live_enabled %}checked{% endif %}>
                   <label class="form-check-label text-success" for="liveToggle">Live</label>
@@ -383,6 +405,17 @@
                     <span>Collected</span>
                   </div>
                 </label>
+              </div>
+              <div class="toggle-wrapper">
+                <span class="toggle-label">Group By</span>
+                <div class="toggle toggle-three group-{{ group_mode }}" role="group" aria-label="Toggle grouping criteria">
+                  <span class="toggle-track"></span>
+                  <div class="toggle-links">
+                    <a class="contract-link" href="{{ url_for('vehicle_stats', filter=filter_type, start_date=start_date.isoformat() if start_date else None, end_date=end_date.isoformat() if end_date else None, group='contract', date_mode=date_mode, exclude=excluded_companies, live=1 if live_enabled else None) }}">Contract</a>
+                    <a class="company-link" href="{{ url_for('vehicle_stats', filter=filter_type, start_date=start_date.isoformat() if start_date else None, end_date=end_date.isoformat() if end_date else None, group='company', date_mode=date_mode, exclude=excluded_companies, live=1 if live_enabled else None) }}">Insurance</a>
+                    <a class="status-link" href="{{ url_for('vehicle_stats', filter=filter_type, start_date=start_date.isoformat() if start_date else None, end_date=end_date.isoformat() if end_date else None, group='status', date_mode=date_mode, exclude=excluded_companies, live=1 if live_enabled else None) }}">Status</a>
+                  </div>
+                </div>
               </div>
             </div>
 
