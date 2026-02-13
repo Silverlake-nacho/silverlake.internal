@@ -1746,6 +1746,12 @@ def is_complete_calendar_month(start_date: date, end_date: date) -> bool:
     return start_date.day == 1 and end_date == shift_one_month_forward(start_date)
 
 
+def is_complete_calendar_year(start_date: date, end_date: date) -> bool:
+    """Return whether a [start_date, end_date) range covers one full calendar year."""
+
+    return start_date.month == 1 and start_date.day == 1 and end_date == date(start_date.year + 1, 1, 1)
+
+
 def fetch_department_monthly_totals(
     department: str, year_or_start: date | int, end_date: date | None = None
 ) -> List[Tuple[int, int, float]]:
@@ -2336,7 +2342,11 @@ def build_stats_context(
     rows = fetch_rows(start_date, end_date)
     resolved_prev_mode = normalize_prev_period_mode(prev_mode)
     if resolved_prev_mode == "month":
-        if is_complete_calendar_month(start_date, end_date):
+        if is_complete_calendar_year(start_date, end_date):
+            prev_end = start_date
+            prev_start = shift_one_year_back(start_date)
+            prev_inclusive_end = prev_end - timedelta(days=1)
+        elif is_complete_calendar_month(start_date, end_date):
             prev_end = start_date
             prev_start = shift_one_month_back(start_date)
             prev_inclusive_end = prev_end - timedelta(days=1)
@@ -2571,7 +2581,11 @@ def build_image_stats_context(
     rows = fetch_rows(start_date, end_date)
     resolved_prev_mode = normalize_prev_period_mode(prev_mode)
     if resolved_prev_mode == "month":
-        if is_complete_calendar_month(start_date, end_date):
+        if is_complete_calendar_year(start_date, end_date):
+            prev_end = start_date
+            prev_start = shift_one_year_back(start_date)
+            prev_inclusive_end = prev_end - timedelta(days=1)
+        elif is_complete_calendar_month(start_date, end_date):
             prev_end = start_date
             prev_start = shift_one_month_back(start_date)
             prev_inclusive_end = prev_end - timedelta(days=1)
