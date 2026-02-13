@@ -558,7 +558,13 @@
               },
               tooltip: {
                 callbacks: {
-                  label: (context) => `${context.label}: ${Number(context.parsed).toLocaleString()}`,
+                  label: (context) => {
+                    const parsedValue =
+                      context.parsed && typeof context.parsed === 'object'
+                        ? context.parsed.y ?? context.parsed.r ?? 0
+                        : context.parsed;
+                    return `${context.label}: ${Number(parsedValue).toLocaleString()}`;
+                  },
                 },
               },
               datalabels: {
