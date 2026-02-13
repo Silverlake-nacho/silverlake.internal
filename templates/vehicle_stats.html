@@ -482,7 +482,11 @@
                       {% for row in detail_rows %}
                         <tr>
                           {% for value in row %}
-                            <td>{{ value }}</td>
+                            {% if value is mapping and value.flag_name is defined %}
+                              <td style="background-color: {{ value.flag_color or '#ffffff' }}; color: #111; font-weight: 600;">{{ value.flag_name or '' }}</td>
+                            {% else %}
+                              <td>{{ value }}</td>
+                            {% endif %}
                           {% endfor %}
                         </tr>
                       {% endfor %}
@@ -654,11 +658,30 @@
           const tr = document.createElement('tr');
           row.forEach((value) => {
             const td = document.createElement('td');
-            td.textContent = value ?? '';
+            if (value && typeof value === 'object' && 'flag_name' in value) {
+              const bgColor = value.flag_color || '#ffffff';
+              td.textContent = value.flag_name ?? '';
+              td.style.backgroundColor = bgColor;
+              td.style.color = getContrastTextColor(bgColor);
+              td.style.fontWeight = '600';
+            } else {
+              td.textContent = value ?? '';
+            }
             tr.appendChild(td);
           });
           vehicleDetailsTableBody.appendChild(tr);
         });
+      }
+
+      function getContrastTextColor(hexColor) {
+        if (!hexColor || typeof hexColor !== 'string') return '#111111';
+        const normalized = hexColor.trim().replace('#', '');
+        if (!/^[0-9a-fA-F]{6}$/.test(normalized)) return '#111111';
+        const r = parseInt(normalized.slice(0, 2), 16);
+        const g = parseInt(normalized.slice(2, 4), 16);
+        const b = parseInt(normalized.slice(4, 6), 16);
+        const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+        return luminance > 0.6 ? '#111111' : '#ffffff';
       }
 
       function buildDataUrl() {
