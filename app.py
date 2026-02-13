@@ -911,7 +911,8 @@ def fetch_atlas_vehicle_details_by_insurance(
                         WHEN v.StatusEnum = 301 THEN 'IAA Complete'
                         WHEN v.StatusEnum IS NOT NULL THEN CONCAT('Status ', CAST(v.StatusEnum AS varchar(20)))
                         ELSE 'Unknown'
-                    END AS Status
+                    END AS Status,
+                    v.FlagColorId AS FlagColorIdRef
                 FROM CT_Vehicles v
                 LEFT JOIN SalvageRecoveries sr ON v.SalvageRecoveryId = sr.Id
                 LEFT JOIN PartDataManufacturers m ON v.ManufacturerId = m.Id
@@ -948,6 +949,7 @@ def fetch_atlas_vehicle_details_by_insurance(
             cur.execute(query, (start_date, end_date))
             rows = cur.fetchall()
             columns = [desc[0] for desc in cur.description]
+            columns, rows = hydrate_vehicle_flag_values(cur, columns, rows)
             cur.close()
             conn.close()
             return database_name, columns, rows
@@ -2491,6 +2493,7 @@ def build_vehicle_stats_context(
     details_db_name, detail_columns, detail_rows = fetch_atlas_vehicle_details_by_insurance(
         start_date, end_date, resolved_date_mode
     )
+    detail_columns, detail_rows = format_vehicle_detail_rows(detail_columns, detail_rows)
     current_user = session.get("username")
     default_exclusions = load_stats_exclusions(current_user, "insurance_company")
     excluded_companies = exclude_args or default_exclusions
@@ -2555,6 +2558,97 @@ def build_vehicle_stats_context(
         "exclusion_label": exclusion_label,
         "chart_title_base": chart_title_base,
     }
+
+
+def format_vehicle_detail_rows(detail_columns, detail_rows):
+    formatted_columns = list(detail_columns)
+    if "Flag" not in formatted_columns or "FlagColor" not in formatted_columns:
+        return formatted_columns, detail_rows
+
+    flag_index = formatted_columns.index("Flag")
+    flag_color_index = formatted_columns.index("FlagColor")
+    formatted_columns.pop(flag_color_index)
+
+    formatted_rows = []
+    for row in detail_rows:
+        row_values = list(row)
+        flag_name = row_values[flag_index]
+        flag_color = normalize_flag_hex_color(row_values[flag_color_index])
+        row_values[flag_index] = {
+            "flag_name": "" if flag_name is None else str(flag_name),
+            "flag_color": flag_color,
+        }
+        row_values.pop(flag_color_index)
+        formatted_rows.append(row_values)
+
+    return formatted_columns, formatted_rows
+
+
+def hydrate_vehicle_flag_values(cursor, columns, rows):
+    hydrated_columns = list(columns)
+    if "FlagColorIdRef" not in hydrated_columns:
+        return hydrated_columns, rows
+
+    flag_ref_index = hydrated_columns.index("FlagColorIdRef")
+    try:
+        cursor.execute("SELECT Id, Name, Color FROM FlagColors")
+        flag_lookup = {
+            str(row[0]).strip(): {
+                "name": row[1],
+                "color": row[2],
+            }
+            for row in cursor.fetchall()
+            if row[0] is not None
+        }
+    except Exception:
+        flag_lookup = {}
+
+    hydrated_columns.pop(flag_ref_index)
+    hydrated_columns.extend(["Flag", "FlagColor"])
+
+    hydrated_rows = []
+    for row in rows:
+        row_values = list(row)
+        flag_ref = row_values.pop(flag_ref_index)
+        lookup = flag_lookup.get(str(flag_ref).strip()) if flag_ref is not None else None
+        lookup_name = lookup.get("name") if lookup else None
+        lookup_color = lookup.get("color") if lookup else None
+        row_values.append(lookup_name or ("" if flag_ref is None else str(flag_ref)))
+        row_values.append(lookup_color or "")
+        hydrated_rows.append(row_values)
+
+    return hydrated_columns, hydrated_rows
+
+
+def normalize_flag_hex_color(value):
+    if value is None:
+        return None
+
+    text = str(value).strip()
+    if not text:
+        return None
+
+    candidate = text[1:] if text.startswith("#") else text
+    if len(candidate) != 6:
+        return None
+
+    if any(ch not in "0123456789abcdefABCDEF" for ch in candidate):
+        return None
+
+    return f"#{candidate.upper()}"
+
+
+def serialize_vehicle_detail_cell(value):
+    if value is None:
+        return ""
+    if isinstance(value, (datetime, date)):
+        return value.strftime("%Y-%m-%d %H:%M:%S")
+    if isinstance(value, dict):
+        return {
+            key: serialize_vehicle_detail_cell(cell_value)
+            for key, cell_value in value.items()
+        }
+    return value
 
 
 def build_image_stats_context(
@@ -3078,15 +3172,7 @@ def vehicle_stats_data():
 
     detail_rows = []
     for row in context.get("detail_rows", []):
-        serialized_row = []
-        for value in row:
-            if value is None:
-                serialized_row.append("")
-            elif isinstance(value, (datetime, date)):
-                serialized_row.append(value.strftime("%Y-%m-%d %H:%M:%S"))
-            else:
-                serialized_row.append(value)
-        detail_rows.append(serialized_row)
+        detail_rows.append([serialize_vehicle_detail_cell(value) for value in row])
 
     return jsonify(
         {
