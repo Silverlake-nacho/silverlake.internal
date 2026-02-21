@@ -482,8 +482,9 @@
                       {% for row in detail_rows %}
                         <tr>
                           {% for value in row %}
-                            {% if value is mapping and value.flag_name is defined %}
-                              <td style="background-color: {{ value.flag_color or '#ffffff' }}; color: #111; font-weight: 600;">{{ value.flag_name or '' }}</td>
+                            {% set column_name = detail_columns[loop.index0] if detail_columns|length > loop.index0 else '' %}
+                            {% if column_name in ['FlagColour', 'FlagColor', 'Flag Colour', 'Flag Color'] and value %}
+                              <td style="background-color: {{ value }}; color: #111; font-weight: 600;">{{ value }}</td>
                             {% else %}
                               <td>{{ value }}</td>
                             {% endif %}
@@ -524,6 +525,7 @@
         customEndDate.addEventListener('focus', syncCustomEndDate);
       }
       const vehicleDetailsTableBody = document.getElementById('vehicleDetailsTableBody');
+      let vehicleDetailColumns = {{ detail_columns|tojson }};
       const chartTitleBase = {{ chart_title_base|tojson }}
 
       let chartInstance = null;
@@ -650,22 +652,31 @@
         dateRangeLabel.textContent = `Showing: ${data.date_range_label}`;
       }
 
+      function normalizeColumnName(name) {
+        return String(name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      }
+
       function rebuildDetailsTable(data) {
         if (!vehicleDetailsTableBody) return;
         vehicleDetailsTableBody.innerHTML = '';
+        vehicleDetailColumns = data.detail_columns || vehicleDetailColumns || [];
         const detailRows = data.detail_rows || [];
+        const colorColumnNames = new Set(['flagcolour', 'flagcolor']);
         detailRows.forEach((row) => {
           const tr = document.createElement('tr');
-          row.forEach((value) => {
+          row.forEach((value, index) => {
             const td = document.createElement('td');
-            if (value && typeof value === 'object' && 'flag_name' in value) {
-              const bgColor = value.flag_color || '#ffffff';
-              td.textContent = value.flag_name ?? '';
-              td.style.backgroundColor = bgColor;
-              td.style.color = getContrastTextColor(bgColor);
-              td.style.fontWeight = '600';
+            const columnKey = normalizeColumnName(vehicleDetailColumns[index]);
+            if (value && typeof value === 'object') {
+              td.textContent = value.flag_name ?? value.flagName ?? value.name ?? value.flag_color ?? value.flagColor ?? value.flag_colour ?? value.color ?? value.colour ?? '';
             } else {
               td.textContent = value ?? '';
+            }
+
+            if (colorColumnNames.has(columnKey) && td.textContent) {
+              td.style.backgroundColor = td.textContent;
+              td.style.color = getContrastTextColor(td.textContent);
+              td.style.fontWeight = '600';
             }
             tr.appendChild(td);
           });
