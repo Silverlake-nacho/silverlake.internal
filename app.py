@@ -2562,23 +2562,36 @@ def build_vehicle_stats_context(
 
 def format_vehicle_detail_rows(detail_columns, detail_rows):
     formatted_columns = list(detail_columns)
-    if "Flag" not in formatted_columns or "FlagColor" not in formatted_columns:
+    normalized_indexes = {
+        "".join(ch for ch in str(column).lower() if ch.isalnum()): index
+        for index, column in enumerate(formatted_columns)
+    }
+    flag_index = normalized_indexes.get("flag")
+    flag_color_index = normalized_indexes.get("flagcolor")
+    if flag_color_index is None:
+        flag_color_index = normalized_indexes.get("flagcolour")
+
+    if flag_index is None or flag_color_index is None:
         return formatted_columns, detail_rows
 
-    flag_index = formatted_columns.index("Flag")
-    flag_color_index = formatted_columns.index("FlagColor")
-    formatted_columns.pop(flag_color_index)
+    formatted_columns[flag_index] = "FlagName"
+    formatted_columns[flag_color_index] = "FlagColour"
 
     formatted_rows = []
     for row in detail_rows:
         row_values = list(row)
         flag_name = row_values[flag_index]
-        flag_color = normalize_flag_hex_color(row_values[flag_color_index])
-        row_values[flag_index] = {
-            "flag_name": "" if flag_name is None else str(flag_name),
-            "flag_color": flag_color,
-        }
-        row_values.pop(flag_color_index)
+        raw_flag_color = row_values[flag_color_index]
+        normalized_flag_color = normalize_flag_hex_color(raw_flag_color)
+        if normalized_flag_color:
+            flag_color = normalized_flag_color
+        elif raw_flag_color is None:
+            flag_color = ""
+        else:
+            flag_color = str(raw_flag_color).strip()
+
+        row_values[flag_index] = "" if flag_name is None else str(flag_name)
+        row_values[flag_color_index] = flag_color
         formatted_rows.append(row_values)
 
     return formatted_columns, formatted_rows
