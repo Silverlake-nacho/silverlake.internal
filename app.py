@@ -2472,6 +2472,7 @@ def build_vehicle_stats_context(
     exclude_args: List[str],
     group_mode: str,
     date_mode: str,
+    exclusion_scope: str = "insurance_company",
 ):
     start_date, end_date = parse_date_filter(filter_type, start_date_str, end_date_str)
     date_range_label = describe_date_range(filter_type, start_date, end_date)
@@ -2495,7 +2496,7 @@ def build_vehicle_stats_context(
     )
     detail_columns, detail_rows = format_vehicle_detail_rows(detail_columns, detail_rows)
     current_user = session.get("username")
-    default_exclusions = load_stats_exclusions(current_user, "insurance_company")
+    default_exclusions = load_stats_exclusions(current_user, exclusion_scope)
     excluded_companies = exclude_args or default_exclusions
 
     if resolved_group_mode == "contract":
@@ -3028,6 +3029,60 @@ def vehicle_stats():
     )
 
 
+@app.route("/executive_stats", methods=["GET"])
+def executive_stats():
+    filter_type = request.args.get("filter", "today")
+    start_date_str = request.args.get("start_date")
+    end_date_str = request.args.get("end_date")
+    excluded_args = request.args.getlist("exclude")
+    group_mode = request.args.get("group", "company")
+    date_mode = request.args.get("date_mode", "recovered")
+    live_enabled = str(request.args.get("live", "")).lower() in {"1", "true", "yes", "on"}
+
+    error_message = None
+    try:
+        context = build_vehicle_stats_context(
+            filter_type,
+            start_date_str,
+            end_date_str,
+            excluded_args,
+            group_mode,
+            date_mode,
+            exclusion_scope="executive_insurance_company",
+        )
+    except Exception as exc:
+        start_date, end_date = parse_date_filter(
+            filter_type, start_date_str, end_date_str
+        )
+        entity_label = "Contract Group" if group_mode == "contract" else "Insurance Company"
+        context = {
+            "filter_type": filter_type,
+            "start_date": start_date,
+            "end_date": end_date,
+            "date_range_label": describe_date_range(filter_type, start_date, end_date),
+            "rows": [],
+            "sum_total": 0,
+            "chart_labels": [],
+            "chart_values": [],
+            "all_companies": [],
+            "excluded_companies": excluded_args,
+            "database_name": None,
+            "group_mode": group_mode,
+            "date_mode": normalize_vehicle_date_mode(date_mode),
+            "entity_label": entity_label,
+            "chart_title_base": f"Vehicles by {entity_label}",
+        }
+        error_message = f"Unable to load executive stats: {exc}"
+
+    return render_template(
+        "executive_stats.html",
+        **context,
+        live_enabled=live_enabled,
+        error_message=error_message,
+        active_page="executive_stats",
+    )
+
+
 def atlas_vehicle_stats():
     error_message = None
     database_name = None
@@ -3181,6 +3236,46 @@ def vehicle_stats_data():
 
     context = build_vehicle_stats_context(
         filter_type, start_date_str, end_date_str, excluded_args, group_mode, date_mode
+    )
+
+    detail_rows = []
+    for row in context.get("detail_rows", []):
+        detail_rows.append([serialize_vehicle_detail_cell(value) for value in row])
+
+    return jsonify(
+        {
+            "date_range_label": context["date_range_label"],
+            "rows": [
+                {"label": row[0], "total": float(row[1])} for row in context["rows"]
+            ],
+            "sum_total": context["sum_total"],
+            "chart_labels": context["chart_labels"],
+            "chart_values": context["chart_values"],
+            "detail_columns": context.get("detail_columns", []),
+            "detail_rows": detail_rows,
+            "entity_label": context.get("entity_label", "Insurance Company"),
+            "chart_title_base": context.get("chart_title_base", "Vehicles by Insurance Company"),
+        }
+    )
+
+
+@app.route("/executive_stats/data", methods=["GET"])
+def executive_stats_data():
+    filter_type = request.args.get("filter", "today")
+    start_date_str = request.args.get("start_date")
+    end_date_str = request.args.get("end_date")
+    excluded_args = request.args.getlist("exclude")
+    group_mode = request.args.get("group", "company")
+    date_mode = request.args.get("date_mode", "recovered")
+
+    context = build_vehicle_stats_context(
+        filter_type,
+        start_date_str,
+        end_date_str,
+        excluded_args,
+        group_mode,
+        date_mode,
+        exclusion_scope="executive_insurance_company",
     )
 
     detail_rows = []
@@ -3585,6 +3680,31 @@ def save_vehicle_stats_exclusions():
     return redirect(
         url_for(
             "vehicle_stats",
+            filter=filter_type,
+            start_date=start_date,
+            end_date=end_date,
+            exclude=excluded_companies,
+            group=group_mode,
+            date_mode=date_mode,
+        )
+    )
+
+
+@app.route("/executive_stats/exclusions", methods=["POST"])
+def save_executive_stats_exclusions():
+    filter_type = request.form.get("filter", "today")
+    start_date = request.form.get("start_date")
+    end_date = request.form.get("end_date")
+    excluded_companies = request.form.getlist("exclude")
+    group_mode = request.form.get("group", "company")
+    date_mode = request.form.get("date_mode", "recovered")
+
+    user = session.get("username")
+    persist_stats_exclusions(user, "executive_insurance_company", excluded_companies)
+
+    return redirect(
+        url_for(
+            "executive_stats",
             filter=filter_type,
             start_date=start_date,
             end_date=end_date,
