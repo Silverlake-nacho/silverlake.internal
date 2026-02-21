@@ -265,6 +265,23 @@
       .toggle-three.group-status .toggle-links a.status-link {
         color: #fff;
       }
+      .contract-row-toggle {
+        cursor: pointer;
+      }
+      .contract-row-toggle td:first-child {
+        user-select: none;
+      }
+      .contract-row-toggle-expanded td:first-child,
+      .contract-row-toggle-expanded td:last-child {
+        font-weight: 700;
+      }
+      .contract-company-breakdown td:first-child {
+        padding-left: 30px;
+        font-size: 0.875rem;
+      }
+      .contract-company-breakdown td:last-child {
+        font-size: 0.875rem;
+      }
       #vehicleDetailsTable {
         --vehicle-title-row-height: 42px;
         --vehicle-first-column-width: 120px;
@@ -500,14 +517,7 @@
                       <th class="text-end">Vehicles</th>
                     </tr>
                   </thead>
-                  <tbody id="companyTableBody">
-                    {% for row in rows %}
-                    <tr>
-                      <td>{{ row[0] }}</td>
-                      <td class="text-end">{{ '{:,.0f}'.format(row[1]) }}</td>
-                    </tr>
-                    {% endfor %}
-                  </tbody>
+                  <tbody id="companyTableBody"></tbody>
                   <tfoot>
                     <tr class="fw-bold">
                       <td>Total</td>
@@ -607,6 +617,10 @@
       let currentChartType = 'bar';
       let labels = chartLabels.slice();
       let values = chartValues.slice();
+      const currentGroupMode = {{ group_mode|tojson }};
+      let contractCompanyBreakdown = {{ contract_company_breakdown|tojson }};
+      const expandedContracts = new Set();
+
 
       function generateColors(count) {
         const palette = ['#5c9c13', '#7fbf2e', '#b2d97c', '#2e5e0f', '#3f7f16', '#94c11f'];
@@ -712,19 +726,77 @@
         }
       }
 
+      function shouldEnableContractBreakdown() {
+        return currentGroupMode === 'contract';
+      }
+
+      function toggleContractBreakdown(contractLabel) {
+        if (expandedContracts.has(contractLabel)) {
+          expandedContracts.delete(contractLabel);
+        } else {
+          expandedContracts.add(contractLabel);
+        }
+      }
+
+      function buildContractCompanyRows(contractLabel) {
+        const breakdownRows = contractCompanyBreakdown[contractLabel] || [];
+        return breakdownRows.map((item) => {
+          const companyName = Array.isArray(item) ? item[0] : item?.company;
+          const companyTotal = Array.isArray(item) ? item[1] : item?.total;
+          return `
+            <tr class="contract-company-breakdown">
+              <td>└ ${companyName || 'Unknown Insurance Company'}</td>
+              <td class="text-end">${Number(companyTotal || 0).toLocaleString()}</td>
+            </tr>
+          `;
+        }).join('');
+      }
+
       function rebuildTable(data) {
         const tbody = document.getElementById('companyTableBody');
         tbody.innerHTML = '';
-        data.rows.forEach((row) => {
+        const canExpandContracts = shouldEnableContractBreakdown();
+        contractCompanyBreakdown = data.contract_company_breakdown || {};
+
+        (data.rows || []).forEach((row) => {
+          const rowLabel = row && typeof row === 'object' && !Array.isArray(row)
+            ? row.label
+            : row?.[0];
+          const rowTotal = row && typeof row === 'object' && !Array.isArray(row)
+            ? row.total
+            : row?.[1];
+          const safeLabel = rowLabel ?? 'Unassigned';
+          const safeTotal = Number(rowTotal ?? 0);
           const tr = document.createElement('tr');
-          tr.innerHTML = `
-            <td>${row.label}</td>
-            <td class="text-end">${Number(row.total).toLocaleString()}</td>
-          `;
+          const isExpanded = expandedContracts.has(safeLabel);
+
+          if (canExpandContracts) {
+            tr.classList.add('contract-row-toggle');
+            if (isExpanded) {
+              tr.classList.add('contract-row-toggle-expanded');
+            }
+            tr.innerHTML = `
+              <td>${safeLabel}</td>
+              <td class="text-end">${safeTotal.toLocaleString()}</td>
+            `;
+            tr.addEventListener('click', () => {
+              toggleContractBreakdown(safeLabel);
+              rebuildTable(data);
+            });
+          } else {
+            tr.innerHTML = `
+              <td>${safeLabel}</td>
+              <td class="text-end">${safeTotal.toLocaleString()}</td>
+            `;
+          }
           tbody.appendChild(tr);
+
+          if (canExpandContracts && isExpanded) {
+            tbody.insertAdjacentHTML('beforeend', buildContractCompanyRows(safeLabel));
+          }
         });
-        totalSumCell.textContent = Number(data.sum_total).toLocaleString();
-        dateRangeLabel.textContent = `Showing: ${data.date_range_label}`;
+        totalSumCell.textContent = Number(data.sum_total ?? 0).toLocaleString();
+        dateRangeLabel.textContent = `Showing: ${data.date_range_label || ''}`;
       }
 
       function normalizeColumnName(name) {
@@ -980,6 +1052,13 @@
         syncLiveControls(true);
         startLiveUpdates();
       }
+
+      rebuildTable({
+        rows: {{ rows|tojson }},
+        sum_total: {{ sum_total|tojson }},
+        date_range_label: {{ date_range_label|tojson }},
+        contract_company_breakdown: {{ contract_company_breakdown|tojson }},
+      });
 
       formatInitialDetailsTableDates();
       initializeDetailsTable();
