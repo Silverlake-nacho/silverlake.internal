@@ -2501,17 +2501,25 @@ def build_vehicle_stats_context(
 
     if resolved_group_mode == "contract":
         group_totals: dict[str, int] = {}
+        contract_company_breakdown: dict[str, List[Tuple[str, int]]] = {}
         all_companies = sorted({row[1] for row in rows})
         for contract_group, company, count in rows:
             if company in excluded_companies:
                 continue
-            group_totals[contract_group] = group_totals.get(contract_group, 0) + int(
-                count
+            vehicle_count = int(count)
+            group_totals[contract_group] = group_totals.get(contract_group, 0) + vehicle_count
+            contract_company_breakdown.setdefault(contract_group, []).append(
+                (company, vehicle_count)
             )
         filtered_rows = sorted(
             group_totals.items(),
             key=lambda item: (-item[1], item[0]),
         )
+        for contract_group, companies in contract_company_breakdown.items():
+            contract_company_breakdown[contract_group] = sorted(
+                companies,
+                key=lambda item: (-item[1], item[0]),
+            )
         entity_label = "Contract Group"
         exclusion_label = "Insurance Companies"
     elif resolved_group_mode == "status":
@@ -2520,6 +2528,7 @@ def build_vehicle_stats_context(
             for row in rows
             if row[0] not in excluded_companies
         ]
+        contract_company_breakdown = {}
         all_companies = sorted({row[0] for row in rows})
         entity_label = "Vehicle Status"
         exclusion_label = "Statuses"
@@ -2529,6 +2538,7 @@ def build_vehicle_stats_context(
             for row in rows
             if row[0] not in excluded_companies
         ]
+        contract_company_breakdown = {}
         all_companies = sorted({row[0] for row in rows})
         entity_label = "Insurance Company"
         exclusion_label = "Insurance Companies"
@@ -2558,6 +2568,7 @@ def build_vehicle_stats_context(
         "entity_label": entity_label,
         "exclusion_label": exclusion_label,
         "chart_title_base": chart_title_base,
+        "contract_company_breakdown": contract_company_breakdown,
     }
 
 
@@ -3255,6 +3266,7 @@ def vehicle_stats_data():
             "detail_rows": detail_rows,
             "entity_label": context.get("entity_label", "Insurance Company"),
             "chart_title_base": context.get("chart_title_base", "Vehicles by Insurance Company"),
+            "contract_company_breakdown": context.get("contract_company_breakdown", {}),
         }
     )
 
@@ -3295,6 +3307,7 @@ def executive_stats_data():
             "detail_rows": detail_rows,
             "entity_label": context.get("entity_label", "Insurance Company"),
             "chart_title_base": context.get("chart_title_base", "Vehicles by Insurance Company"),
+            "contract_company_breakdown": context.get("contract_company_breakdown", {}),
         }
     )
 
