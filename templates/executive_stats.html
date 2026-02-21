@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Silverlake Vehicle Stats</title>
+    <title>Silverlake Executive Stats</title>
     <link rel="icon" href="{{ url_for('static', filename='SLK Logo.png') }}">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700&display=swap" rel="stylesheet">
@@ -354,6 +354,10 @@
             <i class="fas fa-car-side"></i>
             <span class="link-text">Vehicle Stats</span>
           </a>
+          <a href="{{ url_for('executive_stats') }}" class="nav-link{% if active_page == 'executive_stats' %} active{% endif %}">
+            <i class="fas fa-chart-line"></i>
+            <span class="link-text">Executive Stats</span>
+          </a>
           <a href="{{ url_for('atlas_vehicle_stats') }}" class="nav-link{% if active_page == 'atlas_vehicle_stats' %} active{% endif %}">
             <i class="fas fa-truck"></i>
             <span class="link-text">Atlas Vehicle Stats</span>
@@ -385,7 +389,7 @@
               <img src="{{ url_for('static', filename='logo-slg-strip.svg') }}" alt="Silverlake Logo">
             </div>
 
-            <h1 class="mb-4 text-center">Vehicle Stats</h1>
+            <h1 class="mb-4 text-center">Executive Stats</h1>
 
             {% if error_message %}
               <div class="alert alert-danger" role="alert">{{ error_message }}</div>
@@ -400,12 +404,12 @@
             <div class="summary-card">
               <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
                 <div class="d-flex flex-wrap align-items-center gap-2">
-                  <a href="{{ url_for('vehicle_stats', filter='today', group=group_mode, date_mode=date_mode, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">Today</a>
-                  <a href="{{ url_for('vehicle_stats', filter='yesterday', group=group_mode, date_mode=date_mode, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">Yesterday</a>
-                  <a href="{{ url_for('vehicle_stats', filter='this_week', group=group_mode, date_mode=date_mode, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">This Week</a>
-                  <a href="{{ url_for('vehicle_stats', filter='last_week', group=group_mode, date_mode=date_mode, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">Last Week</a>
-                  <a href="{{ url_for('vehicle_stats', filter='this_month', group=group_mode, date_mode=date_mode, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">This Month</a>
-                  <a href="{{ url_for('vehicle_stats', filter='last_month', group=group_mode, date_mode=date_mode, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">Last Month</a>
+                  <a href="{{ url_for('executive_stats', filter='today', group=group_mode, date_mode=date_mode, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">Today</a>
+                  <a href="{{ url_for('executive_stats', filter='yesterday', group=group_mode, date_mode=date_mode, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">Yesterday</a>
+                  <a href="{{ url_for('executive_stats', filter='this_week', group=group_mode, date_mode=date_mode, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">This Week</a>
+                  <a href="{{ url_for('executive_stats', filter='last_week', group=group_mode, date_mode=date_mode, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">Last Week</a>
+                  <a href="{{ url_for('executive_stats', filter='this_month', group=group_mode, date_mode=date_mode, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">This Month</a>
+                  <a href="{{ url_for('executive_stats', filter='last_month', group=group_mode, date_mode=date_mode, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">Last Month</a>
                   <form method="get" class="d-inline">
                     <input type="hidden" name="filter" value="custom">
                     <input type="hidden" name="group" value="{{ group_mode }}">
@@ -435,11 +439,11 @@
                     <p class="mb-0 text-muted">Hover to show {{ (exclusion_label or "Insurance Companies")|lower }} exclusions.</p>
                     <div class="d-flex gap-2">
                       <button type="submit" form="companyFilterForm" class="btn btn-sm btn-primary">Apply</button>
-                      <button type="submit" form="companyFilterForm" formaction="{{ url_for('save_vehicle_stats_exclusions') }}" formmethod="post" class="btn btn-sm btn-success">Set as Default</button>
+                      <button type="submit" form="companyFilterForm" formaction="{{ url_for('save_executive_stats_exclusions') }}" formmethod="post" class="btn btn-sm btn-success">Set as Default</button>
                       <small class="text-muted align-self-center">Defaults are saved per user.</small>
                     </div>
                   </div>
-                  <form id="companyFilterForm" class="row g-2" method="get" action="{{ url_for('vehicle_stats') }}">
+                  <form id="companyFilterForm" class="row g-2" method="get" action="{{ url_for('executive_stats') }}">
                     <input type="hidden" name="filter" value="{{ filter_type }}">
                     <input type="hidden" name="group" value="{{ group_mode }}">
                     <input type="hidden" name="date_mode" value="{{ date_mode }}">
@@ -463,11 +467,11 @@
               <div class="toggle-wrapper">
                 <span class="toggle-label">Date Type</span>
                 <label class="toggle" for="dateModeToggle">
-                  <input type="checkbox" id="dateModeToggle" {% if date_mode == 'collected' %}checked{% endif %} aria-label="Toggle between Date Recovered and CollectedDate">
+                  <input type="checkbox" id="dateModeToggle" {% if date_mode == 'collected' %}checked{% endif %} aria-label="Toggle between Vehicles IN and Vehicles OUT">
                   <span class="toggle-track"></span>
                   <div class="toggle-labels">
-                    <span>Recovered</span>
-                    <span>Collected</span>
+                    <span><i class="fas fa-arrow-right-to-bracket"></i> Vehicles IN</span>
+                    <span><i class="fas fa-arrow-right-from-bracket"></i> Vehicles OUT</span>
                   </div>
                 </label>
               </div>
@@ -476,9 +480,9 @@
                 <div class="toggle toggle-three group-{{ group_mode }}" role="group" aria-label="Toggle grouping criteria">
                   <span class="toggle-track"></span>
                   <div class="toggle-links">
-                    <a class="contract-link" href="{{ url_for('vehicle_stats', filter=filter_type, start_date=start_date.isoformat() if start_date else None, end_date=end_date.isoformat() if end_date else None, group='contract', date_mode=date_mode, exclude=excluded_companies, live=1 if live_enabled else None) }}">Contract</a>
-                    <a class="company-link" href="{{ url_for('vehicle_stats', filter=filter_type, start_date=start_date.isoformat() if start_date else None, end_date=end_date.isoformat() if end_date else None, group='company', date_mode=date_mode, exclude=excluded_companies, live=1 if live_enabled else None) }}">Insurance</a>
-                    <a class="status-link" href="{{ url_for('vehicle_stats', filter=filter_type, start_date=start_date.isoformat() if start_date else None, end_date=end_date.isoformat() if end_date else None, group='status', date_mode=date_mode, exclude=excluded_companies, live=1 if live_enabled else None) }}">Status</a>
+                    <a class="contract-link" href="{{ url_for('executive_stats', filter=filter_type, start_date=start_date.isoformat() if start_date else None, end_date=end_date.isoformat() if end_date else None, group='contract', date_mode=date_mode, exclude=excluded_companies, live=1 if live_enabled else None) }}">Contract</a>
+                    <a class="company-link" href="{{ url_for('executive_stats', filter=filter_type, start_date=start_date.isoformat() if start_date else None, end_date=end_date.isoformat() if end_date else None, group='company', date_mode=date_mode, exclude=excluded_companies, live=1 if live_enabled else None) }}">Insurance</a>
+                    <a class="status-link" href="{{ url_for('executive_stats', filter=filter_type, start_date=start_date.isoformat() if start_date else None, end_date=end_date.isoformat() if end_date else None, group='status', date_mode=date_mode, exclude=excluded_companies, live=1 if live_enabled else None) }}">Status</a>
                   </div>
                 </div>
               </div>
@@ -868,7 +872,7 @@
       }
 
       function buildDataUrl() {
-        const url = new URL("{{ url_for('vehicle_stats_data') }}", window.location.origin);
+        const url = new URL("{{ url_for('executive_stats_data') }}", window.location.origin);
         const params = new URLSearchParams(window.location.search);
         if (!params.has('filter')) {
           params.set('filter', "{{ filter_type }}");
