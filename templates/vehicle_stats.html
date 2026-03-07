@@ -486,9 +486,10 @@
                       {% for row in detail_rows %}
                         <tr>
                           {% for value in row %}
-                            {% set column_name = detail_columns[loop.index0] if detail_columns|length > loop.index0 else '' %}
-                            {% if column_name in ['FlagColour', 'FlagColor', 'Flag Colour', 'Flag Color'] and value %}
-                              <td style="background-color: {{ value }}; color: #111; font-weight: 600;">{{ value }}</td>
+                            {% if value is mapping and value.get('kind') == 'single' %}
+                              <td style="background-color: {{ value.get('background_color', '') }}; color: #111; font-weight: 600;">{{ value.get('label', '') }}</td>
+                            {% elif value is mapping and value.get('kind') == 'multiple' %}
+                              <td><button type="button" class="btn btn-sm btn-link p-0">{{ value.get('label', 'More') }}</button></td>
                             {% else %}
                               <td>{{ value }}</td>
                             {% endif %}
@@ -504,6 +505,28 @@
         </div>
       </div>
     </div>
+
+    <div class="modal fade" id="vehicleFlagsModal" tabindex="-1" aria-labelledby="vehicleFlagsModalLabel" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-scrollable">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="vehicleFlagsModalLabel">Vehicle Flags</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <div class="table-responsive">
+              <table class="table table-sm align-middle mb-0">
+                <thead>
+                  <tr><th>Flag</th></tr>
+                </thead>
+                <tbody id="vehicleFlagsModalBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <script>
       const chartLabels = {{ chart_labels|tojson }};
       const chartValues = {{ chart_values|tojson }};
@@ -529,7 +552,11 @@
         customEndDate.addEventListener('focus', syncCustomEndDate);
       }
       const vehicleDetailsTableBody = document.getElementById('vehicleDetailsTableBody');
+      const vehicleFlagsModalBody = document.getElementById('vehicleFlagsModalBody');
+      const vehicleFlagsModalElement = document.getElementById('vehicleFlagsModal');
+      let vehicleFlagsModal = null;
       let vehicleDetailColumns = {{ detail_columns|tojson }};
+      let vehicleDetailRows = {{ detail_rows|tojson }};
       const chartTitleBase = {{ chart_title_base|tojson }}
 
       let chartInstance = null;
@@ -660,27 +687,81 @@
         return String(name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
       }
 
+      function getVehicleFlagsModal() {
+        if (vehicleFlagsModal) return vehicleFlagsModal;
+        if (!vehicleFlagsModalElement || !window.bootstrap) return null;
+        vehicleFlagsModal = new bootstrap.Modal(vehicleFlagsModalElement);
+        return vehicleFlagsModal;
+      }
+
+      function showVehicleFlagsModal(flags) {
+        const modalInstance = getVehicleFlagsModal();
+        if (!vehicleFlagsModalBody || !modalInstance) return;
+        vehicleFlagsModalBody.innerHTML = '';
+        (flags || []).forEach((flag) => {
+          const tr = document.createElement('tr');
+          const td = document.createElement('td');
+          const text = flag?.text || '';
+          const color = flag?.color || '';
+          td.textContent = text;
+          if (color) {
+            td.style.backgroundColor = color;
+            td.style.color = getContrastTextColor(color);
+          }
+          td.style.fontWeight = '600';
+          tr.appendChild(td);
+          vehicleFlagsModalBody.appendChild(tr);
+        });
+        modalInstance.show();
+      }
+
+      function renderFlagCell(td, value) {
+        if (!value || typeof value !== 'object') {
+          td.textContent = value ?? '';
+          return;
+        }
+
+        if (value.kind === 'single') {
+          const backgroundColor = value.background_color || '';
+          td.textContent = value.label || '';
+          if (backgroundColor) {
+            td.style.backgroundColor = backgroundColor;
+            td.style.color = getContrastTextColor(backgroundColor);
+          }
+          td.style.fontWeight = '600';
+          return;
+        }
+
+        if (value.kind === 'multiple') {
+          const moreButton = document.createElement('button');
+          moreButton.type = 'button';
+          moreButton.className = 'btn btn-sm btn-link p-0';
+          moreButton.textContent = value.label || 'More';
+          moreButton.addEventListener('click', (event) => {
+            event.preventDefault();
+            showVehicleFlagsModal(value.flags || []);
+          });
+          td.appendChild(moreButton);
+          return;
+        }
+
+        td.textContent = value.label ?? value.text ?? value.name ?? '';
+      }
+
       function rebuildDetailsTable(data) {
         if (!vehicleDetailsTableBody) return;
         vehicleDetailsTableBody.innerHTML = '';
         vehicleDetailColumns = data.detail_columns || vehicleDetailColumns || [];
-        const detailRows = data.detail_rows || [];
-        const colorColumnNames = new Set(['flagcolour', 'flagcolor']);
-        detailRows.forEach((row) => {
+        vehicleDetailRows = data.detail_rows || [];
+        vehicleDetailRows.forEach((row) => {
           const tr = document.createElement('tr');
           row.forEach((value, index) => {
             const td = document.createElement('td');
             const columnKey = normalizeColumnName(vehicleDetailColumns[index]);
-            if (value && typeof value === 'object') {
-              td.textContent = value.flag_name ?? value.flagName ?? value.name ?? value.flag_color ?? value.flagColor ?? value.flag_colour ?? value.color ?? value.colour ?? '';
+            if (columnKey === 'flag') {
+              renderFlagCell(td, value);
             } else {
               td.textContent = value ?? '';
-            }
-
-            if (colorColumnNames.has(columnKey) && td.textContent) {
-              td.style.backgroundColor = td.textContent;
-              td.style.color = getContrastTextColor(td.textContent);
-              td.style.fontWeight = '600';
             }
             tr.appendChild(td);
           });
@@ -808,6 +889,11 @@
         syncLiveControls(true);
         startLiveUpdates();
       }
+
+      rebuildDetailsTable({
+        detail_columns: vehicleDetailColumns,
+        detail_rows: vehicleDetailRows,
+      });
 
       renderChart(currentChartType);
     </script>
