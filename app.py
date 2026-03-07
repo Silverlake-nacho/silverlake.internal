@@ -2368,6 +2368,7 @@ def build_stats_context(
         else f"Prev Period ({prev_start.strftime('%d/%m/%Y')})"
     )
     prev_rows = fetch_rows(prev_start, prev_end)
+    current_row_map = {row[0]: float(row[1]) for row in rows}
     prev_row_map = {row[0]: float(row[1]) for row in prev_rows}
     current_user = session.get("username")
     saved_order = load_department_order(current_user)
@@ -2378,11 +2379,13 @@ def build_stats_context(
     )
     excluded_departments = exclude_args or default_exclusions
     filtered_rows = []
-    for row in rows:
-        if row[0] in excluded_departments:
+    row_entities = sorted(set(current_row_map) | set(prev_row_map))
+    for entity in row_entities:
+        if entity in excluded_departments:
             continue
-        prev_value = prev_row_map.get(row[0], 0.0)
-        filtered_rows.append((row[0], float(row[1]), float(prev_value)))
+        current_value = current_row_map.get(entity, 0.0)
+        prev_value = prev_row_map.get(entity, 0.0)
+        filtered_rows.append((entity, float(current_value), float(prev_value)))
     filtered_rows = sorted(
         filtered_rows,
         key=lambda row: (order_index.get(row[0], float("inf")), row[0]),
@@ -2394,7 +2397,7 @@ def build_stats_context(
     chart_labels = [row[0] for row in filtered_rows]
     chart_values = [float(row[1]) for row in filtered_rows]
 
-    all_departments = sorted({row[0] for row in rows})
+    all_departments = sorted(set(current_row_map) | set(prev_row_map))
 
     return {
         "filter_type": filter_type,
@@ -2724,6 +2727,7 @@ def build_image_stats_context(
         else f"Prev Period ({prev_start.strftime('%d/%m/%Y')})"
     )
     prev_rows = fetch_rows(prev_start, prev_end)
+    current_row_map = {row[0]: float(row[1]) for row in rows}
     prev_row_map = {row[0]: float(row[1]) for row in prev_rows}
     current_user = session.get("username")
     saved_order = load_department_order(current_user)
@@ -2732,11 +2736,13 @@ def build_image_stats_context(
     default_exclusions = load_stats_exclusions(current_user, "user")
     excluded_departments = exclude_args or default_exclusions
     filtered_rows = []
-    for row in rows:
-        if row[0] in excluded_departments:
+    row_entities = sorted(set(current_row_map) | set(prev_row_map))
+    for entity in row_entities:
+        if entity in excluded_departments:
             continue
-        prev_value = prev_row_map.get(row[0], 0.0)
-        filtered_rows.append((row[0], float(row[1]), float(prev_value)))
+        current_value = current_row_map.get(entity, 0.0)
+        prev_value = prev_row_map.get(entity, 0.0)
+        filtered_rows.append((entity, float(current_value), float(prev_value)))
     filtered_rows = sorted(
         filtered_rows,
         key=lambda row: (order_index.get(row[0], float("inf")), row[0]),
@@ -2748,7 +2754,7 @@ def build_image_stats_context(
     chart_labels = [row[0] for row in filtered_rows]
     chart_values = [float(row[1]) for row in filtered_rows]
 
-    all_departments = sorted({row[0] for row in rows})
+    all_departments = sorted(set(current_row_map) | set(prev_row_map))
 
     return {
         "filter_type": filter_type,
