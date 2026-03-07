@@ -949,7 +949,7 @@ def fetch_atlas_vehicle_details_by_insurance(
             cur.execute(query, (start_date, end_date))
             rows = cur.fetchall()
             columns = [desc[0] for desc in cur.description]
-            columns, rows = hydrate_vehicle_flag_values(cur, columns, rows)
+            columns, rows = hydrate_vehicle_flags(cur, columns, rows)
             cur.close()
             conn.close()
             return database_name, columns, rows
@@ -2497,7 +2497,6 @@ def build_vehicle_stats_context(
     details_db_name, detail_columns, detail_rows = fetch_atlas_vehicle_details_by_insurance(
         start_date, end_date, resolved_date_mode
     )
-    detail_columns, detail_rows = format_vehicle_detail_rows(detail_columns, detail_rows)
     current_user = session.get("username")
     default_exclusions = load_stats_exclusions(current_user, exclusion_scope)
     excluded_companies = exclude_args or default_exclusions
@@ -2575,74 +2574,75 @@ def build_vehicle_stats_context(
     }
 
 
-def format_vehicle_detail_rows(detail_columns, detail_rows):
-    formatted_columns = list(detail_columns)
-    normalized_indexes = {
-        "".join(ch for ch in str(column).lower() if ch.isalnum()): index
-        for index, column in enumerate(formatted_columns)
-    }
-    flag_index = normalized_indexes.get("flag")
-    flag_color_index = normalized_indexes.get("flagcolor")
-    if flag_color_index is None:
-        flag_color_index = normalized_indexes.get("flagcolour")
-
-    if flag_index is None or flag_color_index is None:
-        return formatted_columns, detail_rows
-
-    formatted_columns[flag_index] = "FlagName"
-    formatted_columns[flag_color_index] = "FlagColour"
-
-    formatted_rows = []
-    for row in detail_rows:
-        row_values = list(row)
-        flag_name = row_values[flag_index]
-        raw_flag_color = row_values[flag_color_index]
-        normalized_flag_color = normalize_flag_hex_color(raw_flag_color)
-        if normalized_flag_color:
-            flag_color = normalized_flag_color
-        elif raw_flag_color is None:
-            flag_color = ""
-        else:
-            flag_color = str(raw_flag_color).strip()
-
-        row_values[flag_index] = "" if flag_name is None else str(flag_name)
-        row_values[flag_color_index] = flag_color
-        formatted_rows.append(row_values)
-
-    return formatted_columns, formatted_rows
-
-
-def hydrate_vehicle_flag_values(cursor, columns, rows):
+def hydrate_vehicle_flags(cursor, columns, rows):
     hydrated_columns = list(columns)
     if "FlagColorIdRef" not in hydrated_columns:
         return hydrated_columns, rows
 
     flag_ref_index = hydrated_columns.index("FlagColorIdRef")
-    try:
-        cursor.execute("SELECT Id, Name, Color FROM FlagColors")
-        flag_lookup = {
-            str(row[0]).strip(): {
-                "name": row[1],
-                "color": row[2],
-            }
-            for row in cursor.fetchall()
-            if row[0] is not None
-        }
-    except Exception:
-        flag_lookup = {}
+    vehicle_id_index = hydrated_columns.index("Id") if "Id" in hydrated_columns else None
+    vehicle_ids = []
+    if vehicle_id_index is not None:
+        for row in rows:
+            vehicle_id = row[vehicle_id_index]
+            if vehicle_id is not None:
+                vehicle_ids.append(vehicle_id)
+
+    flags_by_vehicle = {}
+    if vehicle_ids:
+        placeholders = ", ".join("?" for _ in vehicle_ids)
+        query = f"""
+            SELECT
+                fn.CtVehicleId,
+                fn.[Text] AS FlagText,
+                fc.Color
+            FROM dbo.FlagNotes fn
+            LEFT JOIN dbo.FlagColors fc ON fc.Id = fn.FlagColourId
+            WHERE fn.CtVehicleId IN ({placeholders})
+            ORDER BY fn.CtVehicleId, fn.Id
+        """
+        try:
+            cursor.execute(query, vehicle_ids)
+            for vehicle_id, flag_text, flag_color in cursor.fetchall():
+                if vehicle_id is None:
+                    continue
+                flags_by_vehicle.setdefault(vehicle_id, []).append(
+                    {
+                        "text": "" if flag_text is None else str(flag_text).strip(),
+                        "color": normalize_flag_hex_color(flag_color) or "",
+                    }
+                )
+        except Exception:
+            flags_by_vehicle = {}
 
     hydrated_columns.pop(flag_ref_index)
-    hydrated_columns.extend(["Flag", "FlagColor"])
+    hydrated_columns.append("Flag")
 
     hydrated_rows = []
     for row in rows:
         row_values = list(row)
-        flag_ref = row_values.pop(flag_ref_index)
-        lookup = flag_lookup.get(str(flag_ref).strip()) if flag_ref is not None else None
-        lookup_name = lookup.get("name") if lookup else None
-        lookup_color = lookup.get("color") if lookup else None
-        row_values.append(lookup_name or ("" if flag_ref is None else str(flag_ref)))
-        row_values.append(lookup_color or "")
+        row_values.pop(flag_ref_index)
+        vehicle_id = row_values[vehicle_id_index] if vehicle_id_index is not None else None
+        vehicle_flags = list(flags_by_vehicle.get(vehicle_id, []))
+        if len(vehicle_flags) == 1:
+            row_values.append(
+                {
+                    "kind": "single",
+                    "label": vehicle_flags[0].get("text", ""),
+                    "background_color": vehicle_flags[0].get("color", ""),
+                    "flags": vehicle_flags,
+                }
+            )
+        elif len(vehicle_flags) > 1:
+            row_values.append(
+                {
+                    "kind": "multiple",
+                    "label": "More",
+                    "flags": vehicle_flags,
+                }
+            )
+        else:
+            row_values.append("")
         hydrated_rows.append(row_values)
 
     return hydrated_columns, hydrated_rows
