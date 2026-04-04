@@ -391,6 +391,7 @@
             <td {% if row['Backorders'] > 0 %} style="color: #5c9c13;" {% endif %}>{{ row['IC Start Year'] }}</td>
             <td {% if row['Backorders'] > 0 %} style="color: #5c9c13;" {% endif %}>{{ row['IC End Year'] }}</td>
             <td {% if row['Backorders'] > 0 %} style="color: #5c9c13;" {% endif %}>{{ row['IC Description'] }}</td>
+			<td {% if row['Backorders'] > 0 %} style="color: #5c9c13;" {% endif %}>{{ row['IC Number'] }}</td>
             <td {% if row['Backorders'] > 0 %} style="color: #5c9c13;" {% endif %}>£{{ "{:.2f}".format(row['B Price']) }}</td>
             <td {% if row['Backorders'] > 0 %} style="color: #5c9c13;" {% endif %}>{{ row['Parts in Stock'] }}</td>
             <td {% if row['Backorders'] > 0 %} style="color: #5c9c13;" {% endif %}>{{ row['Backorders'] }}</td>
@@ -481,6 +482,9 @@
               var header = $(column.header());
               var title = header.text();
               header.html('<div>' + title + '<br><input type="text" class="form-control form-control-sm" placeholder="Search" style="margin-top:5px;"/></div>');
+              $('input', header).on('click mousedown mouseup touchstart pointerdown', function (event) {
+                event.stopPropagation();
+              });
               $('input', header).on('keyup change clear', function () {
                 if (column.search() !== this.value) {
                   column.search(this.value).draw();
