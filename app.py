@@ -274,6 +274,20 @@ def index():
     global last_search_result, search_details
     parts = None
     google_sheet_matches = []
+    description_filter = request.values.get('description_filter', '')
+    form_defaults = {
+        'model': '',
+        'year': '',
+        'engine_code': '',
+        'min_price': '',
+        'min_opportunity': '',
+    }
+
+    if isinstance(search_details, dict):
+        form_defaults['model'] = search_details.get('model', '') or ''
+        form_defaults['year'] = search_details.get('year', '') or ''
+        form_defaults['engine_code'] = search_details.get('engine_code', '') or ''
+
     if request.method == 'POST':
         model = request.form['model']
         year = int(request.form['year'])
@@ -281,6 +295,12 @@ def index():
         min_price = request.form.get('min_price')
         min_opportunity = request.form.get('min_opportunity')
         action = request.form.get('action')
+
+        form_defaults['model'] = model
+        form_defaults['year'] = year
+        form_defaults['engine_code'] = engine_code
+        form_defaults['min_price'] = min_price or ''
+        form_defaults['min_opportunity'] = min_opportunity or ''
 
         # Initial filtering
         filtered = df[
@@ -329,7 +349,14 @@ def index():
         if engine_code:
             google_sheet_matches = get_matching_google_sheet_rows(engine_code)
 
-    return render_template('index.html', parts=parts, search_details=search_details, google_sheet_matches=google_sheet_matches)
+    return render_template(
+        'index.html',
+        parts=parts,
+        search_details=search_details,
+        google_sheet_matches=google_sheet_matches,
+        form_defaults=form_defaults,
+        description_filter=description_filter,
+    )
 
 
 @app.route("/auctions", methods=["GET"])
@@ -364,7 +391,7 @@ def ebay_small_parts():
     query = f"{model} {year}"
     search_url = (
         "https://www.ebay.co.uk/sch/131090/i.html?_nkw=" + query.replace(" ", "+") +
-        "&LH_ItemCondition=4&rt=nc&_sop=12&_udhi=50&LH_Complete=1&LH_Sold=1"
+        "&LH_ItemCondition=4&rt=nc&_sop=16&_udhi=50&LH_Complete=1&LH_Sold=1&rt=nc&LH_PrefLoc=1"
     )
     print("\U0001F50D eBay search URL:", search_url)
 
@@ -420,8 +447,28 @@ def ebay_small_parts():
             })
 
     if not part_list:
-        return "<p>No results found under £50.</p>"
-
+        search_url_js = json.dumps(search_url)
+        fallback_html = f"""
+        <script>
+          (function() {{
+            var ebayUrl = {search_url_js};
+            window.open(ebayUrl, '_blank', 'noopener');
+            var modalEl = document.getElementById('ebayModalS');
+            if (modalEl) {{
+              if (typeof bootstrap !== 'undefined' && bootstrap.Modal && bootstrap.Modal.getInstance) {{
+                var modalInstance = bootstrap.Modal.getInstance(modalEl);
+                if (modalInstance) {{
+                  modalInstance.hide();
+                }}
+              }} else if (typeof $ !== 'undefined' && $.fn && $.fn.modal) {{
+                $(modalEl).modal('hide');
+              }}
+            }}
+          }})();
+        </script>
+        """
+        return render_template_string(fallback_html)
+        
     part_list.sort(key=lambda x: x["price"], reverse=True)
 
     html = "<table class='table table-striped'><thead><tr><th>Title</th><th>Price</th><th>Link</th></tr></thead><tbody>"
@@ -442,7 +489,7 @@ def ebay_medium_parts():
     query = f"{model} {year}"
     search_url = (
         "https://www.ebay.co.uk/sch/131090/i.html?_nkw=" + query.replace(" ", "+") +
-        "&LH_ItemCondition=4&rt=nc&_sop=12&_udlo=50&_udhi=500&LH_Complete=1&LH_Sold=1"
+        "&LH_ItemCondition=4&rt=nc&_sop=15&_udlo=50&_udhi=500&LH_Complete=1&LH_Sold=1&rt=nc&LH_PrefLoc=1"
         
     )
     print("\U0001F50D eBay search URL:", search_url)
@@ -499,7 +546,27 @@ def ebay_medium_parts():
             })
 
     if not part_list:
-        return "<p>No results found between £50 and £500.</p>"
+        search_url_js = json.dumps(search_url)
+        fallback_html = f"""
+        <script>
+          (function() {{
+            var ebayUrl = {search_url_js};
+            window.open(ebayUrl, '_blank', 'noopener');
+            var modalEl = document.getElementById('ebayModalM');
+            if (modalEl) {{
+              if (typeof bootstrap !== 'undefined' && bootstrap.Modal && bootstrap.Modal.getInstance) {{
+                var modalInstance = bootstrap.Modal.getInstance(modalEl);
+                if (modalInstance) {{
+                  modalInstance.hide();
+                }}
+              }} else if (typeof $ !== 'undefined' && $.fn && $.fn.modal) {{
+                $(modalEl).modal('hide');
+              }}
+            }}
+          }})();
+        </script>
+        """
+        return render_template_string(fallback_html)
 
     part_list.sort(key=lambda x: x["price"], reverse=True)
 
@@ -521,7 +588,7 @@ def ebay_large_parts():
     query = f"{model} {year}"
     search_url = (
         "https://www.ebay.co.uk/sch/131090/i.html?_nkw=" + query.replace(" ", "+") +
-        "&LH_ItemCondition=4&rt=nc&_sop=12&_udlo=500&_udhi=5000&LH_Complete=1&LH_Sold=1"
+        "&LH_ItemCondition=4&rt=nc&_sop=15&_udlo=500&_udhi=5000&LH_Complete=1&LH_Sold=1&rt=nc&LH_PrefLoc=1"
     )
     print("\U0001F50D eBay search URL:", search_url)
 
@@ -577,7 +644,27 @@ def ebay_large_parts():
             })
 
     if not part_list:
-        return "<p>No results found over £500.</p>"
+        search_url_js = json.dumps(search_url)
+        fallback_html = f"""
+        <script>
+          (function() {{
+            var ebayUrl = {search_url_js};
+            window.open(ebayUrl, '_blank', 'noopener');
+            var modalEl = document.getElementById('ebayModalL');
+            if (modalEl) {{
+              if (typeof bootstrap !== 'undefined' && bootstrap.Modal && bootstrap.Modal.getInstance) {{
+                var modalInstance = bootstrap.Modal.getInstance(modalEl);
+                if (modalInstance) {{
+                  modalInstance.hide();
+                }}
+              }} else if (typeof $ !== 'undefined' && $.fn && $.fn.modal) {{
+                $(modalEl).modal('hide');
+              }}
+            }}
+          }})();
+        </script>
+        """
+        return render_template_string(fallback_html)
 
     part_list.sort(key=lambda x: x["price"], reverse=True)
 
