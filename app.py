@@ -214,6 +214,8 @@ USERS = {
     'Josh': 'Silverlake1!',
     'Casper': 'Silverlake1!',
     'carlo': 'Silverlake1!',
+    'kirsty': 'Silverlake2',
+    'NJoslin': 'chaos!',
     'markc': 'markc1!',
     'nacho': 'Silverlake1!'
 }
@@ -761,6 +763,17 @@ def _vehicle_date_sql_expression(date_mode: str) -> str:
     return "CAST(sr.DateRecovered AS datetime2)"
 
 
+def _vehicle_status_sql_expression() -> str:
+    return """
+        CASE
+            WHEN stc.Name IS NOT NULL THEN stc.Name
+            WHEN v.StatusEnum = 301 THEN 'IAA Complete'
+            WHEN v.StatusEnum IS NOT NULL THEN CONCAT('Status ', CAST(v.StatusEnum AS varchar(20)))
+            ELSE 'Unknown'
+        END
+    """.strip()
+
+
 def normalize_vehicle_group_mode(group_mode: str) -> str:
     value = str(group_mode).lower()
     if value in {"contract", "status"}:
@@ -953,6 +966,198 @@ def fetch_atlas_vehicle_details_by_insurance(
             cur.close()
             conn.close()
             return database_name, columns, rows
+        except Exception as exc:
+            last_error = exc
+    raise last_error if last_error else RuntimeError("No Atlas database names configured.")
+
+
+def fetch_atlas_vehicle_in_status_groups(
+    start_date: date,
+    end_date: date,
+    excluded_insurance_companies: List[str],
+):
+    group_order = {"Export": 0, "Auction": 1, "Parts": 2, "Scrap": 3}
+    excluded_statuses = [
+        "Recovered",
+        "IAA Complete",
+        "Cleared",
+        "Returned",
+        "Returned Not Scheduled",
+        "Returned Scheduled",
+    ]
+    last_error = None
+    for database_name in _get_atlas_db_name_candidates():
+        try:
+            conn = get_atlas_db_connection(database_name)
+            cur = conn.cursor()
+            date_expression = _vehicle_date_sql_expression("recovered")
+            status_expression = _vehicle_status_sql_expression()
+
+            cur.execute(
+                """
+                SELECT c.name
+                FROM sys.columns c
+                INNER JOIN sys.tables t ON c.object_id = t.object_id
+                WHERE t.name = 'FlagNotes'
+                """
+            )
+            flagnote_columns = {str(row[0]) for row in cur.fetchall()}
+
+            vehicle_id_col = next(
+                (
+                    candidate
+                    for candidate in (
+                        "CtVehicleId",
+                        "CtVehicleID",
+                        "CTVehicleId",
+                        "CTVehicleID",
+                        "CtVehiclesId",
+                        "CtVehiclesID",
+                        "CTVehiclesId",
+                        "CTVehiclesID",
+                    )
+                    if candidate in flagnote_columns
+                ),
+                "CtVehicleId",
+            )
+            flag_colour_col = next(
+                (
+                    candidate
+                    for candidate in (
+                        "FlagColourId",
+                        "FlagColourID",
+                        "FlagColorId",
+                        "FlagColorID",
+                    )
+                    if candidate in flagnote_columns
+                ),
+                "FlagColourId",
+            )
+            flag_text_col = next(
+                (
+                    candidate
+                    for candidate in (
+                        "Text",
+                        "text",
+                        "FlagText",
+                    )
+                    if candidate in flagnote_columns
+                ),
+                "Text",
+            )
+
+            params: List = [start_date, end_date]
+            excluded_company_clause = ""
+            if excluded_insurance_companies:
+                company_placeholders = ", ".join("?" for _ in excluded_insurance_companies)
+                excluded_company_clause = f" AND ic.Name NOT IN ({company_placeholders})"
+                params.extend(excluded_insurance_companies)
+            params.extend(excluded_statuses)
+
+            query = """
+                WITH BaseVehicles AS (
+                    SELECT
+                        v.Id AS VehicleId,
+                        {status_expression} AS VehicleStatus,
+                        CASE
+                            WHEN EXISTS (
+                                SELECT 1
+                                FROM FlagNotes fn
+                                WHERE fn.[{vehicle_id_col}] = v.Id
+                                  AND (
+                                      fn.[{flag_colour_col}] = 28
+                                      OR LOWER(COALESCE(fn.[{flag_text_col}], '')) LIKE 'exp%'
+                                  )
+                            ) THEN 1
+                            ELSE 0
+                        END AS IsExport
+                    FROM CT_Vehicles v
+                    LEFT JOIN SalvageRecoveries sr ON v.SalvageRecoveryId = sr.Id
+                    LEFT JOIN StatusColors stc ON v.StatusEnum = stc.Status
+                    INNER JOIN InsuranceBranches ib ON v.InsuranceBranchId = ib.Id
+                    INNER JOIN InsuranceCompanies ic ON ib.InsuranceCompanyId = ic.Id
+                    WHERE {date_expression} >= ?
+                      AND {date_expression} < ?
+                      {excluded_company_clause}
+                ),
+                ExportVehicles AS (
+                    SELECT
+                        'Export' AS VehicleGroup,
+                        bv.VehicleStatus,
+                        bv.VehicleId
+                    FROM BaseVehicles bv
+                    WHERE bv.IsExport = 1
+                ),
+                RemainingVehicles AS (
+                    SELECT
+                        CASE
+                            WHEN bv.VehicleStatus IN ('Auction', 'Sold', 'Sold Not Paid') THEN 'Auction'
+                            WHEN bv.VehicleStatus = 'Dismantle Invent' THEN 'Parts'
+                            WHEN bv.VehicleStatus IN ('Scrapped', 'Scrapped Invent', 'Dismantle Scrap') THEN 'Scrap'
+                            ELSE NULL
+                        END AS VehicleGroup,
+                        bv.VehicleStatus,
+                        bv.VehicleId
+                    FROM BaseVehicles bv
+                    WHERE bv.IsExport = 0
+                      AND bv.VehicleStatus NOT IN ({excluded_status_placeholders})
+                )
+                SELECT
+                    grouped.VehicleGroup,
+                    grouped.VehicleStatus,
+                    COUNT(*) AS VehicleCount
+                FROM (
+                    SELECT VehicleGroup, VehicleStatus, VehicleId FROM ExportVehicles
+                    UNION ALL
+                    SELECT VehicleGroup, VehicleStatus, VehicleId FROM RemainingVehicles
+                ) grouped
+                WHERE grouped.VehicleGroup IS NOT NULL
+                GROUP BY grouped.VehicleGroup, grouped.VehicleStatus
+            """.format(
+                date_expression=date_expression,
+                status_expression=status_expression,
+                excluded_status_placeholders=", ".join("?" for _ in excluded_statuses),
+                excluded_company_clause=excluded_company_clause,
+                vehicle_id_col=vehicle_id_col,
+                flag_colour_col=flag_colour_col,
+                flag_text_col=flag_text_col,
+            )
+
+            cur.execute(query, params)
+            rows = cur.fetchall()
+            cur.close()
+            conn.close()
+
+            group_status_breakdown: dict[str, List[Tuple[str, int]]] = {
+                "Export": [],
+                "Auction": [],
+                "Parts": [],
+                "Scrap": [],
+            }
+            group_totals: dict[str, int] = {name: 0 for name in group_status_breakdown.keys()}
+
+            for vehicle_group, vehicle_status, vehicle_count in rows:
+                if vehicle_group not in group_status_breakdown:
+                    continue
+                count_value = int(vehicle_count or 0)
+                group_totals[vehicle_group] += count_value
+                group_status_breakdown[vehicle_group].append(
+                    (str(vehicle_status or "Unknown"), count_value)
+                )
+
+            for group_name, statuses in group_status_breakdown.items():
+                group_status_breakdown[group_name] = sorted(
+                    statuses,
+                    key=lambda item: (-item[1], item[0]),
+                )
+
+            grouped_rows = [
+                (group_name, group_totals[group_name])
+                for group_name in sorted(group_totals.keys(), key=lambda key: group_order.get(key, 999))
+                if group_totals[group_name] > 0
+            ]
+
+            return database_name, grouped_rows, group_status_breakdown
         except Exception as exc:
             last_error = exc
     raise last_error if last_error else RuntimeError("No Atlas database names configured.")
@@ -3057,6 +3262,7 @@ def executive_stats():
     live_enabled = str(request.args.get("live", "")).lower() in {"1", "true", "yes", "on"}
 
     error_message = None
+    vehicle_in_status_context = None
     try:
         context = build_vehicle_stats_context(
             filter_type,
@@ -3067,6 +3273,22 @@ def executive_stats():
             date_mode,
             exclusion_scope="executive_insurance_company",
         )
+        if normalize_vehicle_date_mode(date_mode) == "recovered":
+            _, grouped_rows, group_status_breakdown = fetch_atlas_vehicle_in_status_groups(
+                context["start_date"],
+                context["end_date"],
+                context.get("excluded_companies", []),
+            )
+            vehicle_in_status_context = {
+                "date_range_label": context["date_range_label"],
+                "rows": grouped_rows,
+                "sum_total": sum(row[1] for row in grouped_rows),
+                "chart_labels": [row[0] for row in grouped_rows],
+                "chart_values": [float(row[1]) for row in grouped_rows],
+                "entity_label": "Group",
+                "chart_title_base": "Vehicles IN by Status Group",
+                "group_status_breakdown": group_status_breakdown,
+            }
     except Exception as exc:
         start_date, end_date = parse_date_filter(
             filter_type, start_date_str, end_date_str
@@ -3094,6 +3316,7 @@ def executive_stats():
     return render_template(
         "executive_stats.html",
         **context,
+        vehicle_in_status_context=vehicle_in_status_context,
         live_enabled=live_enabled,
         error_message=error_message,
         active_page="executive_stats",
@@ -3286,22 +3509,41 @@ def executive_stats_data():
     group_mode = request.args.get("group", "company")
     date_mode = request.args.get("date_mode", "recovered")
 
+    resolved_date_mode = normalize_vehicle_date_mode(date_mode)
+
     context = build_vehicle_stats_context(
         filter_type,
         start_date_str,
         end_date_str,
         excluded_args,
         group_mode,
-        date_mode,
+        resolved_date_mode,
         exclusion_scope="executive_insurance_company",
     )
 
+    vehicle_in_status_context = None
+    if resolved_date_mode == "recovered":
+        _, grouped_rows, group_status_breakdown = fetch_atlas_vehicle_in_status_groups(
+            context["start_date"],
+            context["end_date"],
+            context.get("excluded_companies", []),
+        )
+        vehicle_in_status_context = {
+            "date_range_label": context["date_range_label"],
+            "rows": grouped_rows,
+            "sum_total": sum(row[1] for row in grouped_rows),
+            "chart_labels": [row[0] for row in grouped_rows],
+            "chart_values": [float(row[1]) for row in grouped_rows],
+            "entity_label": "Group",
+            "chart_title_base": "Vehicles IN by Status Group",
+            "group_status_breakdown": group_status_breakdown,
+        }
+        
     detail_rows = []
     for row in context.get("detail_rows", []):
         detail_rows.append([serialize_vehicle_detail_cell(value) for value in row])
 
-    return jsonify(
-        {
+    payload = {
             "date_range_label": context["date_range_label"],
             "rows": [
                 {"label": row[0], "total": float(row[1])} for row in context["rows"]
@@ -3315,7 +3557,24 @@ def executive_stats_data():
             "chart_title_base": context.get("chart_title_base", "Vehicles by Insurance Company"),
             "contract_company_breakdown": context.get("contract_company_breakdown", {}),
         }
-    )
+
+    if vehicle_in_status_context:
+        payload["vehicle_in_status"] = {
+            "date_range_label": vehicle_in_status_context["date_range_label"],
+            "rows": [
+                {"label": row[0], "total": float(row[1])}
+                for row in vehicle_in_status_context["rows"]
+            ],
+            "sum_total": vehicle_in_status_context["sum_total"],
+            "chart_labels": vehicle_in_status_context["chart_labels"],
+            "chart_values": vehicle_in_status_context["chart_values"],
+            "entity_label": vehicle_in_status_context.get("entity_label", "Vehicle Status"),
+            "chart_title_base": vehicle_in_status_context.get(
+                "chart_title_base", "Vehicles by Vehicle Status"
+            ),
+        }
+
+    return jsonify(payload)
 
 
 @app.route("/image_stats/data", methods=["GET"])
