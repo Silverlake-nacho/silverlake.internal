@@ -189,7 +189,13 @@ def get_matching_google_sheet_rows(engine_code):
         print("Error accessing Google Sheets:", e)
         return []
 
-file_path = 'WebFleet.csv'
+DEFAULT_WEBFLEET_CSV_PATH = r"Z:\Data\Pinnacle\WebFleet.csv"
+LOCAL_WEBFLEET_CSV_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "WebFleet.csv")
+
+file_path = os.getenv("WEBFLEET_CSV_PATH", DEFAULT_WEBFLEET_CSV_PATH)
+if not os.path.exists(file_path) and os.path.exists(LOCAL_WEBFLEET_CSV_PATH):
+    file_path = LOCAL_WEBFLEET_CSV_PATH
+
 df = pd.read_csv(file_path)
 
 app = Flask(__name__)
@@ -272,6 +278,29 @@ def autocomplete_model():
         matches = [model for model in filtered_models if query.lower() in model.lower()]
         return {'models': matches}
     return {'models': []}
+
+
+@app.route("/ic_part_images", methods=["GET"])
+def ic_part_images():
+    ic_number = request.args.get("ic_number", "").strip()
+    part_name = request.args.get("part_name", "").strip()
+    previews, source = fetch_ic_part_preview_images(ic_number, part_name)
+    if not previews:
+        return jsonify(
+            {
+                "images": [],
+                "source": None,
+                "message": "No images available",
+            }
+        )
+
+    return jsonify(
+        {
+            "images": previews,
+            "source": source,
+            "message": None,
+        }
+    )
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
@@ -1450,6 +1479,112 @@ def fetch_images_by_barcode(barcode: str) -> List[Tuple[str, Optional[int]]]:
             for relativeurl, displayorder in rows
             if relativeurl and not str(relativeurl).lower().startswith("fto/")
         ]
+    finally:
+        cur.close()
+        conn.close()
+
+
+def fetch_ic_part_preview_images(ic_number: str, part_name: str) -> Tuple[List[dict], Optional[str]]:
+    normalized_ic_number = (ic_number or "").strip()
+    normalized_part_name = (part_name or "").strip()
+    if not normalized_ic_number or not normalized_part_name:
+        return [], None
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        for source_table in ("inventory", "sold"):
+            cur.execute(
+                f"""
+                SELECT src.invnumber
+                FROM {source_table} src
+                LEFT JOIN itemtype it ON it.itemtype_id = src.itemtype_id
+                WHERE LOWER(
+                    REPLACE(
+                        REPLACE(
+                            REPLACE(TRIM(COALESCE(it.itemname, '')), '[', ''),
+                            ']',
+                            ''
+                        ),
+                        '_',
+                        ' '
+                    )
+                ) = LOWER(
+                    REPLACE(
+                        REPLACE(
+                            REPLACE(TRIM(%s), '[', ''),
+                            ']',
+                            ''
+                        ),
+                        '_',
+                        ' '
+                    )
+                )
+                  AND LOWER(
+                    REPLACE(
+                        REPLACE(TRIM(COALESCE(src.icnumber, '') || COALESCE(src.icver, '')), ' ', ''),
+                        '-',
+                        ''
+                    )
+                ) = LOWER(
+                    REPLACE(
+                        REPLACE(TRIM(%s), ' ', ''),
+                        '-',
+                        ''
+                    )
+                )
+                ORDER BY src.invnumber ASC
+                """,
+                (normalized_part_name, normalized_ic_number),
+            )
+            invnumber_rows = cur.fetchall()
+            if not invnumber_rows:
+                continue
+
+            invnumbers = [row[0] for row in invnumber_rows if row and row[0] is not None]
+            if not invnumbers:
+                continue
+
+            first_invnumber = invnumbers[0]
+            last_invnumber = invnumbers[-1]
+            preview_targets = [("First", first_invnumber)]
+            if last_invnumber != first_invnumber:
+                preview_targets.append(("Last", last_invnumber))
+
+            previews = []
+            for label, invnumber in preview_targets:
+                cur.execute(
+                    """
+                    SELECT relativeurl, displayorder
+                    FROM image
+                    WHERE invnumber = %s
+                      AND COALESCE(thumbnail, false) = false
+                    ORDER BY COALESCE(displayorder, 0), relativeurl
+                    LIMIT 1
+                    """,
+                    (invnumber,),
+                )
+                image_row = cur.fetchone()
+                if not image_row:
+                    continue
+                relative_url, _display_order = image_row
+                if not relative_url or str(relative_url).lower().startswith("fto/"):
+                    continue
+                full_url = normalize_image_url(relative_url)
+                if not full_url:
+                    continue
+                previews.append(
+                    {
+                        "label": label,
+                        "invnumber": invnumber,
+                        "url": full_url,
+                    }
+                )
+
+            if previews:
+                return previews, source_table
+
+        return [], None
     finally:
         cur.close()
         conn.close()
