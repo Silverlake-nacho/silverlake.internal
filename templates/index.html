@@ -390,7 +390,15 @@
             <td {% if row['Backorders'] > 0 %} style="color: #5c9c13;" {% endif %}>{{ row['Part'] }}</td>
             <td {% if row['Backorders'] > 0 %} style="color: #5c9c13;" {% endif %}>{{ row['IC Start Year'] }}</td>
             <td {% if row['Backorders'] > 0 %} style="color: #5c9c13;" {% endif %}>{{ row['IC End Year'] }}</td>
-            <td {% if row['Backorders'] > 0 %} style="color: #5c9c13;" {% endif %}>{{ row['IC Description'] }}</td>
+            <td {% if row['Backorders'] > 0 %} style="color: #5c9c13;" {% endif %}>
+              <a
+                href="#"
+                class="ic-description-link"
+                data-ic-number="{{ row['IC Number'] }}"
+                data-part-name="{{ row['Part'] }}"
+                style="text-decoration: underline;"
+              >{{ row['IC Description'] }}</a>
+            </td>
 			<td {% if row['Backorders'] > 0 %} style="color: #5c9c13;" {% endif %}>{{ row['IC Number'] }}</td>
             <td {% if row['Backorders'] > 0 %} style="color: #5c9c13;" {% endif %}>£{{ "{:.2f}".format(row['B Price']) }}</td>
             <td {% if row['Backorders'] > 0 %} style="color: #5c9c13;" {% endif %}>{{ row['Parts in Stock'] }}</td>
@@ -551,6 +559,73 @@
         },
         error: function() {
           $('#ebayModalBodyS').html('<p>Error loading data.</p>');
+        }
+      });
+    });
+  });
+</script>
+
+<!-- Modal IC Image Preview -->
+<div class="modal fade" id="icImagesModal" tabindex="-1" aria-labelledby="icImagesModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="icImagesModalLabel">IC Image Preview</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body" id="icImagesModalBody">
+        <p>Loading...</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  $(document).ready(function() {
+    $(document).on('click', '.ic-description-link', function(event) {
+      event.preventDefault();
+      const icNumber = ($(this).data('ic-number') || '').toString().trim();
+      const partName = ($(this).data('part-name') || '').toString().trim();
+      if (!icNumber || !partName) {
+        return;
+      }
+
+      const modalEl = document.getElementById('icImagesModal');
+      const modalBody = $('#icImagesModalBody');
+      modalBody.html('<p>Loading...</p>');
+      if (modalEl && typeof bootstrap !== 'undefined') {
+        bootstrap.Modal.getOrCreateInstance(modalEl).show();
+      }
+
+      $.ajax({
+        url: '/ic_part_images',
+        method: 'GET',
+        data: {
+          ic_number: icNumber,
+          part_name: partName
+        },
+        success: function(response) {
+          if (!response || !response.images || !response.images.length) {
+            modalBody.html('<p>No images available</p>');
+            return;
+          }
+
+          let html = '<p><strong>Source:</strong> ' + response.source + '</p>';
+          html += '<div class="row g-3">';
+          response.images.forEach(function(image) {
+            html += '<div class="col-md-6">';
+            html += '<div class="card h-100">';
+            html += '<img src="' + image.url + '" class="card-img-top" alt="' + image.label + ' image">';
+            html += '<div class="card-body">';
+            html += '<h6 class="card-title mb-1">' + image.label + ' match</h6>';
+            html += '<p class="card-text mb-0"><small>Inv Number: ' + image.invnumber + '</small></p>';
+            html += '</div></div></div>';
+          });
+          html += '</div>';
+          modalBody.html(html);
+        },
+        error: function() {
+          modalBody.html('<p>No images available</p>');
         }
       });
     });
