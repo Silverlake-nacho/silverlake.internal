@@ -1493,10 +1493,12 @@ def fetch_ic_part_preview_images(ic_number: str, part_name: str) -> Tuple[List[d
     conn = get_db_connection()
     cur = conn.cursor()
     try:
+        previews: List[dict] = []
+        source_tables_used = set()
         for source_table in ("inventory", "sold"):
             cur.execute(
                 f"""
-                SELECT src.invnumber
+                SELECT DISTINCT src.invnumber
                 FROM {source_table} src
                 LEFT JOIN itemtype it ON it.itemtype_id = src.itemtype_id
                 WHERE LOWER(
@@ -1541,50 +1543,51 @@ def fetch_ic_part_preview_images(ic_number: str, part_name: str) -> Tuple[List[d
             if not invnumber_rows:
                 continue
 
-            invnumbers = [row[0] for row in invnumber_rows if row and row[0] is not None]
-            if not invnumbers:
-                continue
+            for row in invnumber_rows:
+                invnumber = row[0] if row else None
+                if invnumber is None:
+                    continue
 
-            first_invnumber = invnumbers[0]
-            last_invnumber = invnumbers[-1]
-            preview_targets = [("First", first_invnumber)]
-            if last_invnumber != first_invnumber:
-                preview_targets.append(("Last", last_invnumber))
-
-            previews = []
-            for label, invnumber in preview_targets:
                 cur.execute(
                     """
-                    SELECT relativeurl, displayorder
+                    SELECT relativeurl
                     FROM image
                     WHERE invnumber = %s
                       AND COALESCE(thumbnail, false) = false
                     ORDER BY COALESCE(displayorder, 0), relativeurl
-                    LIMIT 1
                     """,
                     (invnumber,),
                 )
-                image_row = cur.fetchone()
-                if not image_row:
+                image_rows = cur.fetchall()
+                if not image_rows:
                     continue
-                relative_url, _display_order = image_row
-                if not relative_url or str(relative_url).lower().startswith("fto/"):
+
+                all_urls: List[str] = []
+                for image_row in image_rows:
+                    relative_url = image_row[0] if image_row else None
+                    if not relative_url or str(relative_url).lower().startswith("fto/"):
+                        continue
+                    normalized_url = normalize_image_url(relative_url)
+                    if normalized_url:
+                        all_urls.append(normalized_url)
+
+                if not all_urls:
                     continue
-                full_url = normalize_image_url(relative_url)
-                if not full_url:
-                    continue
+
+                source_tables_used.add(source_table)
                 previews.append(
                     {
-                        "label": label,
+                        "label": source_table.title(),
+                        "source": source_table,
                         "invnumber": invnumber,
-                        "url": full_url,
+                        "url": all_urls[0],
+                        "all_urls": all_urls,
+                        "image_count": len(all_urls),
                     }
                 )
 
-            if previews:
-                return previews, source_table
-
-        return [], None
+        source = ", ".join(sorted(source_tables_used)) if source_tables_used else None
+        return previews, source
     finally:
         cur.close()
         conn.close()
