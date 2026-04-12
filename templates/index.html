@@ -580,8 +580,131 @@
   </div>
 </div>
 
+<div class="modal fade" id="icSlideshowModal" tabindex="-1" aria-labelledby="icSlideshowModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="icSlideshowModalLabel">Part Image Slideshow</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body text-center">
+        <div id="icSlideshowCarousel" class="carousel slide" data-bs-ride="false">
+          <div class="carousel-inner" id="icSlideshowCarouselInner"></div>
+          <button class="carousel-control-prev" type="button" data-bs-target="#icSlideshowCarousel" data-bs-slide="prev">
+            <span class="carousel-control-prev-icon" aria-hidden="true"></span>
+            <span class="visually-hidden">Previous</span>
+          </button>
+          <button class="carousel-control-next" type="button" data-bs-target="#icSlideshowCarousel" data-bs-slide="next">
+            <span class="carousel-control-next-icon" aria-hidden="true"></span>
+            <span class="visually-hidden">Next</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+  .ic-preview-image {
+    cursor: pointer;
+    max-height: 260px;
+    object-fit: cover;
+  }
+
+  .ic-preview-thumbs {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 6px;
+    margin-top: 10px;
+  }
+
+  .ic-preview-thumbs img {
+    width: 100%;
+    height: 60px;
+    object-fit: cover;
+    border-radius: 4px;
+    border: 1px solid #dee2e6;
+    cursor: pointer;
+  }
+</style>
+
 <script>
   $(document).ready(function() {
+    let icImagesData = [];
+    let icCarouselInstance = null;
+    let icCurrentPage = 1;
+    const icPartsPerPage = 3;
+
+    function escapeHtml(text) {
+      return $('<div>').text(text || '').html();
+    }
+
+    function renderIcImagePage() {
+      const modalBody = $('#icImagesModalBody');
+      if (!icImagesData.length) {
+        modalBody.html('<p>No images available</p>');
+        return;
+      }
+
+      const totalPages = Math.max(1, Math.ceil(icImagesData.length / icPartsPerPage));
+      if (icCurrentPage > totalPages) {
+        icCurrentPage = totalPages;
+      }
+      if (icCurrentPage < 1) {
+        icCurrentPage = 1;
+      }
+
+      const startIndex = (icCurrentPage - 1) * icPartsPerPage;
+      const pageItems = icImagesData.slice(startIndex, startIndex + icPartsPerPage);
+
+      let html = '<div class="row g-3">';
+      pageItems.forEach(function(image, pageIndex) {
+        const dataIndex = startIndex + pageIndex;
+        const otherImages = (image.all_urls || []).slice(1, 5);
+
+        html += '<div class="col-12">';
+        html += '<div class="card h-100">';
+        html += '<div class="row g-0">';
+        html += '<div class="col-md-5">';
+        html += '<img src="' + image.url + '" class="card-img-top ic-preview-image" data-image-index="' + dataIndex + '" alt="' + escapeHtml(image.label) + ' image">';
+        html += '</div>';
+        html += '<div class="col-md-7">';
+        html += '<div class="card-body">';
+        html += '<h6 class="card-title mb-1">' + escapeHtml(image.label) + ' match</h6>';
+        html += '<p class="card-text mb-2"><small>Inv Number: ' + escapeHtml(image.invnumber) + ' · Images: ' + image.image_count + '</small></p>';
+
+        if (otherImages.length) {
+          html += '<div class="ic-preview-thumbs">';
+          otherImages.forEach(function(url) {
+            html += '<img src="' + url + '" class="ic-preview-image" data-image-index="' + dataIndex + '" alt="Preview thumbnail">';
+          });
+          html += '</div>';
+        } else {
+          html += '<p class="text-muted small mb-0">No additional images for preview.</p>';
+        }
+
+        html += '</div></div></div></div></div>';
+      });
+      html += '</div>';
+
+      html += '<nav class="mt-3" aria-label="IC image pagination">';
+      html += '<ul class="pagination justify-content-center mb-0">';
+      html += '<li class="page-item' + (icCurrentPage === 1 ? ' disabled' : '') + '">';
+      html += '<button type="button" class="page-link ic-page-btn" data-page="' + (icCurrentPage - 1) + '">Previous</button>';
+      html += '</li>';
+      for (let page = 1; page <= totalPages; page += 1) {
+        html += '<li class="page-item' + (page === icCurrentPage ? ' active' : '') + '">';
+        html += '<button type="button" class="page-link ic-page-btn" data-page="' + page + '">' + page + '</button>';
+        html += '</li>';
+      }
+      html += '<li class="page-item' + (icCurrentPage === totalPages ? ' disabled' : '') + '">';
+      html += '<button type="button" class="page-link ic-page-btn" data-page="' + (icCurrentPage + 1) + '">Next</button>';
+      html += '</li>';
+      html += '</ul></nav>';
+
+      modalBody.html(html);
+    }
+
     $(document).on('click', '.ic-description-link', function(event) {
       event.preventDefault();
       const icNumber = ($(this).data('ic-number') || '').toString().trim();
@@ -610,24 +733,54 @@
             return;
           }
 
-          let html = '<p><strong>Source:</strong> ' + response.source + '</p>';
-          html += '<div class="row g-3">';
-          response.images.forEach(function(image) {
-            html += '<div class="col-md-6">';
-            html += '<div class="card h-100">';
-            html += '<img src="' + image.url + '" class="card-img-top" alt="' + image.label + ' image">';
-            html += '<div class="card-body">';
-            html += '<h6 class="card-title mb-1">' + image.label + ' match</h6>';
-            html += '<p class="card-text mb-0"><small>Inv Number: ' + image.invnumber + '</small></p>';
-            html += '</div></div></div>';
-          });
-          html += '</div>';
-          modalBody.html(html);
-        },
+          icImagesData = response.images;
+          icCurrentPage = 1;
+          renderIcImagePage();
         error: function() {
           modalBody.html('<p>No images available</p>');
         }
       });
+    });
+
+
+    $(document).on('click', '.ic-page-btn', function() {
+      const nextPage = Number($(this).data('page'));
+      const totalPages = Math.max(1, Math.ceil(icImagesData.length / icPartsPerPage));
+      if (Number.isNaN(nextPage) || nextPage < 1 || nextPage > totalPages) {
+        return;
+      }
+      icCurrentPage = nextPage;
+      renderIcImagePage();
+    });
+
+    $(document).on('click', '.ic-preview-image', function() {
+      const index = Number($(this).data('image-index'));
+      const selected = icImagesData[index];
+      const allUrls = selected && selected.all_urls ? selected.all_urls : [];
+      if (!allUrls.length) {
+        return;
+      }
+
+      const slideshowModalEl = document.getElementById('icSlideshowModal');
+      const carouselInner = $('#icSlideshowCarouselInner');
+      const titleEl = $('#icSlideshowModalLabel');
+      titleEl.text('Part ' + selected.invnumber + ' Image Slideshow');
+
+      let carouselHtml = '';
+      allUrls.forEach(function(url, idx) {
+        carouselHtml += '<div class="carousel-item' + (idx === 0 ? ' active' : '') + '">';
+        carouselHtml += '<img src="' + url + '" class="d-block w-100 rounded" alt="Part image ' + (idx + 1) + '">';
+        carouselHtml += '</div>';
+      });
+      carouselInner.html(carouselHtml);
+
+      if (icCarouselInstance) {
+        icCarouselInstance.dispose();
+      }
+      icCarouselInstance = new bootstrap.Carousel(document.getElementById('icSlideshowCarousel'));
+      if (slideshowModalEl && typeof bootstrap !== 'undefined') {
+        bootstrap.Modal.getOrCreateInstance(slideshowModalEl).show();
+      }
     });
   });
 </script>
