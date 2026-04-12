@@ -1498,7 +1498,7 @@ def fetch_ic_part_preview_images(ic_number: str, part_name: str) -> Tuple[List[d
         for source_table in ("inventory", "sold"):
             cur.execute(
                 f"""
-                SELECT DISTINCT src.invnumber
+                SELECT DISTINCT src.invnumber, src.tag
                 FROM {source_table} src
                 LEFT JOIN itemtype it ON it.itemtype_id = src.itemtype_id
                 WHERE LOWER(
@@ -1545,6 +1545,7 @@ def fetch_ic_part_preview_images(ic_number: str, part_name: str) -> Tuple[List[d
 
             for row in invnumber_rows:
                 invnumber = row[0] if row else None
+                tag = row[1] if row and len(row) > 1 else None
                 if invnumber is None:
                     continue
 
@@ -1580,6 +1581,7 @@ def fetch_ic_part_preview_images(ic_number: str, part_name: str) -> Tuple[List[d
                         "label": source_table.title(),
                         "source": source_table,
                         "invnumber": invnumber,
+                        "tag": tag,
                         "url": all_urls[0],
                         "all_urls": all_urls,
                         "image_count": len(all_urls),
