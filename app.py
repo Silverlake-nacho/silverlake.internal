@@ -258,7 +258,7 @@ def logout():
 
 @app.before_request
 def require_login():
-    allowed_routes = ['login', 'static', 'autocomplete_model']
+    allowed_routes = ['login', 'static', 'autocomplete_model', 'vehicle_lookup']
     if request.endpoint not in allowed_routes and not session.get('logged_in'):
         next_url = request.url
         return redirect(url_for('login', next=next_url))
@@ -278,6 +278,100 @@ def autocomplete_model():
         matches = [model for model in filtered_models if query.lower() in model.lower()]
         return {'models': matches}
     return {'models': []}
+
+
+def fetch_vehicle_details(stock_number: str = "", reg_number: str = ""):
+    stock_number = (stock_number or "").strip()
+    reg_number = (reg_number or "").strip()
+    if not stock_number and not reg_number:
+        return None, []
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        vehicle = None
+        if stock_number:
+            cur.execute(
+                """
+                SELECT st.vstockno,
+                       veh.regnumber,
+                       mdl.modelname,
+                       veh.modelyear,
+                       veh.enginecode
+                FROM vehicle veh
+                JOIN stocknumber st ON st.stocknumber_id = veh.stocknumber_id
+                LEFT JOIN model mdl ON mdl.model_id = veh.model_id
+                WHERE LOWER(st.vstockno) = LOWER(%s)
+                LIMIT 1
+                """,
+                (stock_number,),
+            )
+            row = cur.fetchone()
+            if row:
+                vehicle = {
+                    "stock_number": row[0] or "",
+                    "reg": row[1] or "",
+                    "model": row[2] or "",
+                    "year": row[3] or "",
+                    "engine_code": row[4] or "",
+                }
+
+        if vehicle is None and reg_number:
+            cur.execute(
+                """
+                SELECT st.vstockno,
+                       veh.regnumber,
+                       mdl.modelname,
+                       veh.modelyear,
+                       veh.enginecode
+                FROM vehicle veh
+                LEFT JOIN stocknumber st ON st.stocknumber_id = veh.stocknumber_id
+                LEFT JOIN model mdl ON mdl.model_id = veh.model_id
+                WHERE LOWER(veh.regnumber) = LOWER(%s)
+                LIMIT 1
+                """,
+                (reg_number,),
+            )
+            row = cur.fetchone()
+            if row:
+                vehicle = {
+                    "stock_number": row[0] or "",
+                    "reg": row[1] or "",
+                    "model": row[2] or "",
+                    "year": row[3] or "",
+                    "engine_code": row[4] or "",
+                }
+
+        stock_suggestions = []
+        if vehicle is None and stock_number:
+            cur.execute(
+                """
+                SELECT DISTINCT vstockno
+                FROM stocknumber
+                WHERE vstockno ILIKE %s
+                ORDER BY vstockno
+                LIMIT 10
+                """,
+                (f"%{stock_number}%",),
+            )
+            stock_suggestions = [row[0] for row in cur.fetchall() if row and row[0]]
+
+        return vehicle, stock_suggestions
+    finally:
+        cur.close()
+        conn.close()
+
+
+@app.route('/vehicle_lookup', methods=['GET'])
+def vehicle_lookup():
+    stock_number = request.args.get('stock_number', '').strip()
+    reg_number = request.args.get('reg', '').strip()
+    vehicle, stock_suggestions = fetch_vehicle_details(stock_number=stock_number, reg_number=reg_number)
+    return {
+        "found": vehicle is not None,
+        "vehicle": vehicle,
+        "stock_suggestions": stock_suggestions,
+    }
 
 
 @app.route("/ic_part_images", methods=["GET"])
@@ -309,6 +403,8 @@ def index():
     google_sheet_matches = []
     description_filter = request.values.get('description_filter', '')
     form_defaults = {
+        'stock_number': '',
+        'reg': '',
         'model': '',
         'year': '',
         'engine_code': '',
@@ -317,6 +413,8 @@ def index():
     }
 
     if isinstance(search_details, dict):
+        form_defaults['stock_number'] = search_details.get('stock_number', '') or ''
+        form_defaults['reg'] = search_details.get('reg', '') or ''
         form_defaults['model'] = search_details.get('model', '') or ''
         form_defaults['year'] = search_details.get('year', '') or ''
         form_defaults['engine_code'] = search_details.get('engine_code', '') or ''
@@ -328,7 +426,11 @@ def index():
         min_price = request.form.get('min_price')
         min_opportunity = request.form.get('min_opportunity')
         action = request.form.get('action')
+        stock_number = request.form.get('stock_number', '').strip()
+        reg = request.form.get('reg', '').strip()
 
+        form_defaults['stock_number'] = stock_number
+        form_defaults['reg'] = reg
         form_defaults['model'] = model
         form_defaults['year'] = year
         form_defaults['engine_code'] = engine_code
@@ -376,7 +478,13 @@ def index():
                               'Parts Sold All', 'Not Found 180 days', 'Potential_Profit', 'Sales_Speed', 'Opportunity_Score']]
             parts = parts.sort_values(by=['Backorders', 'Opportunity_Score'], ascending=False).head(50)
             last_search_result = parts
-            search_details = {'model': model, 'year': year, 'engine_code': engine_code}
+            search_details = {
+                'stock_number': stock_number,
+                'reg': reg,
+                'model': model,
+                'year': year,
+                'engine_code': engine_code,
+            }
             parts = parts.to_dict('records')
 
         if engine_code:
