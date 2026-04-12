@@ -337,6 +337,20 @@
 
       <form method="post">
         <div class="row">
+          <div class="col-md-4 mb-3 position-relative">
+            <label class="form-label">Stock Number</label>
+            <input type="text" name="stock_number" class="form-control" value="{{ form_defaults.stock_number }}">
+            <ul id="stock-suggestions" class="list-group" style="display: none; position: absolute; z-index: 1000; max-height: 150px; overflow-y: auto; width: 100%;"></ul>
+          </div>
+          <div class="col-md-4 mb-3">
+            <label class="form-label">Reg</label>
+            <input type="text" name="reg" class="form-control" value="{{ form_defaults.reg }}">
+          </div>
+          <div class="col-md-4 mb-3 d-flex align-items-end justify-content-end">
+            <button type="button" class="btn btn-outline-secondary" id="reset-search-fields">Reset</button>
+          </div>
+        </div>
+        <div class="row">
           <div class="col-md-6 mb-3">
             <label class="form-label">Model</label>
             <input type="text" name="model" class="form-control" value="{{ form_defaults.model }}" required>
@@ -446,6 +460,82 @@
 
     <script>
       $(document).ready(function() {
+        function fillVehicleFields(vehicle) {
+          if (!vehicle) return;
+          if (vehicle.stock_number) $('input[name="stock_number"]').val(vehicle.stock_number);
+          if (vehicle.reg) $('input[name="reg"]').val(vehicle.reg);
+          if (vehicle.model) $('input[name="model"]').val(vehicle.model);
+          if (vehicle.year) $('input[name="year"]').val(vehicle.year);
+          if (vehicle.engine_code) $('input[name="engine_code"]').val(vehicle.engine_code);
+        }
+
+        function lookupVehicle(payload, showStockSuggestions) {
+          $.ajax({
+            url: '/vehicle_lookup',
+            method: 'GET',
+            data: payload,
+            success: function(response) {
+              if (response.found) {
+                fillVehicleFields(response.vehicle);
+                $('#stock-suggestions').hide();
+                return;
+              }
+
+              if (showStockSuggestions) {
+                var suggestions = response.stock_suggestions || [];
+                var suggestionList = $('#stock-suggestions');
+                suggestionList.empty();
+                suggestions.forEach(function(stockNo) {
+                  suggestionList.append('<li class="list-group-item">' + stockNo + '</li>');
+                });
+                if (suggestions.length > 0) {
+                  suggestionList.show();
+                } else {
+                  suggestionList.hide();
+                }
+              }
+            }
+          });
+        }
+
+        $('input[name="stock_number"]').on('blur', function() {
+          var stockNumber = $(this).val().trim();
+          if (!stockNumber) {
+            $('#stock-suggestions').hide();
+            return;
+          }
+          lookupVehicle({ stock_number: stockNumber }, true);
+        });
+
+        $('input[name="reg"]').on('blur', function() {
+          var reg = $(this).val().trim();
+          if (!reg) {
+            return;
+          }
+          lookupVehicle({ reg: reg }, false);
+        });
+
+        $('#stock-suggestions').on('click', 'li', function() {
+          var selected = $(this).text().trim();
+          $('input[name="stock_number"]').val(selected);
+          $('#stock-suggestions').hide();
+          if (selected) {
+            lookupVehicle({ stock_number: selected }, false);
+          }
+        });
+
+        $('#reset-search-fields').on('click', function() {
+          $('input[name="stock_number"]').val('');
+          $('input[name="reg"]').val('');
+          $('input[name="model"]').val('');
+          $('input[name="year"]').val('');
+          $('input[name="engine_code"]').val('');
+          $('input[name="min_price"]').val('');
+          $('input[name="min_opportunity"]').val('');
+          $('#stock-suggestions').hide();
+          $('#model-suggestions').hide();
+        });
+
         $('input[name="model"]').on('input', function() {
           var query = $(this).val().trim();
           if (query.length > 0) {
@@ -476,6 +566,9 @@
         $(document).click(function(event) {
           if (!$(event.target).closest('#model-suggestions').length && !$(event.target).closest('input[name="model"]').length) {
             $('#model-suggestions').hide();
+          }
+          if (!$(event.target).closest('#stock-suggestions').length && !$(event.target).closest('input[name="stock_number"]').length) {
+            $('#stock-suggestions').hide();
           }
         });
 
