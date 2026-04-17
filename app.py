@@ -419,15 +419,31 @@ def index():
         form_defaults['year'] = search_details.get('year', '') or ''
         form_defaults['engine_code'] = search_details.get('engine_code', '') or ''
 
-    if request.method == 'POST':
-        model = request.form['model']
-        year = int(request.form['year'])
-        engine_code = request.form.get('engine_code', '').strip()
-        min_price = request.form.get('min_price')
-        min_opportunity = request.form.get('min_opportunity')
-        action = request.form.get('action')
-        stock_number = request.form.get('stock_number', '').strip()
-        reg = request.form.get('reg', '').strip()
+    # Allow external systems to prefill form fields through query parameters.
+    # Example: /?stock_number=12345&model=Golf&year=2018
+    prefillable_fields = list(form_defaults.keys())
+    for field in prefillable_fields:
+        if field in request.args:
+            form_defaults[field] = request.args.get(field, '').strip()
+
+    input_source = request.form if request.method == 'POST' else request.args
+    model = input_source.get('model', '').strip()
+    year_raw = input_source.get('year', '').strip()
+    should_search = bool(model and year_raw)
+
+    if should_search:
+        try:
+            year = int(year_raw)
+        except ValueError:
+            year = None
+
+    if should_search and year is not None:
+        engine_code = input_source.get('engine_code', '').strip()
+        min_price = input_source.get('min_price', '').strip()
+        min_opportunity = input_source.get('min_opportunity', '').strip()
+        action = input_source.get('action')
+        stock_number = input_source.get('stock_number', '').strip()
+        reg = input_source.get('reg', '').strip()
 
         form_defaults['stock_number'] = stock_number
         form_defaults['reg'] = reg
