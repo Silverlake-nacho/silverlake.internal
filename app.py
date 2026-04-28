@@ -17,6 +17,7 @@ from typing import List, Tuple, Optional, Union
 from calendar import monthrange
 import json
 import os
+import re
 from urllib.parse import urljoin
 import pyodbc
 
@@ -189,6 +190,103 @@ def get_matching_google_sheet_rows(engine_code):
         print("Error accessing Google Sheets:", e)
         return []
 
+
+def split_engine_code_variants(engine_code):
+    engine_code = (engine_code or "").strip()
+    if not engine_code:
+        return "", ""
+
+    match = re.match(r'^(\S+)\s+\(([^)]+)\)$', engine_code)
+    if not match:
+        return engine_code, ""
+
+    primary_code = match.group(1).strip()
+    fallback_code = match.group(2).strip()
+    return primary_code, fallback_code
+
+
+def expand_engine_code_candidates(raw_engine_code):
+    candidates = []
+    if not raw_engine_code:
+        return candidates
+
+    for part in str(raw_engine_code).split('/'):
+        candidate = part.strip()
+        if not candidate:
+            continue
+        candidates.append(candidate)
+
+        om_match = re.match(r'^OM(\d+\.\d+)$', candidate, flags=re.IGNORECASE)
+        if om_match:
+            candidates.append(om_match.group(1))
+
+    # Keep order, remove duplicates (case-insensitive)
+    unique_candidates = []
+    seen = set()
+    for candidate in candidates:
+        key = candidate.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        unique_candidates.append(candidate)
+    return unique_candidates
+
+
+def _load_google_sheet_rows():
+    SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly']
+    creds = service_account.Credentials.from_service_account_file('credentials.json', scopes=SCOPES)
+    spreadsheet_id = '1iH-70OrINA2jcd6YKszW-N8XpuJDTC9A3oArNWHbEeY'
+    sheet_range = 'Sheet1'
+
+    service = build('sheets', 'v4', credentials=creds)
+    values_result = service.spreadsheets().values().get(
+        spreadsheetId=spreadsheet_id, range=sheet_range
+    ).execute()
+    values = values_result.get('values', [])
+    if not values:
+        return []
+
+    format_result = service.spreadsheets().get(
+        spreadsheetId=spreadsheet_id,
+        ranges=[sheet_range],
+        fields='sheets.data.rowData.values.effectiveFormat.backgroundColor'
+    ).execute()
+    row_data = format_result['sheets'][0]['data'][0]['rowData']
+
+    headers = values[0]
+    prepared_rows = []
+    for i, row in enumerate(values[1:], start=1):
+        row_dict = {}
+        for j, cell in enumerate(row):
+            if j in (17, 18):  # Skip columns R and S
+                continue
+            cell_text = cell
+            bg_color = row_data[i]['values'][j].get('effectiveFormat', {}).get('backgroundColor', {})
+            hex_color = rgb_to_hex(bg_color)
+            key = headers[j]
+            row_dict[key] = {'value': cell_text, 'bg': hex_color}
+
+        search_text = " ".join(str(cell) for cell in row).lower()
+        prepared_rows.append((row_dict, search_text))
+
+    return prepared_rows
+
+
+def get_google_sheet_matches_for_candidates(candidates, prepared_rows=None):
+    try:
+        if prepared_rows is None:
+            prepared_rows = _load_google_sheet_rows()
+
+        cleaned_candidates = [str(c).strip().lower() for c in candidates if str(c).strip()]
+        for candidate in cleaned_candidates:
+            matches = [row_dict for row_dict, search_text in prepared_rows if candidate in search_text]
+            if matches:
+                return matches, prepared_rows
+        return [], prepared_rows
+    except Exception as e:
+        print("Error accessing Google Sheets:", e)
+        return [], prepared_rows if prepared_rows is not None else []
+
 DEFAULT_WEBFLEET_CSV_PATH = r"Z:\Data\Pinnacle\WebFleet.csv"
 LOCAL_WEBFLEET_CSV_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "WebFleet.csv")
 
@@ -214,6 +312,7 @@ USERS = {
     'admin': 'Silverlake1!',
     'paul': 'Silverlake1!',
     'morgan': 'Silverlake1!',
+    'acox': 'Silverlake7',    
     'cain': 'Silverlake1!',
     'stores': 'stores',
     'Stores': 'stores',
@@ -401,6 +500,7 @@ def index():
     global last_search_result, search_details
     parts = None
     google_sheet_matches = []
+    google_sheet_rows_cache = None
     description_filter = request.values.get('description_filter', '')
     form_defaults = {
         'stock_number': '',
@@ -461,12 +561,38 @@ def index():
         ]
 
         if engine_code:
-            def custom_filter(row):
-                description = str(row['IC Description'])
-                if 'engine code' in description.lower():
-                    return engine_code.lower() in description.lower()
-                return True
-            filtered = filtered[filtered.apply(custom_filter, axis=1)]
+            base_engine_code, bracket_engine_code = split_engine_code_variants(engine_code)
+            first_pass_code = bracket_engine_code or base_engine_code or engine_code
+            second_pass_code = base_engine_code if bracket_engine_code else ""
+            primary_engine_candidates = expand_engine_code_candidates(first_pass_code)
+            fallback_engine_candidates = expand_engine_code_candidates(second_pass_code)
+
+            def apply_engine_code_filter(dataframe, code_candidates):
+                if not code_candidates:
+                    return dataframe, False
+
+                description_series = dataframe['IC Description'].fillna('').astype(str)
+                engine_code_rows = description_series.str.contains(r'engine\W*code', case=False, regex=True, na=False)
+                if not engine_code_rows.any():
+                    return dataframe, False
+
+                candidate_pattern = '|'.join(
+                    rf'(?<![A-Za-z0-9]){re.escape(candidate)}(?![A-Za-z0-9])'
+                    for candidate in code_candidates
+                )
+                candidate_match_rows = description_series.str.contains(
+                    candidate_pattern, case=False, regex=True, na=False
+                )
+
+                matching_engine_rows = engine_code_rows & candidate_match_rows
+                filtered_dataframe = dataframe[~engine_code_rows | candidate_match_rows]
+                return filtered_dataframe, bool(matching_engine_rows.any())
+
+            filtered_primary, primary_has_engine_code_match = apply_engine_code_filter(filtered, primary_engine_candidates)
+            if not primary_has_engine_code_match and fallback_engine_candidates:
+                filtered, _ = apply_engine_code_filter(filtered, fallback_engine_candidates)
+            else:
+                filtered = filtered_primary
 
         # 🚨 NEW: exclusion list logic
         if action == 'search_excluding':
@@ -504,7 +630,20 @@ def index():
             parts = parts.to_dict('records')
 
         if engine_code:
-            google_sheet_matches = get_matching_google_sheet_rows(engine_code)
+            base_engine_code, bracket_engine_code = split_engine_code_variants(engine_code)
+            first_pass_code = bracket_engine_code or base_engine_code or engine_code
+            second_pass_code = base_engine_code if bracket_engine_code else ""
+            primary_engine_candidates = expand_engine_code_candidates(first_pass_code)
+            fallback_engine_candidates = expand_engine_code_candidates(second_pass_code)
+            google_sheet_matches, google_sheet_rows_cache = get_google_sheet_matches_for_candidates(
+                primary_engine_candidates,
+                google_sheet_rows_cache,
+            )
+            if not google_sheet_matches and fallback_engine_candidates:
+                google_sheet_matches, google_sheet_rows_cache = get_google_sheet_matches_for_candidates(
+                    fallback_engine_candidates,
+                    google_sheet_rows_cache,
+                )
 
     return render_template(
         'index.html',
@@ -3926,6 +4065,9 @@ def executive_stats_data():
             "entity_label": vehicle_in_status_context.get("entity_label", "Vehicle Status"),
             "chart_title_base": vehicle_in_status_context.get(
                 "chart_title_base", "Vehicles by Vehicle Status"
+            ),
+            "group_status_breakdown": vehicle_in_status_context.get(
+                "group_status_breakdown", {}
             ),
         }
 
