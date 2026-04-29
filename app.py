@@ -710,7 +710,28 @@ def ebay_small_parts():
             print(f"eBay fetch attempt {attempt + 1} failed: {e}")
             time.sleep(2)
     else:
-        return render_template_string("<p><strong>Failed to fetch data from eBay after 3 attempts.</strong></p>")
+        search_url_js = json.dumps(search_url)
+        fallback_html = f"""
+        <script>
+          (function() {{
+            var ebayUrl = {search_url_js};
+            window.open(ebayUrl, '_blank', 'noopener');
+            var modalEl = document.getElementById('ebayModalS');
+            if (modalEl) {{
+              if (typeof bootstrap !== 'undefined' && bootstrap.Modal && bootstrap.Modal.getInstance) {{
+                var modalInstance = bootstrap.Modal.getInstance(modalEl);
+                if (modalInstance) {{
+                  modalInstance.hide();
+                }}
+              }} else if (typeof $ !== 'undefined' && $.fn && $.fn.modal) {{
+                $(modalEl).modal('hide');
+              }}
+            }}
+          }})();
+        </script>
+        <p><strong>Failed to fetch data from eBay after 3 attempts. Opening direct eBay search in a new tab.</strong></p>
+        """
+        return render_template_string(fallback_html)
 
     soup = BeautifulSoup(response.text, 'html.parser')
     items = soup.select('.s-item')
@@ -809,7 +830,28 @@ def ebay_medium_parts():
             print(f"eBay fetch attempt {attempt + 1} failed: {e}")
             time.sleep(2)
     else:
-        return render_template_string("<p><strong>Failed to fetch data from eBay after 3 attempts.</strong></p>")
+        search_url_js = json.dumps(search_url)
+        fallback_html = f"""
+        <script>
+          (function() {{
+            var ebayUrl = {search_url_js};
+            window.open(ebayUrl, '_blank', 'noopener');
+            var modalEl = document.getElementById('ebayModalM');
+            if (modalEl) {{
+              if (typeof bootstrap !== 'undefined' && bootstrap.Modal && bootstrap.Modal.getInstance) {{
+                var modalInstance = bootstrap.Modal.getInstance(modalEl);
+                if (modalInstance) {{
+                  modalInstance.hide();
+                }}
+              }} else if (typeof $ !== 'undefined' && $.fn && $.fn.modal) {{
+                $(modalEl).modal('hide');
+              }}
+            }}
+          }})();
+        </script>
+        <p><strong>Failed to fetch data from eBay after 3 attempts. Opening direct eBay search in a new tab.</strong></p>
+        """
+        return render_template_string(fallback_html)
 
     soup = BeautifulSoup(response.text, 'html.parser')
     items = soup.select('.s-item')
@@ -907,7 +949,28 @@ def ebay_large_parts():
             print(f"eBay fetch attempt {attempt + 1} failed: {e}")
             time.sleep(2)
     else:
-        return render_template_string("<p><strong>Failed to fetch data from eBay after 3 attempts.</strong></p>")
+        search_url_js = json.dumps(search_url)
+        fallback_html = f"""
+        <script>
+          (function() {{
+            var ebayUrl = {search_url_js};
+            window.open(ebayUrl, '_blank', 'noopener');
+            var modalEl = document.getElementById('ebayModalL');
+            if (modalEl) {{
+              if (typeof bootstrap !== 'undefined' && bootstrap.Modal && bootstrap.Modal.getInstance) {{
+                var modalInstance = bootstrap.Modal.getInstance(modalEl);
+                if (modalInstance) {{
+                  modalInstance.hide();
+                }}
+              }} else if (typeof $ !== 'undefined' && $.fn && $.fn.modal) {{
+                $(modalEl).modal('hide');
+              }}
+            }}
+          }})();
+        </script>
+        <p><strong>Failed to fetch data from eBay after 3 attempts. Opening direct eBay search in a new tab.</strong></p>
+        """
+        return render_template_string(fallback_html)
 
     soup = BeautifulSoup(response.text, 'html.parser')
     items = soup.select('.s-item')
