@@ -629,7 +629,7 @@
 
 <script>
   $(document).ready(function() {
-    $('#ebayButtonS').on('click', function() {
+    function openEbayResults(minPrice, maxPrice) {
       const model = $('input[name="model"]').val().trim();
       const year = $('input[name="year"]').val().trim();
       if (!model || !year) {
@@ -637,23 +637,19 @@
         return;
       }
 
-      $('#ebayModalBodyS').html('<p>Loading...</p>');
-      const smallModal = document.getElementById('ebayModalS');
-      if (smallModal && typeof bootstrap !== 'undefined') {
-        bootstrap.Modal.getOrCreateInstance(smallModal).show();
+      const query = encodeURIComponent(model + ' ' + year);
+      let ebayUrl = 'https://www.ebay.co.uk/sch/131090/i.html?_nkw=' + query + '&LH_Complete=1&LH_Sold=1';
+      if (minPrice !== null && minPrice !== undefined) {
+        ebayUrl += '&_udlo=' + encodeURIComponent(minPrice);
       }
+      if (maxPrice !== null && maxPrice !== undefined) {
+        ebayUrl += '&_udhi=' + encodeURIComponent(maxPrice);
+      }
+      window.open(ebayUrl, '_blank', 'noopener');
+    }
 
-      $.ajax({
-        url: '/ebay_small_parts',
-        method: 'GET',
-        data: { model: model, year: year },
-        success: function(data) {
-          $('#ebayModalBodyS').html(data);
-        },
-        error: function() {
-          $('#ebayModalBodyS').html('<p>Error loading data.</p>');
-        }
-      });
+    $('#ebayButtonS').on('click', function() {
+      openEbayResults(0, 50);
     });
   });
 </script>
@@ -917,7 +913,7 @@
 
 <script>
   $(document).ready(function() {
-    $('#ebayButtonM').on('click', function() {
+     function openEbayResults(minPrice, maxPrice) {
       const model = $('input[name="model"]').val().trim();
       const year = $('input[name="year"]').val().trim();
       if (!model || !year) {
@@ -925,23 +921,19 @@
         return;
       }
 
-      $('#ebayModalBodyM').html('<p>Loading...</p>');
-      const mediumModal = document.getElementById('ebayModalM');
-      if (mediumModal && typeof bootstrap !== 'undefined') {
-        bootstrap.Modal.getOrCreateInstance(mediumModal).show();
+      const query = encodeURIComponent(model + ' ' + year);
+      let ebayUrl = 'https://www.ebay.co.uk/sch/131090/i.html?_nkw=' + query + '&LH_Complete=1&LH_Sold=1';
+      if (minPrice !== null && minPrice !== undefined) {
+        ebayUrl += '&_udlo=' + encodeURIComponent(minPrice);
       }
+      if (maxPrice !== null && maxPrice !== undefined) {
+        ebayUrl += '&_udhi=' + encodeURIComponent(maxPrice);
+      }
+      window.open(ebayUrl, '_blank', 'noopener');
+    }
 
-      $.ajax({
-        url: '/ebay_medium_parts',
-        method: 'GET',
-        data: { model: model, year: year },
-        success: function(data) {
-          $('#ebayModalBodyM').html(data);
-        },
-        error: function() {
-          $('#ebayModalBodyM').html('<p>Error loading data.</p>');
-        }
-      });
+    $('#ebayButtonM').on('click', function() {
+      openEbayResults(50, 500);
     });
   });
 </script>
@@ -963,7 +955,7 @@
 
 <script>
   $(document).ready(function() {
-    $('#ebayButtonL').on('click', function() {
+    function openEbayResults(minPrice, maxPrice) {
       const model = $('input[name="model"]').val().trim();
       const year = $('input[name="year"]').val().trim();
       if (!model || !year) {
@@ -971,23 +963,19 @@
         return;
       }
 
-      $('#ebayModalBodyL').html('<p>Loading...</p>');
-      const largeModal = document.getElementById('ebayModalL');
-      if (largeModal && typeof bootstrap !== 'undefined') {
-        bootstrap.Modal.getOrCreateInstance(largeModal).show();
+      const query = encodeURIComponent(model + ' ' + year);
+      let ebayUrl = 'https://www.ebay.co.uk/sch/131090/i.html?_nkw=' + query + '&LH_Complete=1&LH_Sold=1';
+      if (minPrice !== null && minPrice !== undefined) {
+        ebayUrl += '&_udlo=' + encodeURIComponent(minPrice);
       }
+      if (maxPrice !== null && maxPrice !== undefined) {
+        ebayUrl += '&_udhi=' + encodeURIComponent(maxPrice);
+      }
+      window.open(ebayUrl, '_blank', 'noopener');
+    }
 
-      $.ajax({
-        url: '/ebay_large_parts',
-        method: 'GET',
-        data: { model: model, year: year },
-        success: function(data) {
-          $('#ebayModalBodyL').html(data);
-        },
-        error: function() {
-          $('#ebayModalBodyL').html('<p>Error loading data.</p>');
-        }
-      });
+    $('#ebayButtonL').on('click', function() {
+      openEbayResults(500, null);
     });
   });
 </script>
