@@ -282,7 +282,23 @@
       .contract-company-breakdown td:last-child {
         font-size: 0.875rem;
       }
-      #vehicleDetailsTable {
+      .vehicle-status-group-toggle {
+        cursor: pointer;
+      }
+      .vehicle-status-group-toggle td:first-child {
+        user-select: none;
+      }
+      .vehicle-status-group-toggle-expanded td:first-child,
+      .vehicle-status-group-toggle-expanded td:last-child {
+        font-weight: 700;
+      }
+      .vehicle-status-breakdown td:first-child {
+        padding-left: 30px;
+        font-size: 0.875rem;
+      }
+      .vehicle-status-breakdown td:last-child {
+        font-size: 0.875rem;
+      }ehicleDetailsTable {
         --vehicle-title-row-height: 42px;
         --vehicle-first-column-width: 120px;
       }
@@ -350,10 +366,14 @@
           <img src="{{ url_for('static', filename='SLK Logo.png') }}" alt="Silverlake Collapsed Logo" class="logo-collapsed">
           <img src="{{ url_for('static', filename='logo-slg-strip.svg') }}" alt="Silverlake Logo" class="logo-expanded">
         </div>
-        <div class="nav-section">
+                <div class="nav-section">
           <a href="{{ url_for('index') }}" class="nav-link{% if active_page == 'index' %} active{% endif %}">
             <i class="fas fa-magnifying-glass-dollar"></i>
             <span class="link-text">Opportunity Finder</span>
+          </a>
+          <a href="{{ url_for('image_lookup') }}" class="nav-link{% if active_page == 'image_lookup' %} active{% endif %}">
+            <i class="fas fa-image"></i>
+            <span class="link-text">Image Lookup</span>
           </a>
           <a href="{{ url_for('image_stats') }}" class="nav-link{% if active_page == 'image_stats' %} active{% endif %}">
             <i class="fas fa-chart-pie"></i>
@@ -363,33 +383,25 @@
             <i class="fas fa-clock"></i>
             <span class="link-text">Image Timeline</span>
           </a>
+          <a href="{{ url_for('stores_timeline') }}" class="nav-link{% if active_page == 'stores_timeline' %} active{% endif %}">
+            <i class="fas fa-warehouse"></i>
+            <span class="link-text">Stores Timeline</span>
+          </a>
           <a href="{{ url_for('stats') }}" class="nav-link{% if active_page == 'stats' %} active{% endif %}">
             <i class="fas fa-chart-column"></i>
             <span class="link-text">Sales Stats</span>
+          </a>
+          <a href="{{ url_for('inventory_stats') }}" class="nav-link{% if active_page == 'inventory_stats' %} active{% endif %}">
+            <i class="fas fa-boxes-stacked"></i>
+            <span class="link-text">Inventory Stats</span>
           </a>
           <a href="{{ url_for('vehicle_stats') }}" class="nav-link{% if active_page == 'vehicle_stats' %} active{% endif %}">
             <i class="fas fa-car-side"></i>
             <span class="link-text">Vehicle Stats</span>
           </a>
           <a href="{{ url_for('executive_stats') }}" class="nav-link{% if active_page == 'executive_stats' %} active{% endif %}">
-            <i class="fas fa-chart-line"></i>
+            <i class="fas fa-gauge-high"></i>
             <span class="link-text">Executive Stats</span>
-          </a>
-          <a href="{{ url_for('atlas_vehicle_stats') }}" class="nav-link{% if active_page == 'atlas_vehicle_stats' %} active{% endif %}">
-            <i class="fas fa-truck"></i>
-            <span class="link-text">Atlas Vehicle Stats</span>
-          </a>
-          <a href="{{ url_for('atlas_table_samples') }}" class="nav-link{% if active_page == 'atlas_table_samples' %} active{% endif %}">
-            <i class="fas fa-table"></i>
-            <span class="link-text">Atlas Table Samples</span>
-          </a>
-          <a href="{{ url_for('crush_vehicles') }}" class="nav-link{% if active_page == 'crush_vehicles' %} active{% endif %}">
-            <i class="fas fa-car-burst"></i>
-            <span class="link-text">Crush Vehicles</span>
-          </a>
-          <a href="{{ url_for('logs') }}" class="nav-link{% if active_page == 'logs' %} active{% endif %}">
-            <i class="fas fa-clipboard-list"></i>
-            <span class="link-text">Logs</span>
           </a>
         </div>
         <div class="sidebar-footer">
@@ -699,6 +711,8 @@
       let vehicleInStatusCurrentChartType = 'bar';
       let vehicleInStatusLabels = (vehicleInStatusDataset.chart_labels || []).slice();
       let vehicleInStatusValues = (vehicleInStatusDataset.chart_values || []).slice();
+      let vehicleInStatusBreakdown = vehicleInStatusDataset.group_status_breakdown || {};
+      const expandedVehicleInStatusGroups = new Set();
       const currentGroupMode = {{ group_mode|tojson }};
       let contractCompanyBreakdown = {{ contract_company_breakdown|tojson }};
       const expandedContracts = new Set();
@@ -830,6 +844,7 @@
       function rebuildVehicleInStatusTable(data) {
         if (!vehicleInStatusSection || !vehicleInStatusTableBody) return;
         vehicleInStatusTableBody.innerHTML = '';
+        vehicleInStatusBreakdown = data.group_status_breakdown || {};
         (data.rows || []).forEach((row) => {
           const rowLabel = row && typeof row === 'object' && !Array.isArray(row)
             ? row.label
@@ -837,12 +852,44 @@
           const rowTotal = row && typeof row === 'object' && !Array.isArray(row)
             ? row.total
             : row?.[1];
+          const safeLabel = rowLabel ?? 'Unknown';
+          const statusRows = vehicleInStatusBreakdown[safeLabel] || [];
+          const canExpand = statusRows.length > 0;
+          const isExpanded = expandedVehicleInStatusGroups.has(safeLabel);
           const tr = document.createElement('tr');
+          if (canExpand) {
+            tr.classList.add('vehicle-status-group-toggle');
+            if (isExpanded) {
+              tr.classList.add('vehicle-status-group-toggle-expanded');
+            }
+            tr.addEventListener('click', () => {
+              if (expandedVehicleInStatusGroups.has(safeLabel)) {
+                expandedVehicleInStatusGroups.delete(safeLabel);
+              } else {
+                expandedVehicleInStatusGroups.add(safeLabel);
+              }
+              rebuildVehicleInStatusTable(data);
+            });
+          }
           tr.innerHTML = `
-            <td>${rowLabel ?? 'Unknown'}</td>
+            <td>${safeLabel}</td>
             <td class="text-end">${Number(rowTotal ?? 0).toLocaleString()}</td>
           `;
           vehicleInStatusTableBody.appendChild(tr);
+
+          if (canExpand && isExpanded) {
+            statusRows.forEach((statusRow) => {
+              const statusLabel = Array.isArray(statusRow) ? statusRow[0] : statusRow?.status;
+              const statusTotal = Array.isArray(statusRow) ? statusRow[1] : statusRow?.total;
+              const detailTr = document.createElement('tr');
+              detailTr.classList.add('vehicle-status-breakdown');
+              detailTr.innerHTML = `
+                <td>└ ${statusLabel || 'Unknown Status'}</td>
+                <td class="text-end">${Number(statusTotal || 0).toLocaleString()}</td>
+              `;
+              vehicleInStatusTableBody.appendChild(detailTr);
+            });
+          }
         });
         if (vehicleInStatusTotalSumCell) {
           vehicleInStatusTotalSumCell.textContent = Number(data.sum_total ?? 0).toLocaleString();
@@ -857,6 +904,7 @@
         vehicleInStatusDataset.chart_title_base = data.chart_title_base || vehicleInStatusDataset.chart_title_base;
         vehicleInStatusLabels = data.chart_labels || [];
         vehicleInStatusValues = data.chart_values || [];
+        vehicleInStatusDataset.group_status_breakdown = data.group_status_breakdown || {};
         rebuildVehicleInStatusTable(data);
         if (vehicleInStatusChartInstance) {
           vehicleInStatusChartInstance.data.labels = vehicleInStatusLabels;
@@ -1277,6 +1325,7 @@
           rows: vehicleInStatusDataset.rows || [],
           sum_total: vehicleInStatusDataset.sum_total || 0,
           date_range_label: vehicleInStatusDataset.date_range_label || '',
+          group_status_breakdown: vehicleInStatusDataset.group_status_breakdown || {},
         });
         renderVehicleInStatusChart(vehicleInStatusCurrentChartType);
       }
