@@ -433,16 +433,18 @@
             <div class="summary-card">
               <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
                 <div class="d-flex flex-wrap align-items-center gap-2">
-                  <a href="{{ url_for('executive_stats', filter='today', group=group_mode, date_mode=date_mode, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">Today</a>
-                  <a href="{{ url_for('executive_stats', filter='yesterday', group=group_mode, date_mode=date_mode, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">Yesterday</a>
-                  <a href="{{ url_for('executive_stats', filter='this_week', group=group_mode, date_mode=date_mode, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">This Week</a>
-                  <a href="{{ url_for('executive_stats', filter='last_week', group=group_mode, date_mode=date_mode, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">Last Week</a>
-                  <a href="{{ url_for('executive_stats', filter='this_month', group=group_mode, date_mode=date_mode, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">This Month</a>
-                  <a href="{{ url_for('executive_stats', filter='last_month', group=group_mode, date_mode=date_mode, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">Last Month</a>
+                  <a href="{{ url_for('executive_stats', filter='today', group=group_mode, date_mode=date_mode, parts_dimension=parts_sold_context.stats_dimension if parts_sold_context else 'department', parts_prev_mode=parts_sold_context.prev_mode if parts_sold_context else 'mirror', live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">Today</a>
+                  <a href="{{ url_for('executive_stats', filter='yesterday', group=group_mode, date_mode=date_mode, parts_dimension=parts_sold_context.stats_dimension if parts_sold_context else 'department', parts_prev_mode=parts_sold_context.prev_mode if parts_sold_context else 'mirror', live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">Yesterday</a>
+                  <a href="{{ url_for('executive_stats', filter='this_week', group=group_mode, date_mode=date_mode, parts_dimension=parts_sold_context.stats_dimension if parts_sold_context else 'department', parts_prev_mode=parts_sold_context.prev_mode if parts_sold_context else 'mirror', live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">This Week</a>
+                  <a href="{{ url_for('executive_stats', filter='last_week', group=group_mode, date_mode=date_mode, parts_dimension=parts_sold_context.stats_dimension if parts_sold_context else 'department', parts_prev_mode=parts_sold_context.prev_mode if parts_sold_context else 'mirror', live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">Last Week</a>
+                  <a href="{{ url_for('executive_stats', filter='this_month', group=group_mode, date_mode=date_mode, parts_dimension=parts_sold_context.stats_dimension if parts_sold_context else 'department', parts_prev_mode=parts_sold_context.prev_mode if parts_sold_context else 'mirror', live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">This Month</a>
+                  <a href="{{ url_for('executive_stats', filter='last_month', group=group_mode, date_mode=date_mode, parts_dimension=parts_sold_context.stats_dimension if parts_sold_context else 'department', parts_prev_mode=parts_sold_context.prev_mode if parts_sold_context else 'mirror', live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">Last Month</a>
                   <form method="get" class="d-inline">
                     <input type="hidden" name="filter" value="custom">
                     <input type="hidden" name="group" value="{{ group_mode }}">
                     <input type="hidden" name="date_mode" value="{{ date_mode }}">
+                    <input type="hidden" name="parts_dimension" value="{{ parts_sold_context.stats_dimension if parts_sold_context else 'department' }}">
+                    <input type="hidden" name="parts_prev_mode" value="{{ parts_sold_context.prev_mode if parts_sold_context else 'mirror' }}">
                     <input type="date" name="start_date" id="customStartDate" required>
                     <input type="date" name="end_date" id="customEndDate" required>
                     {% if live_enabled %}
@@ -476,6 +478,8 @@
                     <input type="hidden" name="filter" value="{{ filter_type }}">
                     <input type="hidden" name="group" value="{{ group_mode }}">
                     <input type="hidden" name="date_mode" value="{{ date_mode }}">
+                    <input type="hidden" name="parts_dimension" value="{{ parts_sold_context.stats_dimension if parts_sold_context else 'department' }}">
+                    <input type="hidden" name="parts_prev_mode" value="{{ parts_sold_context.prev_mode if parts_sold_context else 'mirror' }}">
                     <input type="hidden" name="start_date" value="{{ start_date.isoformat() if start_date else '' }}">
                     <input type="hidden" name="end_date" value="{{ end_date.isoformat() if end_date else '' }}">
                     <input type="hidden" id="liveInputField" name="live" value="{{ 1 if live_enabled else '' }}">
@@ -509,9 +513,9 @@
                 <div class="toggle toggle-three group-{{ group_mode }}" role="group" aria-label="Toggle grouping criteria">
                   <span class="toggle-track"></span>
                   <div class="toggle-links">
-                    <a class="contract-link" href="{{ url_for('executive_stats', filter=filter_type, start_date=start_date.isoformat() if start_date else None, end_date=end_date.isoformat() if end_date else None, group='contract', date_mode=date_mode, exclude=excluded_companies, live=1 if live_enabled else None) }}">Contract</a>
-                    <a class="company-link" href="{{ url_for('executive_stats', filter=filter_type, start_date=start_date.isoformat() if start_date else None, end_date=end_date.isoformat() if end_date else None, group='company', date_mode=date_mode, exclude=excluded_companies, live=1 if live_enabled else None) }}">Insurance</a>
-                    <a class="status-link" href="{{ url_for('executive_stats', filter=filter_type, start_date=start_date.isoformat() if start_date else None, end_date=end_date.isoformat() if end_date else None, group='status', date_mode=date_mode, exclude=excluded_companies, live=1 if live_enabled else None) }}">Status</a>
+                    <a class="contract-link" href="{{ url_for('executive_stats', filter=filter_type, start_date=start_date.isoformat() if start_date else None, end_date=end_date.isoformat() if end_date else None, group='contract', date_mode=date_mode, parts_dimension=parts_sold_context.stats_dimension if parts_sold_context else 'department', exclude=excluded_companies, live=1 if live_enabled else None) }}">Contract</a>
+                    <a class="company-link" href="{{ url_for('executive_stats', filter=filter_type, start_date=start_date.isoformat() if start_date else None, end_date=end_date.isoformat() if end_date else None, group='company', date_mode=date_mode, parts_dimension=parts_sold_context.stats_dimension if parts_sold_context else 'department', exclude=excluded_companies, live=1 if live_enabled else None) }}">Insurance</a>
+                    <a class="status-link" href="{{ url_for('executive_stats', filter=filter_type, start_date=start_date.isoformat() if start_date else None, end_date=end_date.isoformat() if end_date else None, group='status', date_mode=date_mode, parts_dimension=parts_sold_context.stats_dimension if parts_sold_context else 'department', exclude=excluded_companies, live=1 if live_enabled else None) }}">Status</a>
                   </div>
                 </div>
               </div>
@@ -596,6 +600,79 @@
             </div>
             {% endif %}
 
+            <div class="row g-4 mb-4" id="partsSoldSection">
+              <div class="col-12">
+                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                  <h5 class="text-success mb-0">Parts Sold</h5>
+                  <div class="toggle-wrapper mb-0">
+                    <span class="toggle-label">Type</span>
+                    <label class="toggle" for="partsDimensionToggle">
+                      <input type="checkbox" id="partsDimensionToggle"
+                        {% if parts_sold_context and parts_sold_context.stats_dimension == 'user' %}checked{% endif %}
+                        aria-label="Toggle parts sold between Department and User">
+                      <span class="toggle-track"></span>
+                      <div class="toggle-labels">
+                        <span>Department</span>
+                        <span>User</span>
+                      </div>
+                    </label>
+                  </div>
+                </div>
+              </div>
+              <div class="col-lg-6">
+                <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+                  <div class="d-flex flex-column">
+                    <h5 class="text-success mb-0" id="partsSoldDateRangeLabel">Showing: {{ parts_sold_context.date_range_label if parts_sold_context else date_range_label }}</h5>
+                    <small class="text-muted" id="partsSoldPrevDateRangeLabel">Parts Sold (Prev Period): {{ parts_sold_context.prev_date_range_label if parts_sold_context else 'Prev Period' }}</small>
+                  </div>
+                  <button id="partsSoldTogglePrevModeBtn" class="btn btn-outline-secondary btn-sm">
+                    {{ 'Use Previous Month' if parts_sold_context and parts_sold_context.prev_mode == 'mirror' else 'Use Mirrored Range' }}
+                  </button>
+                </div>
+                <table class="table table-striped">
+                  <thead>
+                    <tr>
+                      <th id="partsSoldEntityHeader">{{ parts_sold_context.entity_label if parts_sold_context else 'Department' }}</th>
+                      <th class="text-end">Parts Sold</th>
+                      <th class="text-end" id="partsSoldPreviousHeader">{{ parts_sold_context.value_vat_label if parts_sold_context else 'Parts Sold (Prev Period)' }}</th>
+                    </tr>
+                  </thead>
+                  <tbody id="partsSoldTableBody">
+                    {% if parts_sold_context %}
+                      {% for row in parts_sold_context.rows %}
+                        <tr>
+                          <td>{{ row[0] }}</td>
+                          <td class="text-end">{{ '{:,.0f}'.format(row[1]) }}</td>
+                          <td class="text-end">{{ '{:,.0f}'.format(row[2]) }}</td>
+                        </tr>
+                      {% endfor %}
+                    {% endif %}
+                  </tbody>
+                  <tfoot>
+                    <tr class="fw-bold">
+                      <td>Total</td>
+                      <td class="text-end" id="partsSoldTotalCell">{{ '{:,.0f}'.format(parts_sold_context.sum_total if parts_sold_context else 0) }}</td>
+                      <td class="text-end" id="partsSoldPreviousTotalCell">{{ '{:,.0f}'.format(parts_sold_context.sum_total_vat if parts_sold_context else 0) }}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+              <div class="col-lg-6">
+                <div class="card shadow-sm">
+                  <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                      <h5 class="card-title mb-0" id="partsSoldChartTitle">Parts Sold by {{ parts_sold_context.entity_label if parts_sold_context else 'Department' }} (Bar)</h5>
+                      <div class="d-flex gap-2">
+                        <button id="partsSoldResetZoomBtn" class="btn btn-sm btn-outline-secondary">Reset Zoom</button>
+                        <button id="partsSoldToggleChartBtn" class="btn btn-sm btn-success">Show Pie Chart</button>
+                      </div>
+                    </div>
+                    <canvas id="partsSoldChart" height="200"></canvas>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <div class="card shadow-sm">
               <div class="card-body">
                 <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
@@ -677,7 +754,19 @@
       const vehicleInStatusResetZoomBtn = document.getElementById('vehicleInStatusResetZoomBtn');
       const vehicleInStatusToggleChartBtn = document.getElementById('vehicleInStatusToggleChartBtn');
       const liveCheckbox = document.getElementById('liveToggle');
-      const dateModeToggle = document.getElementById('dateModeToggle');
+	  const dateModeToggle = document.getElementById('dateModeToggle');
+      const partsDimensionToggle = document.getElementById('partsDimensionToggle');
+      const partsSoldTableBody = document.getElementById('partsSoldTableBody');
+      const partsSoldTotalCell = document.getElementById('partsSoldTotalCell');
+      const partsSoldPreviousTotalCell = document.getElementById('partsSoldPreviousTotalCell');
+      const partsSoldDateRangeLabel = document.getElementById('partsSoldDateRangeLabel');
+      const partsSoldPrevDateRangeLabel = document.getElementById('partsSoldPrevDateRangeLabel');
+      const partsSoldEntityHeader = document.getElementById('partsSoldEntityHeader');
+      const partsSoldPreviousHeader = document.getElementById('partsSoldPreviousHeader');
+      const partsSoldChartTitle = document.getElementById('partsSoldChartTitle');
+      const partsSoldToggleChartBtn = document.getElementById('partsSoldToggleChartBtn');
+      const partsSoldResetZoomBtn = document.getElementById('partsSoldResetZoomBtn');
+      const partsSoldTogglePrevModeBtn = document.getElementById('partsSoldTogglePrevModeBtn');
       const customStartDate = document.getElementById('customStartDate');
       const customEndDate = document.getElementById('customEndDate');
 
@@ -712,6 +801,14 @@
       let vehicleInStatusLabels = (vehicleInStatusDataset.chart_labels || []).slice();
       let vehicleInStatusValues = (vehicleInStatusDataset.chart_values || []).slice();
       let vehicleInStatusBreakdown = vehicleInStatusDataset.group_status_breakdown || {};
+
+      const partsSoldDataset = {{ (parts_sold_context or {})|tojson }};
+      let partsSoldChartInstance = null;
+      let partsSoldCurrentChartType = 'bar';
+      let partsSoldLabels = (partsSoldDataset.chart_labels || []).slice();
+      let partsSoldValues = (partsSoldDataset.chart_values || []).slice();
+      let partsSoldEntityLabel = partsSoldDataset.entity_label || 'Department';
+
       const expandedVehicleInStatusGroups = new Set();
       const currentGroupMode = {{ group_mode|tojson }};
       let contractCompanyBreakdown = {{ contract_company_breakdown|tojson }};
@@ -742,6 +839,11 @@
           },
           options: {
             responsive: true,
+            layout: {
+              padding: {
+                top: isPie ? 0 : 36,
+              },
+            },
             plugins: {
               legend: {
                 display: isPie,
@@ -762,6 +864,8 @@
                 color: '#1f3b08',
                 anchor: isPie ? 'end' : 'end',
                 align: isPie ? 'end' : 'end',
+                clip: false,
+                offset: isPie ? 0 : 4,
                 formatter: (value) => Number(value).toLocaleString(),
               },
               zoom: {
@@ -787,6 +891,7 @@
                     },
                   },
                   y: {
+                    grace: '15%',
                     ticks: {
                       color: '#1f3b08',
                     },
@@ -838,6 +943,44 @@
           vehicleInStatusChartTitle.textContent = type === 'pie'
             ? `${baseTitle} (Pie)`
             : `${baseTitle} (Bar)`;
+        }
+      }
+
+      function renderPartsSoldChart(type) {
+        const chartCanvas = document.getElementById('partsSoldChart');
+        if (!chartCanvas) return;
+        if (partsSoldChartInstance) {
+          partsSoldChartInstance.destroy();
+        }
+        partsSoldChartInstance = new Chart(
+          chartCanvas,
+          buildChartConfig(type, partsSoldLabels, partsSoldValues)
+        );
+        partsSoldCurrentChartType = type;
+        if (partsSoldChartTitle) {
+          partsSoldChartTitle.textContent = type === 'pie'
+            ? `Parts Sold by ${partsSoldEntityLabel} (Pie)`
+            : `Parts Sold by ${partsSoldEntityLabel} (Bar)`;
+        }
+        if (partsSoldToggleChartBtn) {
+          partsSoldToggleChartBtn.textContent = type === 'pie' ? 'Show Bar Chart' : 'Show Pie Chart';
+        }
+      }
+
+      function updatePartsSoldChartData(data) {
+        partsSoldLabels = data.chart_labels || [];
+        partsSoldValues = data.chart_values || [];
+        partsSoldEntityLabel = data.entity_label || 'Department';
+        if (partsSoldChartInstance) {
+          partsSoldChartInstance.data.labels = partsSoldLabels;
+          partsSoldChartInstance.data.datasets[0].data = partsSoldValues;
+          partsSoldChartInstance.data.datasets[0].backgroundColor = generateColors(partsSoldLabels.length);
+          partsSoldChartInstance.update();
+        }
+        if (partsSoldChartTitle) {
+          partsSoldChartTitle.textContent = partsSoldCurrentChartType === 'pie'
+            ? `Parts Sold by ${partsSoldEntityLabel} (Pie)`
+            : `Parts Sold by ${partsSoldEntityLabel} (Bar)`;
         }
       }
 
@@ -985,6 +1128,47 @@
         });
         totalSumCell.textContent = Number(data.sum_total ?? 0).toLocaleString();
         dateRangeLabel.textContent = `Showing: ${data.date_range_label || ''}`;
+      }
+
+      function rebuildPartsSoldTable(data) {
+        if (!data || !partsSoldTableBody) return;
+        partsSoldTableBody.innerHTML = '';
+        (data.rows || []).forEach((row) => {
+          const label = Array.isArray(row) ? row[0] : row.label ?? 'Unassigned';
+          const total = Number(Array.isArray(row) ? row[1] : row.total ?? 0);
+          const previousTotal = Number(Array.isArray(row) ? row[2] : row.previous_total ?? 0);
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td>${label}</td>
+            <td class="text-end">${total.toLocaleString()}</td>
+            <td class="text-end">${previousTotal.toLocaleString()}</td>
+          `;
+          partsSoldTableBody.appendChild(tr);
+        });
+        if (partsSoldTotalCell) {
+          partsSoldTotalCell.textContent = Number(data.sum_total ?? 0).toLocaleString();
+        }
+        if (partsSoldPreviousTotalCell) {
+          partsSoldPreviousTotalCell.textContent = Number(data.sum_total_previous ?? data.sum_total_vat ?? 0).toLocaleString();
+        }
+        if (partsSoldDateRangeLabel) {
+          partsSoldDateRangeLabel.textContent = `Showing: ${data.date_range_label || ''}`;
+        }
+        if (partsSoldPrevDateRangeLabel) {
+          partsSoldPrevDateRangeLabel.textContent = `Parts Sold (Prev Period): ${data.prev_date_range_label || 'Prev Period'}`;
+        }
+        if (partsSoldEntityHeader) {
+          partsSoldEntityHeader.textContent = data.entity_label || 'Department';
+        }
+        if (partsSoldPreviousHeader) {
+          partsSoldPreviousHeader.textContent = data.value_vat_label || 'Parts Sold (Prev Period)';
+        }
+        if (partsSoldTogglePrevModeBtn && data.prev_mode) {
+          partsSoldTogglePrevModeBtn.textContent = data.prev_mode === 'mirror'
+            ? 'Use Previous Month'
+            : 'Use Mirrored Range';
+        }
+        updatePartsSoldChartData(data);
       }
 
       function normalizeColumnName(name) {
@@ -1199,6 +1383,9 @@
           if (data.vehicle_in_status) {
             updateVehicleInStatusData(data.vehicle_in_status);
           }
+          if (data.parts_sold) {
+            rebuildPartsSoldTable(data.parts_sold);
+          }
           rebuildDetailsTable(data);
         } catch (err) {
           console.error('Live vehicle stats refresh failed', err);
@@ -1291,6 +1478,40 @@
         });
       }
 
+      if (partsDimensionToggle) {
+        partsDimensionToggle.addEventListener('change', () => {
+          const url = new URL(window.location.href);
+          url.searchParams.set('parts_dimension', partsDimensionToggle.checked ? 'user' : 'department');
+          window.location.href = url.toString();
+        });
+      }
+
+      if (partsSoldToggleChartBtn) {
+        partsSoldToggleChartBtn.addEventListener('click', () => {
+          const nextType = partsSoldCurrentChartType === 'bar' ? 'pie' : 'bar';
+          renderPartsSoldChart(nextType);
+        });
+      }
+
+      if (partsSoldResetZoomBtn) {
+        partsSoldResetZoomBtn.addEventListener('click', () => {
+          if (partsSoldChartInstance) {
+            partsSoldChartInstance.resetZoom();
+          }
+        });
+      }
+
+      if (partsSoldTogglePrevModeBtn) {
+        partsSoldTogglePrevModeBtn.addEventListener('click', (event) => {
+          event.preventDefault();
+          const url = new URL(window.location.href);
+          const currentPrevMode = url.searchParams.get('parts_prev_mode') || {{ (parts_sold_context.prev_mode if parts_sold_context else 'mirror')|tojson }};
+          const nextPrevMode = currentPrevMode === 'month' ? 'mirror' : 'month';
+          url.searchParams.set('parts_prev_mode', nextPrevMode);
+          window.location.href = url.toString();
+        });
+      }
+	  
       if (dateModeToggle) {
         dateModeToggle.addEventListener('change', () => {
           const url = new URL(window.location.href);
@@ -1311,6 +1532,9 @@
         date_range_label: {{ date_range_label|tojson }},
         contract_company_breakdown: {{ contract_company_breakdown|tojson }},
       });
+	 
+      rebuildPartsSoldTable({{ (parts_sold_context or {})|tojson }});
+      renderPartsSoldChart(partsSoldCurrentChartType);
 
       rebuildDetailsTable({
         detail_columns: vehicleDetailColumns,
