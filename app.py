@@ -3061,6 +3061,15 @@ def normalize_prev_period_mode(mode: str) -> str:
     return "month" if str(mode).lower() == "month" else "mirror"
 
 
+EXECUTIVE_PARTS_DEFAULT_DEPARTMENT_EXCLUSIONS = ["SCRAP METAL", "CORE"]
+
+
+def executive_parts_exclusions(dimension: str) -> List[str]:
+    if normalize_stats_dimension(dimension) == "department":
+        return EXECUTIVE_PARTS_DEFAULT_DEPARTMENT_EXCLUSIONS
+    return []
+    
+    
 def shift_one_year_back(value: date) -> date:
     """Return the same calendar day in the previous year, clamped for leap days."""
 
@@ -3078,6 +3087,7 @@ def build_stats_context(
     mode: str,
     dimension: str,
     prev_mode: str,
+    use_saved_exclusions: bool = True,
 ):
     start_date, end_date = parse_date_filter(filter_type, start_date_str, end_date_str)
     date_range_label = describe_date_range(filter_type, start_date, end_date)
@@ -3136,8 +3146,12 @@ def build_stats_context(
     saved_order = load_department_order(current_user)
     order_index = {name: idx for idx, name in enumerate(saved_order)}
 
-    default_exclusions = load_stats_exclusions(
-        current_user, "department" if resolved_dimension == "department" else "user"
+    default_exclusions = (
+        load_stats_exclusions(
+            current_user, "department" if resolved_dimension == "department" else "user"
+        )
+        if use_saved_exclusions
+        else []
     )
     excluded_departments = exclude_args or default_exclusions
     filtered_rows = []
@@ -3816,10 +3830,13 @@ def executive_stats():
     excluded_args = request.args.getlist("exclude")
     group_mode = request.args.get("group", "company")
     date_mode = request.args.get("date_mode", "recovered")
+    parts_dimension = normalize_stats_dimension(request.args.get("parts_dimension", "department"))
+    parts_prev_mode = normalize_prev_period_mode(request.args.get("parts_prev_mode", "mirror"))
     live_enabled = str(request.args.get("live", "")).lower() in {"1", "true", "yes", "on"}
 
     error_message = None
     vehicle_in_status_context = None
+    parts_sold_context = None
     try:
         context = build_vehicle_stats_context(
             filter_type,
@@ -3846,6 +3863,16 @@ def executive_stats():
                 "chart_title_base": "Vehicles IN by Status Group",
                 "group_status_breakdown": group_status_breakdown,
             }
+        parts_sold_context = build_stats_context(
+            filter_type,
+            start_date_str,
+            end_date_str,
+            executive_parts_exclusions(parts_dimension),
+            "parts",
+            parts_dimension,
+            parts_prev_mode,
+            use_saved_exclusions=False,
+        )
     except Exception as exc:
         start_date, end_date = parse_date_filter(
             filter_type, start_date_str, end_date_str
@@ -3868,12 +3895,27 @@ def executive_stats():
             "entity_label": entity_label,
             "chart_title_base": f"Vehicles by {entity_label}",
         }
+        parts_sold_context = {
+            "date_range_label": context["date_range_label"],
+            "rows": [],
+            "sum_total": 0,
+            "sum_total_vat": 0,
+            "stats_dimension": parts_dimension,
+            "prev_mode": parts_prev_mode,
+            "chart_labels": [],
+            "chart_values": [],
+            "entity_label": "Department" if parts_dimension == "department" else "User",
+            "value_label": "Parts Sold",
+            "value_vat_label": "Parts Sold (Prev Period)",
+            "prev_date_range_label": "Prev Period",
+        }
         error_message = f"Unable to load executive stats: {exc}"
 
     return render_template(
         "executive_stats.html",
         **context,
         vehicle_in_status_context=vehicle_in_status_context,
+        parts_sold_context=parts_sold_context,
         live_enabled=live_enabled,
         error_message=error_message,
         active_page="executive_stats",
@@ -4065,6 +4107,8 @@ def executive_stats_data():
     excluded_args = request.args.getlist("exclude")
     group_mode = request.args.get("group", "company")
     date_mode = request.args.get("date_mode", "recovered")
+    parts_dimension = normalize_stats_dimension(request.args.get("parts_dimension", "department"))
+    parts_prev_mode = normalize_prev_period_mode(request.args.get("parts_prev_mode", "mirror"))
 
     resolved_date_mode = normalize_vehicle_date_mode(date_mode)
 
@@ -4096,6 +4140,17 @@ def executive_stats_data():
             "group_status_breakdown": group_status_breakdown,
         }
         
+    parts_sold_context = build_stats_context(
+        filter_type,
+        start_date_str,
+        end_date_str,
+        executive_parts_exclusions(parts_dimension),
+        "parts",
+        parts_dimension,
+        parts_prev_mode,
+        use_saved_exclusions=False,
+    )
+    
     detail_rows = []
     for row in context.get("detail_rows", []):
         detail_rows.append([serialize_vehicle_detail_cell(value) for value in row])
@@ -4113,6 +4168,27 @@ def executive_stats_data():
             "entity_label": context.get("entity_label", "Insurance Company"),
             "chart_title_base": context.get("chart_title_base", "Vehicles by Insurance Company"),
             "contract_company_breakdown": context.get("contract_company_breakdown", {}),
+            "parts_sold": {
+                "date_range_label": parts_sold_context["date_range_label"],
+                "rows": [
+                    {
+                        "label": row[0],
+                        "total": float(row[1]),
+                        "previous_total": float(row[2]),
+                    }
+                    for row in parts_sold_context["rows"]
+                ],
+                "sum_total": parts_sold_context["sum_total"],
+                "sum_total_previous": parts_sold_context["sum_total_vat"],
+                "chart_labels": parts_sold_context["chart_labels"],
+                "chart_values": parts_sold_context["chart_values"],
+                "entity_label": parts_sold_context["entity_label"],
+                "value_label": parts_sold_context["value_label"],
+                "value_vat_label": parts_sold_context["value_vat_label"],
+                "prev_date_range_label": parts_sold_context["prev_date_range_label"],
+                "stats_dimension": parts_sold_context["stats_dimension"],
+                "prev_mode": parts_sold_context["prev_mode"],
+            },
         }
 
     if vehicle_in_status_context:
