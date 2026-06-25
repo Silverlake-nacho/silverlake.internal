@@ -1673,6 +1673,408 @@ def fetch_atlas_table_samples(limit: int = 20):
         except Exception as exc:
             last_error = exc
     raise last_error if last_error else RuntimeError("No Atlas database names configured.")
+    
+
+
+EXPECTED_CRUSH_LOCATION_ID = 11045
+EXPECTED_CRUSH_LOCATION_LABEL = "TOBECRUSHED**"
+
+
+def _normalise_registration_key(registration: Optional[str]) -> str:
+    return re.sub(r"\s+", "", str(registration or "")).upper()
+
+
+def _format_pinnacle_location(location_id, location_bin) -> str:
+    if str(location_id) == str(EXPECTED_CRUSH_LOCATION_ID):
+        return EXPECTED_CRUSH_LOCATION_LABEL
+    if location_bin:
+        return str(location_bin)
+    if location_id is not None:
+        return str(location_id)
+    return ""
+
+
+def _format_atlas_location(location, sub_location) -> str:
+    parts = [str(part).strip() for part in (location, sub_location) if str(part or "").strip()]
+    return " - ".join(parts)
+
+
+def _format_display_datetime(value) -> str:
+    if not value:
+        return ""
+    if isinstance(value, datetime):
+        return value.strftime("%d-%m-%Y %H:%M:%S")
+    if isinstance(value, date):
+        return datetime.combine(value, datetime.min.time()).strftime("%d-%m-%Y %H:%M:%S")
+    try:
+        parsed_value = pd.to_datetime(value)
+    except Exception:
+        return str(value)
+    if pd.isna(parsed_value):
+        return ""
+    return parsed_value.strftime("%d-%m-%Y %H:%M:%S")
+
+
+def _atlas_text_column_expression(columns: set[str], candidates: List[str]) -> str:
+    column_lookup = {column.lower(): column for column in columns}
+    for candidate in candidates:
+        column_name = column_lookup.get(candidate.lower())
+        if column_name:
+            escaped_column = column_name.replace("]", "]]")
+            return f"CAST(v.[{escaped_column}] AS nvarchar(255))"
+    return "CAST(NULL AS nvarchar(255))"
+
+
+def fetch_atlas_scrapped_vehicles(start_date: date, end_date: date):
+    """Return Atlas vehicles scrapped in the date range that are currently scrapped."""
+
+    scrapped_statuses = [
+        "Scrapped",
+        "Scrapped Invent",
+        "Scrapped - Invent",
+    ]
+    last_error = None
+    for database_name in _get_atlas_db_name_candidates():
+        try:
+            conn = get_atlas_db_connection(database_name)
+            cur = conn.cursor()
+            status_expression = _vehicle_status_sql_expression()
+            cur.execute(
+                """
+                SELECT c.name
+                FROM sys.columns c
+                WHERE c.object_id = OBJECT_ID('CT_Vehicles')
+                """
+            )
+            ct_vehicle_columns = {str(row[0]) for row in cur.fetchall()}
+            atlas_location_expression = _atlas_text_column_expression(
+                ct_vehicle_columns,
+                ["Location", "CurrentLocation", "Current Location"],
+            )
+            atlas_sub_location_expression = _atlas_text_column_expression(
+                ct_vehicle_columns,
+                ["SubLocation", "Sub Location", "Sub-location", "Sub_Location"],
+            )
+            query = f"""
+                SELECT
+                    v.Id,
+                    v.RegNo AS Registration,
+                    m.Name AS Manufacturer,
+                    mg.Name AS Model,
+                    CAST(v.ScrappedDate AS datetime2) AS ScrappedDate,
+                    CAST(v.DateEntered AS datetime2) AS DateEntered,
+                    {atlas_location_expression} AS AtlasLocation,
+                    {atlas_sub_location_expression} AS AtlasSubLocation,
+                    {status_expression} AS Status
+                FROM CT_Vehicles v
+                LEFT JOIN PartDataManufacturers m ON v.ManufacturerId = m.Id
+                LEFT JOIN PartDataModelGroups mg ON v.ModelGroupId = mg.Id
+                LEFT JOIN StatusColors stc ON v.StatusEnum = stc.Status
+                WHERE {status_expression} IN (?, ?, ?)
+                  AND NULLIF(LTRIM(RTRIM(COALESCE(v.RegNo, ''))), '') IS NOT NULL
+                  AND CAST(v.ScrappedDate AS datetime2) >= ?
+                  AND CAST(v.ScrappedDate AS datetime2) < ?
+                ORDER BY v.ScrappedDate DESC, v.Id DESC
+            """
+            cur.execute(query, (*scrapped_statuses, start_date, end_date))
+            rows = cur.fetchall()
+            cur.close()
+            conn.close()
+            return database_name, rows
+        except Exception as exc:
+            last_error = exc
+    raise last_error if last_error else RuntimeError("No Atlas database names configured.")
+
+
+def _postgres_column_names(cursor, table_name: str) -> set[str]:
+    cursor.execute(
+        """
+        SELECT column_name
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = %s
+        """,
+        (table_name,),
+    )
+    return {str(row[0]) for row in cursor.fetchall()}
+
+
+def fetch_pinnacle_crush_mismatches(atlas_rows):
+    """Find Atlas scrapped vehicles that are not marked crushed in Pinnacle."""
+
+    atlas_by_reg = {}
+    for row in atlas_rows:
+        reg_key = _normalise_registration_key(row[1])
+        if reg_key and reg_key not in atlas_by_reg:
+            atlas_by_reg[reg_key] = row
+
+    if not atlas_by_reg:
+        return []
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        vehicle_columns = _postgres_column_names(cur, "vehicle")
+        event_columns = _postgres_column_names(cur, "vehicleevent")
+        crushed_expr = "NULL::text"
+        crushed_blank_clause = "TRUE"
+        event_join = ""
+
+        if "crushed" in event_columns:
+            crushed_expr = "ve.crushed::text"
+            crushed_blank_clause = "(ve.crushed IS NULL OR NULLIF(BTRIM(ve.crushed::text), '') IS NULL)"
+
+            if "stocknumber_id" in event_columns and "stocknumber_id" in vehicle_columns:
+                event_join = "LEFT JOIN vehicleevent ve ON ve.stocknumber_id = veh.stocknumber_id"
+            elif "vehicle_id" in event_columns and "vehicle_id" in vehicle_columns:
+                event_join = "LEFT JOIN vehicleevent ve ON ve.vehicle_id = veh.vehicle_id"
+            elif "vehicle_id" in event_columns and "stocknumber_id" in vehicle_columns:
+                event_join = "LEFT JOIN vehicleevent ve ON ve.vehicle_id = veh.stocknumber_id"
+            else:
+                event_join = "LEFT JOIN vehicleevent ve ON FALSE"
+
+        stock_select = "veh.stocknumber_id"
+        location_select = "veh.location_id"
+        reg_select = "veh.regnumber"
+        stock_number_join = ""
+        stock_number_select = "NULL::text AS vstockno"
+        location_join = ""
+        location_bin_select = "NULL::text AS location_bin"
+
+        if "stocknumber_id" in vehicle_columns:
+            stock_number_join = "LEFT JOIN stocknumber st ON st.stocknumber_id = veh.stocknumber_id"
+            stock_number_select = "st.vstockno::text AS vstockno"
+        if "location_id" in vehicle_columns:
+            location_join = "LEFT JOIN location loc ON loc.location_id = veh.location_id"
+            location_bin_select = "loc.bin::text AS location_bin"
+
+        registrations = list(atlas_by_reg.keys())
+        pinnacle_by_reg = {}
+        chunk_size = 500
+        for start in range(0, len(registrations), chunk_size):
+            chunk = registrations[start : start + chunk_size]
+            cur.execute(
+                f"""
+                SELECT
+                    REPLACE(UPPER(COALESCE({reg_select}, '')), ' ', '') AS reg_key,
+                    {stock_select} AS stocknumber_id,
+                    {reg_select} AS regnumber,
+                    {stock_number_select},
+                    {location_select} AS location_id,
+                    {location_bin_select},
+                    {crushed_expr} AS crushed
+                FROM vehicle veh
+                {stock_number_join}
+                {location_join}
+                {event_join}
+                WHERE REPLACE(UPPER(COALESCE({reg_select}, '')), ' ', '') = ANY(%s)
+                  AND {crushed_blank_clause}
+                  AND {location_select} IS DISTINCT FROM %s
+                """,
+                (chunk, EXPECTED_CRUSH_LOCATION_ID),
+            )
+            for row in cur.fetchall():
+                pinnacle_by_reg.setdefault(row[0], row)
+
+        results = []
+        for reg_key, atlas_row in atlas_by_reg.items():
+            pinnacle_row = pinnacle_by_reg.get(reg_key)
+            if not pinnacle_row:
+                continue
+
+            issue_parts = []
+            crushed_value = pinnacle_row[6]
+            location_id = pinnacle_row[4]
+            if crushed_value is None or str(crushed_value).strip() == "":
+                issue_parts.append("Crushed date blank")
+            if str(location_id) != str(EXPECTED_CRUSH_LOCATION_ID):
+                issue_parts.append(f"Location is not {EXPECTED_CRUSH_LOCATION_LABEL}")
+
+            results.append(
+                {
+                    "atlas_id": atlas_row[0],
+                    "registration": atlas_row[1],
+                    "manufacturer": atlas_row[2],
+                    "model": atlas_row[3],
+                    "date_scrapped": _format_display_datetime(atlas_row[4]),
+                    "date_entered": _format_display_datetime(atlas_row[5]),
+                    "atlas_location": atlas_row[6],
+                    "atlas_sub_location": atlas_row[7],
+                    "atlas_location_display": _format_atlas_location(atlas_row[6], atlas_row[7]),
+                    "status": atlas_row[8],
+                    "stocknumber_id": pinnacle_row[1],
+                    "stock_number": pinnacle_row[3],
+                    "location_id": location_id,
+                    "pinnacle_location": _format_pinnacle_location(location_id, pinnacle_row[5]),
+                    "location_bin": pinnacle_row[5],
+                    "expected_location": EXPECTED_CRUSH_LOCATION_LABEL,
+                    "crushed": _format_display_datetime(crushed_value),
+                    "issue": ", ".join(issue_parts) or "Needs review",
+                }
+            )
+        return results
+    finally:
+        cur.close()
+        conn.close()
+
+
+@app.route("/crush_checker", methods=["GET"])
+def crush_checker():
+    filter_type = request.args.get("filter", "today")
+    start_date_str = request.args.get("start_date")
+    end_date_str = request.args.get("end_date")
+    start_date, end_date = parse_date_filter(filter_type, start_date_str, end_date_str)
+    date_range_label = describe_date_range(filter_type, start_date, end_date)
+    end_date_display = end_date - timedelta(days=1) if end_date else None
+
+    error_message = None
+    atlas_database_name = None
+    rows = []
+    total_atlas_scrapped = 0
+    try:
+        atlas_database_name, atlas_rows = fetch_atlas_scrapped_vehicles(start_date, end_date)
+        total_atlas_scrapped = len(atlas_rows)
+        rows = fetch_pinnacle_crush_mismatches(atlas_rows)
+    except Exception as exc:
+        error_message = f"Unable to load Crush Checker: {exc}"
+
+    return render_template(
+        "crush_checker.html",
+        atlas_database_name=atlas_database_name,
+        rows=rows,
+        total_atlas_scrapped=total_atlas_scrapped,
+        filter_type=filter_type,
+        start_date=start_date,
+        end_date=end_date,
+        end_date_display=end_date_display,
+        date_range_label=date_range_label,
+        error_message=error_message,
+        active_page="crush_checker",
+    )
+
+
+@app.route("/crush_checker/download", methods=["GET"])
+def download_crush_checker():
+    filter_type = request.args.get("filter", "today")
+    start_date_str = request.args.get("start_date")
+    end_date_str = request.args.get("end_date")
+    start_date, end_date = parse_date_filter(filter_type, start_date_str, end_date_str)
+
+    _, atlas_rows = fetch_atlas_scrapped_vehicles(start_date, end_date)
+    rows = fetch_pinnacle_crush_mismatches(atlas_rows)
+
+    export_rows = [
+        {
+            "Issue": row.get("issue", ""),
+            "Registration": row.get("registration", ""),
+            "Atlas Status": row.get("status", ""),
+            "Manufacturer": row.get("manufacturer", ""),
+            "Model": row.get("model", ""),
+            "Atlas ID": row.get("atlas_id", ""),
+            "Atlas Scrapped Date": row.get("date_scrapped", ""),
+            "Stock Number": row.get("stock_number", ""),
+            "Pinnacle ID": row.get("stocknumber_id", ""),
+            "Current location (Atlas)": row.get("atlas_location_display", ""),
+            "Pinnacle Location": row.get("pinnacle_location", ""),
+            "Crushed Date": row.get("crushed", ""),
+            "Atlas Date Entered": row.get("date_entered", ""),
+        }
+        for row in rows
+    ]
+    df = pd.DataFrame(
+        export_rows,
+        columns=[
+            "Issue",
+            "Registration",
+            "Atlas Status",
+            "Manufacturer",
+            "Model",
+            "Atlas ID",
+            "Atlas Scrapped Date",
+            "Stock Number",
+            "Pinnacle ID",
+            "Current location (Atlas)",
+            "Pinnacle Location",
+            "Crushed Date",
+            "Atlas Date Entered",
+        ],
+    )
+
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+        df.to_excel(writer, index=False, sheet_name="Crush Checker")
+        workbook = writer.book
+        worksheet = writer.sheets["Crush Checker"]
+        header_format = workbook.add_format({"bold": True, "bg_color": "#5c9c13", "font_color": "#FFFFFF"})
+        for col_idx, column_name in enumerate(df.columns):
+            worksheet.write(0, col_idx, column_name, header_format)
+            worksheet.set_column(col_idx, col_idx, max(len(column_name) + 2, 18))
+        worksheet.freeze_panes(1, 0)
+    output.seek(0)
+
+    filename_start = start_date.strftime("%Y%m%d")
+    filename_end = (end_date - timedelta(days=1)).strftime("%Y%m%d")
+    return send_file(
+        output,
+        download_name=f"crush_checker_{filename_start}_{filename_end}.xlsx",
+        as_attachment=True,
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+
+
+@app.route("/crush_checker/crush", methods=["POST"])
+def crush_checker_crush_selected():
+    raw_vehicle_ids = request.form.getlist("vehicle_ids")
+    vehicle_ids = []
+    for raw_vehicle_id in raw_vehicle_ids:
+        try:
+            vehicle_ids.append(int(raw_vehicle_id))
+        except (TypeError, ValueError):
+            continue
+
+    filter_type = request.form.get("filter", "today")
+    start_date = request.form.get("start_date") or None
+    end_date = request.form.get("end_date") or None
+    redirect_args = {"filter": filter_type}
+    if filter_type == "custom":
+        redirect_args["start_date"] = start_date
+        redirect_args["end_date"] = end_date
+
+    if not vehicle_ids:
+        flash("Please tick at least one vehicle to crush.", "warning")
+        return redirect(url_for("crush_checker", **redirect_args))
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            UPDATE vehicle
+            SET location_id = %s
+            WHERE stocknumber_id = ANY(%s)
+            """,
+            (EXPECTED_CRUSH_LOCATION_ID, vehicle_ids),
+        )
+        updated_count = cur.rowcount
+        conn.commit()
+    finally:
+        cur.close()
+        conn.close()
+
+    user = session.get("username", "unknown")
+    for vehicle_id in vehicle_ids:
+        log_action(
+            "CRUSH_CHECKER_CRUSH",
+            user,
+            None,
+            str(vehicle_id),
+            None,
+            EXPECTED_CRUSH_LOCATION_LABEL,
+            "CRUSHED SUCCESSFULLY",
+        )
+    flash(f"✅ Updated {updated_count} selected vehicle(s) to {EXPECTED_CRUSH_LOCATION_LABEL}.", "success")
+    return redirect(url_for("crush_checker", **redirect_args))
 
 @app.route("/crush_vehicles", methods=["GET", "POST"])
 def crush_vehicles():
