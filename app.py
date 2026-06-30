@@ -2686,9 +2686,9 @@ def fetch_stores_timeline_users(start_date: date, end_date: date) -> List[str]:
     return [row[0] for row in rows]
 
 def fetch_parts_breakdown(
-    entity_value: str, start_date: date, end_date: date, dimension: str
-) -> List[Tuple[str, int]]:
-    """Return itemname counts for the given department or user."""
+    entity_value: Optional[str], start_date: date, end_date: date, dimension: str
+) -> List[Tuple[str, int, float]]:
+    """Return itemname counts and average sold price for the given department/user, or all entities."""
 
     conn = get_db_connection()
     cur = conn.cursor()
@@ -2698,24 +2698,30 @@ def fetch_parts_breakdown(
         LEFT JOIN invoice inv ON inv.invoice_id = sold.invoice_id
         LEFT JOIN itemtype it ON it.itemtype_id = sold.itemtype_id
     """
-    filter_clause = "COALESCE(inv.departmentname, 'Unknown') = %s"
-    params = [start_date, end_date, entity_value]
+    filter_clause = ""
+    params = [start_date, end_date]
+
+    if entity_value:
+        filter_clause = "AND COALESCE(inv.departmentname, 'Unknown') = %s"
+        params.append(entity_value)
 
     if dimension_key == "user":
         joins += " LEFT JOIN pinuser us ON us.user_id = inv.whocreated_id"
-        filter_clause = "COALESCE(us.shortname, 'Unknown') = %s"
+        if entity_value:
+            filter_clause = "AND COALESCE(us.shortname, 'Unknown') = %s"
 
     cur.execute(
         f"""
         SELECT
             COALESCE(REPLACE(REPLACE(REPLACE(it.itemname, '[', ''), ']', ''), '_', ' '), 'Unknown') AS itemname,
-            COUNT(sold.invnumber) AS parts_sold
+            COUNT(sold.invnumber) AS parts_sold,
+            COALESCE(AVG(sold.soldprice), 0) AS average_sold_price
         FROM sold
         {joins}
         WHERE sold.issold
           AND solddate >= %s
           AND solddate < %s
-          AND {filter_clause}
+          {filter_clause}
         GROUP BY itemname
         ORDER BY parts_sold DESC, itemname
         """,
@@ -2725,7 +2731,7 @@ def fetch_parts_breakdown(
     rows = cur.fetchall()
     cur.close()
     conn.close()
-    return [(row[0], int(row[1])) for row in rows]
+    return [(row[0], int(row[1]), float(row[2] or 0)) for row in rows]
 
 
 INVENTORY_ITEMNAME_EXPR = (
@@ -2793,19 +2799,26 @@ def fetch_inventory_item_monthly_totals(
     end_date: date,
     exclude_oncar: bool,
     with_images: bool,
-) -> List[Tuple[date, int, float]]:
+) -> List[Tuple[date, int, int, int, int, float]]:
     conn = get_db_connection()
     cur = conn.cursor()
-    filters = [
+    inventory_filters = [
         "inv.invdate >= %s",
         "inv.invdate < %s",
         f"{INVENTORY_ITEMNAME_EXPR} = %s",
     ]
-    params: List[object] = [start_date, end_date, itemname]
+    sold_filters = [
+        "sold.invdate >= %s",
+        "sold.invdate < %s",
+        f"{INVENTORY_ITEMNAME_EXPR} = %s",
+    ]
+    inventory_params: List[object] = [start_date, end_date, itemname]
+    sold_params: List[object] = [start_date, end_date, itemname]
     if exclude_oncar:
-        filters.append("COALESCE(inv.oncar, false) = false")
+        inventory_filters.append("COALESCE(inv.oncar, false) = false")
+        sold_filters.append("COALESCE(sold.oncar, false) = false")
     if with_images:
-        filters.append(
+        inventory_filters.append(
             """
             EXISTS (
                 SELECT 1
@@ -2814,26 +2827,133 @@ def fetch_inventory_item_monthly_totals(
             )
             """
         )
+        sold_filters.append(
+            """
+            EXISTS (
+                SELECT 1
+                FROM image img
+                WHERE img.invnumber = sold.invnumber
+            )
+            """
+        )
+
+    cur.execute(
+        f"""
+        WITH monthly_parts AS (
+            SELECT
+                DATE_TRUNC('month', inv.invdate)::date AS month_start,
+                COUNT(inv.invnumber) AS inventory_count,
+                0 AS sold_count,
+                0 AS deleted_count,
+                COALESCE(SUM(COALESCE(inv.price, 0)), 0) AS inventory_value
+            FROM inventory inv
+            LEFT JOIN itemtype it ON it.itemtype_id = inv.itemtype_id
+            WHERE {" AND ".join(inventory_filters)}
+            GROUP BY month_start
+
+            UNION ALL
+
+            SELECT
+                DATE_TRUNC('month', sold.invdate)::date AS month_start,
+                0 AS inventory_count,
+                COUNT(sold.invnumber) FILTER (WHERE sold.issold) AS sold_count,
+                COUNT(sold.invnumber) FILTER (WHERE NOT sold.issold) AS deleted_count,
+                0 AS inventory_value
+            FROM sold
+            LEFT JOIN itemtype it ON it.itemtype_id = sold.itemtype_id
+            WHERE {" AND ".join(sold_filters)}
+            GROUP BY month_start
+        )
+        SELECT
+            month_start,
+            COALESCE(SUM(inventory_count), 0) AS inventory_count,
+            COALESCE(SUM(sold_count), 0) AS sold_count,
+            COALESCE(SUM(deleted_count), 0) AS deleted_count,
+            COALESCE(SUM(inventory_count + sold_count + deleted_count), 0) AS item_count,
+            COALESCE(SUM(inventory_value), 0) AS total_value
+        FROM monthly_parts
+        GROUP BY month_start
+        ORDER BY month_start
+        """,
+        inventory_params + sold_params,
+    )
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    return [(row[0], int(row[1]), int(row[2]), int(row[3]), int(row[4]), float(row[5])) for row in rows]
+
+
+def fetch_inventory_item_monthly_parts(
+    itemname: str,
+    year: int,
+    month: int,
+    section: str,
+    exclude_oncar: bool,
+    with_images: bool,
+) -> List[dict]:
+    start_month = date(year, month, 1)
+    end_month = shift_month(start_month, 1)
+    source_alias = "inv" if section == "inventory" else "sold"
+    source_table = "inventory inv" if section == "inventory" else "sold"
+    filters = [
+        f"{source_alias}.invdate >= %s",
+        f"{source_alias}.invdate < %s",
+        f"{INVENTORY_ITEMNAME_EXPR} = %s",
+    ]
+    params: List[object] = [start_month, end_month, itemname]
+    if section == "sold":
+        filters.append("sold.issold")
+    elif section == "deleted":
+        filters.append("NOT sold.issold")
+    elif section != "inventory":
+        return []
+    if exclude_oncar:
+        filters.append(f"COALESCE({source_alias}.oncar, false) = false")
+    if with_images:
+        filters.append(
+            f"""
+            EXISTS (
+                SELECT 1
+                FROM image img
+                WHERE img.invnumber = {source_alias}.invnumber
+            )
+            """
+        )
+
+    conn = get_db_connection()
+    cur = conn.cursor()
     cur.execute(
         f"""
         SELECT
-            DATE_TRUNC('month', inv.invdate)::date AS month_start,
-            COUNT(inv.invnumber) AS item_count,
-            COALESCE(SUM(COALESCE(inv.price, 0)), 0) AS total_value
-        FROM inventory inv
-        LEFT JOIN itemtype it ON it.itemtype_id = inv.itemtype_id
+            {source_alias}.invdate,
+            COALESCE({source_alias}.tag, '') AS tag,
+            {INVENTORY_ITEMNAME_EXPR} AS itemname,
+            COALESCE(row_to_json({source_alias})->>'make', '') AS make,
+            COALESCE(row_to_json({source_alias})->>'model', '') AS model,
+            COALESCE({source_alias}.price, 0) AS price
+        FROM {source_table}
+        LEFT JOIN itemtype it ON it.itemtype_id = {source_alias}.itemtype_id
         WHERE {" AND ".join(filters)}
-        GROUP BY month_start
-        ORDER BY month_start
+        ORDER BY {source_alias}.invdate, {source_alias}.tag
         """,
         params,
     )
     rows = cur.fetchall()
     cur.close()
     conn.close()
-    return [(row[0], int(row[1]), float(row[2])) for row in rows]
-
-
+    return [
+        {
+            "invdate": row[0].isoformat() if row[0] else "",
+            "tag": row[1] or "",
+            "itemname": row[2] or "",
+            "make": row[3] or "",
+            "model": row[4] or "",
+            "price": float(row[5] or 0),
+        }
+        for row in rows
+    ]
+    
+    
 def fetch_inventory_item_daily_totals(
     itemname: str,
     start_date: date,
@@ -3481,6 +3601,30 @@ def shift_one_year_back(value: date) -> date:
         return value.replace(year=value.year - 1, day=28)
 
 
+def get_previous_period(start_date: date, end_date: date, prev_mode: str) -> Tuple[date, date, date]:
+    resolved_prev_mode = normalize_prev_period_mode(prev_mode)
+    if resolved_prev_mode == "month":
+        if is_complete_calendar_year(start_date, end_date):
+            prev_end = start_date
+            prev_start = shift_one_year_back(start_date)
+            prev_inclusive_end = prev_end - timedelta(days=1)
+        elif is_complete_calendar_month(start_date, end_date):
+            prev_end = start_date
+            prev_start = shift_one_month_back(start_date)
+            prev_inclusive_end = prev_end - timedelta(days=1)
+        else:
+            inclusive_end = end_date - timedelta(days=1)
+            prev_start = shift_one_month_back(start_date)
+            prev_inclusive_end = shift_one_month_back(inclusive_end)
+            prev_end = prev_inclusive_end + timedelta(days=1)
+    else:
+        range_delta = end_date - start_date
+        prev_end = start_date
+        prev_start = start_date - range_delta
+        prev_inclusive_end = prev_end - timedelta(days=1)
+    return prev_start, prev_end, prev_inclusive_end
+
+
 def build_stats_context(
     filter_type: str,
     start_date_str: str,
@@ -3517,25 +3661,9 @@ def build_stats_context(
 
     rows = fetch_rows(start_date, end_date)
     resolved_prev_mode = normalize_prev_period_mode(prev_mode)
-    if resolved_prev_mode == "month":
-        if is_complete_calendar_year(start_date, end_date):
-            prev_end = start_date
-            prev_start = shift_one_year_back(start_date)
-            prev_inclusive_end = prev_end - timedelta(days=1)
-        elif is_complete_calendar_month(start_date, end_date):
-            prev_end = start_date
-            prev_start = shift_one_month_back(start_date)
-            prev_inclusive_end = prev_end - timedelta(days=1)
-        else:
-            inclusive_end = end_date - timedelta(days=1)
-            prev_start = shift_one_month_back(start_date)
-            prev_inclusive_end = shift_one_month_back(inclusive_end)
-            prev_end = prev_inclusive_end + timedelta(days=1)
-    else:
-        range_delta = end_date - start_date
-        prev_end = start_date
-        prev_start = start_date - range_delta
-        prev_inclusive_end = prev_end - timedelta(days=1)
+    prev_start, prev_end, prev_inclusive_end = get_previous_period(
+        start_date, end_date, resolved_prev_mode
+    )
     prev_date_range_label = (
         f"Prev Period ({prev_start.strftime('%d/%m/%Y')} - {prev_inclusive_end.strftime('%d/%m/%Y')})"
         if prev_start != prev_inclusive_end
@@ -4615,6 +4743,44 @@ def executive_stats_data():
     return jsonify(payload)
 
 
+@app.route("/executive_stats/parts_breakdown", methods=["GET"])
+def executive_stats_parts_breakdown():
+    filter_type = request.args.get("filter", "today")
+    start_date_str = request.args.get("start_date")
+    end_date_str = request.args.get("end_date")
+    dimension = normalize_stats_dimension(request.args.get("dimension", "department"))
+    prev_mode = normalize_prev_period_mode(request.args.get("parts_prev_mode", "mirror"))
+    period = "previous" if request.args.get("period") == "previous" else "current"
+    entity_value = request.args.get("entity")
+
+    start_date, end_date = parse_date_filter(filter_type, start_date_str, end_date_str)
+    if period == "previous":
+        start_date, end_date, inclusive_end = get_previous_period(start_date, end_date, prev_mode)
+        date_range_label = (
+            f"Prev Period ({start_date.strftime('%d/%m/%Y')} - {inclusive_end.strftime('%d/%m/%Y')})"
+            if start_date != inclusive_end
+            else f"Prev Period ({start_date.strftime('%d/%m/%Y')})"
+        )
+    else:
+        date_range_label = describe_date_range(filter_type, start_date, end_date)
+    rows = fetch_parts_breakdown(entity_value, start_date, end_date, dimension)
+    total = sum(row[1] for row in rows)
+
+    return jsonify(
+        {
+            "entity": entity_value,
+            "dimension": dimension,
+            "date_range_label": date_range_label,
+            "period": period,
+            "items": [
+                {"itemname": row[0], "count": row[1], "average_sold_price": row[2]}
+                for row in rows
+            ],
+            "total": total,
+        }
+    )
+    
+    
 @app.route("/image_stats/data", methods=["GET"])
 def image_stats_data():
     filter_type = request.args.get("filter", "this_month")
@@ -4673,7 +4839,10 @@ def stats_parts_breakdown():
             "entity": entity_value,
             "dimension": dimension,
             "date_range_label": date_range_label,
-            "items": [{"itemname": row[0], "count": row[1]} for row in rows],
+            "items": [
+                {"itemname": row[0], "count": row[1], "average_sold_price": row[2]}
+                for row in rows
+            ],
             "total": total,
         }
     )
@@ -4857,28 +5026,85 @@ def inventory_item_monthly(itemname):
         exclude_oncar,
         with_images,
     )
-    row_map = {(row[0].year, row[0].month): (row[1], row[2]) for row in rows}
+    row_map = {
+        (row[0].year, row[0].month): {
+            "inventory": row[1],
+            "sold": row[2],
+            "deleted": row[3],
+            "count": row[4],
+            "value": row[5],
+        }
+        for row in rows
+    }
 
     labels = []
     values = []
+    inventory_values = []
+    sold_values = []
+    deleted_values = []
     month_keys = []
     for idx in range(12):
         month_start = shift_month(start_month, idx)
         month_key = (month_start.year, month_start.month)
-        count_value, total_value = row_map.get(month_key, (0, 0.0))
+        totals = row_map.get(
+            month_key,
+            {"inventory": 0, "sold": 0, "deleted": 0, "count": 0, "value": 0.0},
+        )
         labels.append(month_start.strftime("%b %Y"))
-        values.append(float(total_value if mode == "value" else count_value))
+        values.append(float(totals["value"] if mode == "value" else totals["count"]))
+        inventory_values.append(int(totals["inventory"]))
+        sold_values.append(int(totals["sold"]))
+        deleted_values.append(int(totals["deleted"]))
         month_keys.append({"year": month_start.year, "month": month_start.month})
 
     return jsonify(
         {
             "labels": labels,
             "values": values,
+            "inventory_values": inventory_values,
+            "sold_values": sold_values,
+            "deleted_values": deleted_values,
             "month_keys": month_keys,
             "start_label": start_month.strftime("%b %Y"),
             "end_label": end_month.strftime("%b %Y"),
         }
     )
+
+
+@app.route("/inventory_stats/item/<path:itemname>/parts", methods=["GET"])
+def inventory_item_parts(itemname):
+    section = str(request.args.get("section", "inventory")).lower()
+    exclude_oncar = str(request.args.get("exclude_oncar", "")).lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    with_images = str(request.args.get("with_images", "")).lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    try:
+        month = int(request.args.get("month", date.today().month))
+        year = int(request.args.get("year", date.today().year))
+    except ValueError:
+        today = date.today()
+        month = today.month
+        year = today.year
+    if month < 1 or month > 12:
+        month = date.today().month
+
+    parts = fetch_inventory_item_monthly_parts(
+        itemname,
+        year,
+        month,
+        section,
+        exclude_oncar,
+        with_images,
+    )
+    return jsonify({"parts": parts, "section": section, "year": year, "month": month})
 
 
 @app.route("/inventory_stats/item/<path:itemname>/daily", methods=["GET"])
