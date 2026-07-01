@@ -117,6 +117,18 @@ def persist_stats_exclusions(user: Optional[str], dimension: str, exclusions: Li
         json.dump(store, f)
 
 
+def load_image_timeline_verified() -> set:
+    raw_data = _load_json_file(IMAGE_TIMELINE_VERIFIED_PATH, [])
+    if not isinstance(raw_data, list):
+        return set()
+    return {str(item) for item in raw_data if str(item)}
+
+
+def persist_image_timeline_verified(verified_parts: set) -> None:
+    with open(IMAGE_TIMELINE_VERIFIED_PATH, "w", encoding="utf-8") as f:
+        json.dump(sorted(str(item) for item in verified_parts), f)
+        
+        
 def fetch_auction_slides() -> Tuple[List[dict], Optional[str]]:
     try:
         response = requests.get(
@@ -302,6 +314,7 @@ app.secret_key = 'your_super_secret_key_here'
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DEPARTMENT_ORDER_PATH = os.path.join(BASE_DIR, "department_order.json")
 STATS_EXCLUSIONS_PATH = os.path.join(BASE_DIR, "stats_exclusions.json")
+IMAGE_TIMELINE_VERIFIED_PATH = os.path.join(BASE_DIR, "image_timeline_verified.json")
 AUCTIONS_URL = "https://www.salvagemarket.co.uk/Search?auction[]=&bucketDetails=&bucketId=&damageCategory[]=&distance[]=&editorPickSearch=0&freeSubscriptionOnly=false&fuelType[]=&latitude=0&longitude=0&make[]=&model[]=&orderBy=1&pageNumber=0&pageSize=20&quickSearch=0&searchText=&seller[]=ca35a24f-c044-420d-9c1b-9aa05beb8e96&startDrive[]=&transmissionType[]=&year[]="
 
 @app.context_processor
@@ -4095,6 +4108,7 @@ def build_image_timeline_context(
     date_range_label = describe_date_range(filter_type, start_date, end_date)
 
     raw_items = fetch_image_timeline(start_date, end_date)
+    verified_parts = load_image_timeline_verified()
     current_user = session.get("username")
     default_exclusions = load_stats_exclusions(current_user, "user")
     excluded_users = exclude_args or default_exclusions
@@ -4129,6 +4143,8 @@ def build_image_timeline_context(
                 bucket_counts[bucket] += 1
                 day_items.append(
                     {
+                        "invnumber": str(item["invnumber"]),
+                        "verified": str(item["invnumber"]) in verified_parts,
                         "thumb_url": item["thumb_url"],
                         "full_urls": item["full_urls"],
                         "preview_urls": item["preview_urls"],
@@ -4534,6 +4550,25 @@ def image_timeline():
         **context,
         active_page="image_timeline",
     )
+
+
+@app.route("/image_timeline/verified", methods=["POST"])
+def save_image_timeline_verified():
+    data = request.get_json(silent=True) or {}
+    invnumber = str(data.get("invnumber", "")).strip()
+    verified = bool(data.get("verified"))
+
+    if not invnumber:
+        return jsonify({"error": "Missing part identifier"}), 400
+
+    verified_parts = load_image_timeline_verified()
+    if verified:
+        verified_parts.add(invnumber)
+    else:
+        verified_parts.discard(invnumber)
+    persist_image_timeline_verified(verified_parts)
+
+    return jsonify({"status": "saved", "invnumber": invnumber, "verified": verified})
 
 
 @app.route("/stores_timeline", methods=["GET"])
