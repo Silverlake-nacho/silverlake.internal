@@ -3051,6 +3051,72 @@ def is_complete_calendar_year(start_date: date, end_date: date) -> bool:
     return start_date.month == 1 and start_date.day == 1 and end_date == date(start_date.year + 1, 1, 1)
 
 
+
+def fetch_total_monthly_totals(
+    start_date: date, end_date: date, excluded_departments: List[str] | None = None
+) -> List[Tuple[int, int, float]]:
+    excluded_departments = excluded_departments or []
+    params: List[object] = [start_date, end_date]
+    exclusion_clause = ""
+    if excluded_departments:
+        exclusion_clause = "AND COALESCE(departmentname, 'Unknown') <> ALL(%s)"
+        params.append(excluded_departments)
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute(
+        f"""
+        SELECT EXTRACT(YEAR FROM datecreated)::int AS year,
+               EXTRACT(MONTH FROM datecreated)::int AS month,
+               SUM(total) AS sum_total
+        FROM invoice
+        WHERE datecreated >= %s
+          AND datecreated < %s
+          {exclusion_clause}
+        GROUP BY year, month
+        ORDER BY year, month
+        """,
+        tuple(params),
+    )
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    return rows
+
+
+def fetch_total_parts_monthly_totals(
+    start_date: date, end_date: date, excluded_departments: List[str] | None = None
+) -> List[Tuple[int, int, float]]:
+    excluded_departments = excluded_departments or []
+    params: List[object] = [start_date, end_date]
+    exclusion_clause = ""
+    if excluded_departments:
+        exclusion_clause = "AND COALESCE(inv.departmentname, 'Unknown') <> ALL(%s)"
+        params.append(excluded_departments)
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute(
+        f"""
+        SELECT EXTRACT(YEAR FROM solddate)::int AS year,
+               EXTRACT(MONTH FROM solddate)::int AS month,
+               COUNT(sold.invnumber) AS parts_sold
+        FROM sold
+        LEFT JOIN invoice inv ON inv.invoice_id = sold.invoice_id
+        WHERE solddate >= %s
+          AND solddate < %s
+          AND sold.issold
+          {exclusion_clause}
+        GROUP BY year, month
+        ORDER BY year, month
+        """,
+        tuple(params),
+    )
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    return rows
+    
 def fetch_department_monthly_totals(
     department: str, year_or_start: date | int, end_date: date | None = None
 ) -> List[Tuple[int, int, float]]:
@@ -4112,6 +4178,10 @@ def build_image_timeline_context(
     current_user = session.get("username")
     default_exclusions = load_stats_exclusions(current_user, "user")
     excluded_users = exclude_args or default_exclusions
+    
+    stats_image_counts = dict(fetch_user_images(start_date, end_date))
+    stats_part_counts = dict(fetch_user_parts_imaged(start_date, end_date))
+    
     raw_items = [item for item in raw_items if item["user"] not in excluded_users]
     raw_items = sorted(raw_items, key=lambda item: (item["user"], item["created"]))
     all_users = fetch_timeline_users(start_date, end_date)
@@ -4123,9 +4193,8 @@ def build_image_timeline_context(
 
     timeline_users = []
     for user in sorted(grouped.keys()):
-        user_items = [item for day_items in grouped[user].values() for item in day_items]
-        part_count = len({item["invnumber"] for item in user_items})
-        image_count = sum(len(item["full_urls"]) for item in user_items)
+        image_count = stats_image_counts.get(user, 0)
+        part_count = stats_part_counts.get(user, 0)
         days = []
         for day in sorted(grouped[user].keys()):
             bucket_counts = defaultdict(int)
@@ -4913,14 +4982,88 @@ def save_image_user_order():
     return jsonify({"status": "saved", "order": normalized_order})
 
 
+
+@app.route("/stats/total/monthly", methods=["GET"])
+def stats_total_monthly():
+    today = date.today()
+    try:
+        window_offset = max(0, int(request.args.get("offset", "0")))
+    except ValueError:
+        window_offset = 0
+
+    current_month_start = date(today.year, today.month, 1)
+    end_window_month = shift_month(current_month_start, -(window_offset * 12))
+    start_month = end_window_month
+    for _ in range(11):
+        start_month = shift_one_month_back(start_month)
+    end_month = shift_one_month_forward(end_window_month)
+
+    mode = normalize_stats_mode(request.args.get("mode", "sales"))
+    dimension = normalize_stats_dimension(request.args.get("dimension", "department"))
+    exclude_args = request.args.getlist("exclude")
+    current_user = session.get("username")
+    default_exclusions = load_stats_exclusions(
+        current_user, "department" if dimension == "department" else "user"
+    )
+    excluded_entities = exclude_args or default_exclusions
+
+    if dimension == "user":
+        # User totals already aggregate across all departments shown on this page.
+        rows = (
+            fetch_total_parts_monthly_totals(start_month, end_month, [])
+            if mode == "parts"
+            else fetch_total_monthly_totals(start_month, end_month, [])
+        )
+    else:
+        rows = (
+            fetch_total_parts_monthly_totals(start_month, end_month, excluded_entities)
+            if mode == "parts"
+            else fetch_total_monthly_totals(start_month, end_month, excluded_entities)
+        )
+
+    row_map = {(int(year), int(month)): float(total) for year, month, total in rows}
+
+    labels = []
+    values = []
+    months = []
+    years = []
+    month_cursor = start_month
+    while month_cursor <= end_window_month:
+        year = month_cursor.year
+        month = month_cursor.month
+        labels.append(month_cursor.strftime("%b %Y"))
+        values.append(row_map.get((year, month), 0.0))
+        months.append(month)
+        years.append(year)
+        month_cursor = shift_one_month_forward(month_cursor)
+
+    return jsonify(
+        {
+            "labels": labels,
+            "values": values,
+            "months": months,
+            "years": years,
+            "start_month": start_month.isoformat(),
+            "end_month": end_window_month.isoformat(),
+            "offset": window_offset,
+        }
+    )
+
+
 @app.route("/stats/department/<path:department>/monthly", methods=["GET"])
 def stats_department_monthly(department):
     today = date.today()
+    try:
+        window_offset = max(0, int(request.args.get("offset", "0")))
+    except ValueError:
+        window_offset = 0
+
     current_month_start = date(today.year, today.month, 1)
-    start_month = current_month_start
+    end_window_month = shift_month(current_month_start, -(window_offset * 12))
+    start_month = end_window_month
     for _ in range(11):
         start_month = shift_one_month_back(start_month)
-    end_month = shift_one_month_forward(current_month_start)
+    end_month = shift_one_month_forward(end_window_month)
     mode = normalize_stats_mode(request.args.get("mode", "sales"))
     dimension = normalize_stats_dimension(request.args.get("dimension", "department"))
     if dimension == "user":
@@ -4952,7 +5095,7 @@ def stats_department_monthly(department):
     months = []
     years = []
     month_cursor = start_month
-    while month_cursor <= current_month_start:
+    while month_cursor <= end_window_month:
         year = month_cursor.year
         month = month_cursor.month
         labels.append(month_cursor.strftime("%b %Y"))
@@ -4968,9 +5111,11 @@ def stats_department_monthly(department):
             "months": months,
             "years": years,
             "start_month": start_month.isoformat(),
-            "end_month": current_month_start.isoformat(),
+            "end_month": end_window_month.isoformat(),
+            "offset": window_offset,
         }
     )
+
 
 
 @app.route("/image_stats/user/<path:user>/monthly", methods=["GET"])
