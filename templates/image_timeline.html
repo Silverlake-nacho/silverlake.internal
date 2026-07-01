@@ -251,6 +251,34 @@
         cursor: pointer;
         text-align: center;
       }
+      .timeline-verified-badge {
+        position: absolute;
+        left: -8px;
+        bottom: 30px;
+        display: none;
+        width: 24px;
+        height: 24px;
+        align-items: center;
+        justify-content: center;
+        border-radius: 50%;
+        background: #198754;
+        color: #fff;
+        font-size: 0.95rem;
+        font-weight: 800;
+        border: 2px solid #fff;
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+        z-index: 2;
+      }
+      .timeline-item.is-verified .timeline-verified-badge {
+        display: flex;
+      }
+      .timeline-item.is-verified .timeline-marker {
+        border-top-color: #0b3d0b;
+      }
+      .timeline-item.is-verified .timeline-thumb {
+        border-color: #0b3d0b;
+        box-shadow: 0 6px 14px rgba(11, 61, 11, 0.35);
+      }
       .timeline-marker {
         position: relative;
         width: 0;
@@ -331,6 +359,11 @@
       .zoom-controls input[type="range"] {
         max-width: 200px;
       }
+      .image-verified-control {
+        display: flex;
+        justify-content: flex-end;
+        padding-top: 0.75rem;
+      }
       .exclusion-card .exclusion-body {
         display: none;
       }
@@ -382,10 +415,14 @@
           <img src="{{ url_for('static', filename='SLK Logo.png') }}" alt="Silverlake Collapsed Logo" class="logo-collapsed">
           <img src="{{ url_for('static', filename='logo-slg-strip.svg') }}" alt="Silverlake Logo" class="logo-expanded">
         </div>
-        <div class="nav-section">
+                <div class="nav-section">
           <a href="{{ url_for('index') }}" class="nav-link{% if active_page == 'index' %} active{% endif %}">
             <i class="fas fa-magnifying-glass-dollar"></i>
             <span class="link-text">Opportunity Finder</span>
+          </a>
+          <a href="{{ url_for('image_lookup') }}" class="nav-link{% if active_page == 'image_lookup' %} active{% endif %}">
+            <i class="fas fa-image"></i>
+            <span class="link-text">Image Lookup</span>
           </a>
           <a href="{{ url_for('image_stats') }}" class="nav-link{% if active_page == 'image_stats' %} active{% endif %}">
             <i class="fas fa-chart-pie"></i>
@@ -407,13 +444,13 @@
             <i class="fas fa-boxes-stacked"></i>
             <span class="link-text">Inventory Stats</span>
           </a>
-          <a href="{{ url_for('crush_vehicles') }}" class="nav-link{% if active_page == 'crush_vehicles' %} active{% endif %}">
-            <i class="fas fa-car-burst"></i>
-            <span class="link-text">Crush Vehicles</span>
+          <a href="{{ url_for('vehicle_stats') }}" class="nav-link{% if active_page == 'vehicle_stats' %} active{% endif %}">
+            <i class="fas fa-car-side"></i>
+            <span class="link-text">Vehicle Stats</span>
           </a>
-          <a href="{{ url_for('logs') }}" class="nav-link{% if active_page == 'logs' %} active{% endif %}">
-            <i class="fas fa-clipboard-list"></i>
-            <span class="link-text">Logs</span>
+          <a href="{{ url_for('executive_stats') }}" class="nav-link{% if active_page == 'executive_stats' %} active{% endif %}">
+            <i class="fas fa-gauge-high"></i>
+            <span class="link-text">Executive Stats</span>
           </a>
         </div>
         <div class="sidebar-footer">
@@ -542,11 +579,12 @@
                               </div>
                               <div class="timeline-track">
                                 {% for item in day["items"] %}
-                                  <button type="button" class="timeline-item" style="left: {{ item.position }}%; --stack-offset: {{ item.stack_index * 14 }}px;" data-bs-toggle="modal" data-bs-target="#imageModal" data-images='{{ item.full_urls|tojson }}' data-tag="{{ item.tag }}" data-time="{{ item.time_label }}" title="{{ item.time_label }} - Tag {{ item.tag }}">
+                                  <button type="button" class="timeline-item{% if item.verified %} is-verified{% endif %}" style="left: {{ item.position }}%; --stack-offset: {{ item.stack_index * 14 }}px;" data-bs-toggle="modal" data-bs-target="#imageModal" data-images='{{ item.full_urls|tojson }}' data-invnumber="{{ item.invnumber }}" data-tag="{{ item.tag }}" data-time="{{ item.time_label }}" data-verified="{{ 'true' if item.verified else 'false' }}" title="{{ item.time_label }} - Tag {{ item.tag }}">
                                     <div class="timeline-marker timeline-marker--{{ item.status }}">
                                       <span class="timeline-time">{{ item.time_label }}</span>
                                       <span class="timeline-tag">{{ item.tag }}</span>
                                     </div>
+                                    <span class="timeline-verified-badge" aria-label="Verified">✓</span>
                                     <img src="{{ item.thumb_url }}" alt="Thumbnail {{ item.tag }}" class="timeline-thumb">
                                     <div class="timeline-preview-strip">
                                       {% for preview_url in item.preview_urls %}
@@ -595,6 +633,12 @@
               </button>
             </div>
             <div class="modal-preview-strip" id="imageCarouselPreviews"></div>
+            <div class="image-verified-control">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="imageVerifiedCheckbox">
+                <label class="form-check-label fw-bold text-success" for="imageVerifiedCheckbox">Verified</label>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -605,7 +649,9 @@
       const imageModal = document.getElementById('imageModal');
       const carouselInner = document.getElementById('imageCarouselInner');
       const carouselPreviews = document.getElementById('imageCarouselPreviews');
+      const verifiedCheckbox = document.getElementById('imageVerifiedCheckbox');
       let carouselInstance = null;
+	  let activeTimelineButton = null;
 
       document.querySelectorAll('[data-zoom-controls]').forEach((controls) => {
         const zoomRange = controls.querySelector('[data-zoom-range]');
@@ -648,6 +694,8 @@
         const tag = button.getAttribute('data-tag');
         const time = button.getAttribute('data-time');
         const images = JSON.parse(button.getAttribute('data-images') || '[]');
+        activeTimelineButton = button;
+        verifiedCheckbox.checked = button.getAttribute('data-verified') === 'true';
         const modalTitle = imageModal.querySelector('.modal-title');
         modalTitle.textContent = `Tag ${tag} · ${time}`;
 
@@ -679,6 +727,36 @@
         carouselInstance = new bootstrap.Carousel(document.getElementById('imageCarousel'));
       });
 
+      verifiedCheckbox.addEventListener('change', async (event) => {
+        if (!activeTimelineButton) return;
+
+        const verified = event.target.checked;
+        const invnumber = activeTimelineButton.getAttribute('data-invnumber');
+        event.target.disabled = true;
+
+        try {
+          const response = await fetch('{{ url_for("save_image_timeline_verified") }}', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ invnumber, verified }),
+          });
+
+          if (!response.ok) {
+            throw new Error('Unable to save verified status');
+          }
+
+          document.querySelectorAll(`[data-invnumber="${CSS.escape(invnumber)}"]`).forEach((button) => {
+            button.setAttribute('data-verified', String(verified));
+            button.classList.toggle('is-verified', verified);
+          });
+        } catch (error) {
+          event.target.checked = !verified;
+          window.alert('The verified status could not be saved. Please try again.');
+        } finally {
+          event.target.disabled = false;
+        }
+      });
+	  
       const previewToggle = document.getElementById('previewToggle');
       if (previewToggle) {
         const storedPreviewState = localStorage.getItem('timelinePreviewEnabled');
