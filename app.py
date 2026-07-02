@@ -80,6 +80,9 @@ def _normalise_exclusion_store(raw_data) -> dict:
                 "insurance_company": [
                     str(item) for item in payload.get("insurance_company", [])
                 ],
+                "purchase_insurance_company": [
+                    str(item) for item in payload.get("purchase_insurance_company", [])
+                ],
             }
     return normalised
 
@@ -110,7 +113,13 @@ def persist_stats_exclusions(user: Optional[str], dimension: str, exclusions: Li
     store = _normalise_exclusion_store(raw_data)
     key = user or "__default__"
     user_entry = store.setdefault(
-        key, {"department": [], "user": [], "insurance_company": []}
+        key,
+        {
+            "department": [],
+            "user": [],
+            "insurance_company": [],
+            "purchase_insurance_company": [],
+        },
     )
     user_entry[dimension] = [str(item) for item in exclusions]
     with open(STATS_EXCLUSIONS_PATH, "w", encoding="utf-8") as f:
@@ -1241,7 +1250,7 @@ def normalize_vehicle_group_mode(group_mode: str) -> str:
 
 
 def fetch_atlas_vehicle_counts_by_insurance(
-    start_date: date, end_date: date, date_mode: str
+    start_date: date, end_date: date, date_mode: str, contract_group_filter: Optional[str] = None
 ):
     last_error = None
     for database_name in _get_atlas_db_name_candidates():
@@ -1257,12 +1266,14 @@ def fetch_atlas_vehicle_counts_by_insurance(
                 LEFT JOIN SalvageRecoveries sr ON v.SalvageRecoveryId = sr.Id
                 INNER JOIN InsuranceBranches ib ON v.InsuranceBranchId = ib.Id
                 INNER JOIN InsuranceCompanies ic ON ib.InsuranceCompanyId = ic.Id
+                LEFT JOIN ContractGroups cg ON ic.ContractGroupId = cg.Id
                 WHERE {date_expression} >= ?
                   AND {date_expression} < ?
+                  AND (? IS NULL OR cg.Name = ?)
                 GROUP BY ic.Name
                 ORDER BY VehicleCount DESC, ic.Name
             """.format(date_expression=date_expression)
-            cur.execute(query, (start_date, end_date))
+            cur.execute(query, (start_date, end_date, contract_group_filter, contract_group_filter))
             rows = cur.fetchall()
             cur.close()
             conn.close()
@@ -1273,7 +1284,7 @@ def fetch_atlas_vehicle_counts_by_insurance(
 
 
 def fetch_atlas_vehicle_counts_by_contract_group(
-    start_date: date, end_date: date, date_mode: str
+    start_date: date, end_date: date, date_mode: str, contract_group_filter: Optional[str] = None
 ):
     last_error = None
     for database_name in _get_atlas_db_name_candidates():
@@ -1293,10 +1304,11 @@ def fetch_atlas_vehicle_counts_by_contract_group(
                 LEFT JOIN ContractGroups cg ON ic.ContractGroupId = cg.Id
                 WHERE {date_expression} >= ?
                   AND {date_expression} < ?
+                  AND (? IS NULL OR cg.Name = ?)
                 GROUP BY COALESCE(cg.Name, 'Unassigned'), ic.Name
                 ORDER BY VehicleCount DESC, ContractGroup
             """.format(date_expression=date_expression)
-            cur.execute(query, (start_date, end_date))
+            cur.execute(query, (start_date, end_date, contract_group_filter, contract_group_filter))
             rows = cur.fetchall()
             cur.close()
             conn.close()
@@ -1307,7 +1319,7 @@ def fetch_atlas_vehicle_counts_by_contract_group(
 
 
 def fetch_atlas_vehicle_counts_by_status(
-    start_date: date, end_date: date, date_mode: str
+    start_date: date, end_date: date, date_mode: str, contract_group_filter: Optional[str] = None
 ):
     last_error = None
     for database_name in _get_atlas_db_name_candidates():
@@ -1326,9 +1338,13 @@ def fetch_atlas_vehicle_counts_by_status(
                     COUNT(*) AS VehicleCount
                 FROM CT_Vehicles v
                 LEFT JOIN SalvageRecoveries sr ON v.SalvageRecoveryId = sr.Id
+                INNER JOIN InsuranceBranches ib ON v.InsuranceBranchId = ib.Id
+                INNER JOIN InsuranceCompanies ic ON ib.InsuranceCompanyId = ic.Id
+                LEFT JOIN ContractGroups cg ON ic.ContractGroupId = cg.Id
                 LEFT JOIN StatusColors stc ON v.StatusEnum = stc.Status
                 WHERE {date_expression} >= ?
                   AND {date_expression} < ?
+                  AND (? IS NULL OR cg.Name = ?)
                 GROUP BY CASE
                     WHEN stc.Name IS NOT NULL THEN stc.Name
                     WHEN v.StatusEnum = 301 THEN 'IAA Complete'
@@ -1337,7 +1353,7 @@ def fetch_atlas_vehicle_counts_by_status(
                 END
                 ORDER BY VehicleCount DESC, VehicleStatus
             """.format(date_expression=date_expression)
-            cur.execute(query, (start_date, end_date))
+            cur.execute(query, (start_date, end_date, contract_group_filter, contract_group_filter))
             rows = cur.fetchall()
             cur.close()
             conn.close()
@@ -1348,7 +1364,7 @@ def fetch_atlas_vehicle_counts_by_status(
 
 
 def fetch_atlas_vehicle_details_by_insurance(
-    start_date: date, end_date: date, date_mode: str
+    start_date: date, end_date: date, date_mode: str, contract_group_filter: Optional[str] = None
 ):
     last_error = None
     for database_name in _get_atlas_db_name_candidates():
@@ -1393,6 +1409,7 @@ def fetch_atlas_vehicle_details_by_insurance(
                 LEFT JOIN PartDataModels dm ON v.DerivativeId = dm.Id
                 INNER JOIN InsuranceBranches ib ON v.InsuranceBranchId = ib.Id
                 INNER JOIN InsuranceCompanies ic ON ib.InsuranceCompanyId = ic.Id
+                LEFT JOIN ContractGroups cg ON ic.ContractGroupId = cg.Id
                 LEFT JOIN Categories c ON v.CategoryId = c.Id
                 OUTER APPLY (
                     SELECT TOP (1) sc.DateCleared
@@ -1416,9 +1433,10 @@ def fetch_atlas_vehicle_details_by_insurance(
                 LEFT JOIN StatusColors stc ON v.StatusEnum = stc.Status
                 WHERE {date_expression} >= ?
                   AND {date_expression} < ?
+                  AND (? IS NULL OR cg.Name = ?)
                 ORDER BY v.Id DESC
             """.format(date_expression=date_expression)
-            cur.execute(query, (start_date, end_date))
+            cur.execute(query, (start_date, end_date, contract_group_filter, contract_group_filter))
             rows = cur.fetchall()
             columns = [desc[0] for desc in cur.description]
             columns, rows = hydrate_vehicle_flags(cur, columns, rows)
@@ -3861,6 +3879,7 @@ def build_vehicle_stats_context(
     group_mode: str,
     date_mode: str,
     exclusion_scope: str = "insurance_company",
+    contract_group_filter: Optional[str] = None,
 ):
     start_date, end_date = parse_date_filter(filter_type, start_date_str, end_date_str)
     date_range_label = describe_date_range(filter_type, start_date, end_date)
@@ -3869,18 +3888,18 @@ def build_vehicle_stats_context(
     resolved_date_mode = normalize_vehicle_date_mode(date_mode)
     if resolved_group_mode == "contract":
         database_name, rows = fetch_atlas_vehicle_counts_by_contract_group(
-            start_date, end_date, resolved_date_mode
+            start_date, end_date, resolved_date_mode, contract_group_filter
         )
     elif resolved_group_mode == "status":
         database_name, rows = fetch_atlas_vehicle_counts_by_status(
-            start_date, end_date, resolved_date_mode
+            start_date, end_date, resolved_date_mode, contract_group_filter
         )
     else:
         database_name, rows = fetch_atlas_vehicle_counts_by_insurance(
-            start_date, end_date, resolved_date_mode
+            start_date, end_date, resolved_date_mode, contract_group_filter
         )
     details_db_name, detail_columns, detail_rows = fetch_atlas_vehicle_details_by_insurance(
-        start_date, end_date, resolved_date_mode
+        start_date, end_date, resolved_date_mode, contract_group_filter
     )
     current_user = session.get("username")
     default_exclusions = load_stats_exclusions(current_user, exclusion_scope)
@@ -4437,6 +4456,69 @@ def vehicle_stats():
     )
 
 
+@app.route("/purchase_vehicle_stats", methods=["GET"])
+def purchase_vehicle_stats():
+    filter_type = request.args.get("filter", "today")
+    start_date_str = request.args.get("start_date")
+    end_date_str = request.args.get("end_date")
+    excluded_args = request.args.getlist("exclude")
+    group_mode = request.args.get("group", "company")
+    date_mode = request.args.get("date_mode", "recovered")
+    live_enabled = str(request.args.get("live", "")).lower() in {"1", "true", "yes", "on"}
+
+    error_message = None
+    try:
+        context = build_vehicle_stats_context(
+            filter_type,
+            start_date_str,
+            end_date_str,
+            excluded_args,
+            group_mode,
+            date_mode,
+            exclusion_scope="purchase_insurance_company",
+            contract_group_filter="Purchase",
+        )
+    except Exception as exc:
+        start_date, end_date = parse_date_filter(
+            filter_type, start_date_str, end_date_str
+        )
+        entity_label = "Contract Group" if group_mode == "contract" else "Insurance Company"
+        context = {
+            "filter_type": filter_type,
+            "start_date": start_date,
+            "end_date": end_date,
+            "date_range_label": describe_date_range(filter_type, start_date, end_date),
+            "rows": [],
+            "sum_total": 0,
+            "chart_labels": [],
+            "chart_values": [],
+            "all_companies": [],
+            "excluded_companies": excluded_args,
+            "database_name": None,
+            "group_mode": group_mode,
+            "date_mode": normalize_vehicle_date_mode(date_mode),
+            "entity_label": entity_label,
+            "exclusion_label": "Insurance Companies",
+            "chart_title_base": f"Purchase Vehicles by {entity_label}",
+            "contract_company_breakdown": {},
+            "detail_columns": [],
+            "detail_rows": [],
+        }
+        error_message = f"Unable to load purchase vehicle stats: {exc}"
+
+    context["chart_title_base"] = context["chart_title_base"].replace(
+        "Vehicles by", "Purchase Vehicles by", 1
+    )
+
+    return render_template(
+        "purchase_vehicle_stats.html",
+        **context,
+        live_enabled=live_enabled,
+        error_message=error_message,
+        active_page="purchase_vehicle_stats",
+    )
+
+
 @app.route("/executive_stats", methods=["GET"])
 def executive_stats():
     filter_type = request.args.get("filter", "today")
@@ -4711,6 +4793,51 @@ def vehicle_stats_data():
         filter_type, start_date_str, end_date_str, excluded_args, group_mode, date_mode
     )
 
+
+@app.route("/purchase_vehicle_stats/data", methods=["GET"])
+def purchase_vehicle_stats_data():
+    filter_type = request.args.get("filter", "today")
+    start_date_str = request.args.get("start_date")
+    end_date_str = request.args.get("end_date")
+    excluded_args = request.args.getlist("exclude")
+    group_mode = request.args.get("group", "company")
+    date_mode = request.args.get("date_mode", "recovered")
+
+    context = build_vehicle_stats_context(
+        filter_type,
+        start_date_str,
+        end_date_str,
+        excluded_args,
+        group_mode,
+        date_mode,
+        exclusion_scope="purchase_insurance_company",
+        contract_group_filter="Purchase",
+    )
+    context["chart_title_base"] = context["chart_title_base"].replace(
+        "Vehicles by", "Purchase Vehicles by", 1
+    )
+
+    detail_rows = []
+    for row in context.get("detail_rows", []):
+        detail_rows.append([serialize_vehicle_detail_cell(value) for value in row])
+
+    return jsonify(
+        {
+            "date_range_label": context["date_range_label"],
+            "rows": [
+                {"label": row[0], "total": float(row[1])} for row in context["rows"]
+            ],
+            "sum_total": context["sum_total"],
+            "chart_labels": context["chart_labels"],
+            "chart_values": context["chart_values"],
+            "detail_columns": context.get("detail_columns", []),
+            "detail_rows": detail_rows,
+            "entity_label": context.get("entity_label", "Insurance Company"),
+            "chart_title_base": context.get("chart_title_base", "Purchase Vehicles by Insurance Company"),
+            "contract_company_breakdown": context.get("contract_company_breakdown", {}),
+        }
+    )
+    
     detail_rows = []
     for row in context.get("detail_rows", []):
         detail_rows.append([serialize_vehicle_detail_cell(value) for value in row])
@@ -5412,6 +5539,31 @@ def save_vehicle_stats_exclusions():
     )
 
 
+@app.route("/purchase_vehicle_stats/exclusions", methods=["POST"])
+def save_purchase_vehicle_stats_exclusions():
+    filter_type = request.form.get("filter", "today")
+    start_date = request.form.get("start_date")
+    end_date = request.form.get("end_date")
+    excluded_companies = request.form.getlist("exclude")
+    group_mode = request.form.get("group", "company")
+    date_mode = request.form.get("date_mode", "recovered")
+
+    user = session.get("username")
+    persist_stats_exclusions(user, "purchase_insurance_company", excluded_companies)
+
+    return redirect(
+        url_for(
+            "purchase_vehicle_stats",
+            filter=filter_type,
+            start_date=start_date,
+            end_date=end_date,
+            exclude=excluded_companies,
+            group=group_mode,
+            date_mode=date_mode,
+        )
+    )
+    
+    
 @app.route("/executive_stats/exclusions", methods=["POST"])
 def save_executive_stats_exclusions():
     filter_type = request.form.get("filter", "today")
