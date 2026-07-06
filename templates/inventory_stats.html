@@ -293,10 +293,14 @@
           <img src="{{ url_for('static', filename='SLK Logo.png') }}" alt="Silverlake Collapsed Logo" class="logo-collapsed">
           <img src="{{ url_for('static', filename='logo-slg-strip.svg') }}" alt="Silverlake Logo" class="logo-expanded">
         </div>
-        <div class="nav-section">
+                <div class="nav-section">
           <a href="{{ url_for('index') }}" class="nav-link{% if active_page == 'index' %} active{% endif %}">
             <i class="fas fa-magnifying-glass-dollar"></i>
             <span class="link-text">Opportunity Finder</span>
+          </a>
+          <a href="{{ url_for('image_lookup') }}" class="nav-link{% if active_page == 'image_lookup' %} active{% endif %}">
+            <i class="fas fa-image"></i>
+            <span class="link-text">Image Lookup</span>
           </a>
           <a href="{{ url_for('image_stats') }}" class="nav-link{% if active_page == 'image_stats' %} active{% endif %}">
             <i class="fas fa-chart-pie"></i>
@@ -322,13 +326,9 @@
             <i class="fas fa-car-side"></i>
             <span class="link-text">Vehicle Stats</span>
           </a>
-          <a href="{{ url_for('crush_vehicles') }}" class="nav-link{% if active_page == 'crush_vehicles' %} active{% endif %}">
-            <i class="fas fa-car-burst"></i>
-            <span class="link-text">Crush Vehicles</span>
-          </a>
-          <a href="{{ url_for('logs') }}" class="nav-link{% if active_page == 'logs' %} active{% endif %}">
-            <i class="fas fa-clipboard-list"></i>
-            <span class="link-text">Logs</span>
+          <a href="{{ url_for('executive_stats') }}" class="nav-link{% if active_page == 'executive_stats' %} active{% endif %}">
+            <i class="fas fa-gauge-high"></i>
+            <span class="link-text">Executive Stats</span>
           </a>
         </div>
         <div class="sidebar-footer">
@@ -435,6 +435,11 @@
             <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
           </div>
           <div class="modal-body">
+            <div class="form-check mb-3 d-none" id="exportFilterWrapper">
+              <input class="form-check-input" type="checkbox" id="exportFilterToggle">
+              <label class="form-check-label text-success" for="exportFilterToggle">Export</label>
+              <small class="text-muted ms-2">Unticked excludes EXPORT sales; ticked shows only EXPORT sales.</small>
+            </div>
             <div class="trend-section">
               <h6 class="mb-3" id="trendMonthlyTitle"></h6>
               <canvas id="trendMonthlyChart" height="140"></canvas>
@@ -448,6 +453,38 @@
       </div>
     </div>
 
+    <div class="modal fade" id="inventoryPartsModal" tabindex="-1" aria-labelledby="inventoryPartsModalLabel" aria-hidden="true">
+      <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+          <div class="modal-header">
+            <div>
+              <h5 class="modal-title mb-0" id="inventoryPartsModalLabel">Parts list</h5>
+              <small class="text-muted" id="inventoryPartsModalSubtitle"></small>
+            </div>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <div class="table-responsive">
+              <table class="table table-striped table-sm align-middle">
+                <thead>
+                  <tr>
+                    <th>Invdate</th>
+                    <th>Tag</th>
+                    <th>Item Name</th>
+                    <th>Make</th>
+                    <th>Model</th>
+                    <th class="text-end">Price</th>
+                  </tr>
+                </thead>
+                <tbody id="inventoryPartsTableBody"></tbody>
+              </table>
+            </div>
+            <div class="text-muted" id="inventoryPartsEmptyMessage">Select a chart section to view parts.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+	
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
       if (typeof Chart !== 'undefined' && typeof ChartDataLabels !== 'undefined') {
@@ -472,11 +509,21 @@
       const trendDailySection = document.getElementById('trendDailySection');
       const trendDailyTitle = document.getElementById('trendDailyTitle');
       const trendDailyCanvas = document.getElementById('trendDailyChart');
+      const partsModalEl = document.getElementById('inventoryPartsModal');
+      const partsModalLabel = document.getElementById('inventoryPartsModalLabel');
+      const partsModalSubtitle = document.getElementById('inventoryPartsModalSubtitle');
+      const partsTableBody = document.getElementById('inventoryPartsTableBody');
+      const partsEmptyMessage = document.getElementById('inventoryPartsEmptyMessage');
+      const exportFilterWrapper = document.getElementById('exportFilterWrapper');
+      const exportFilterToggle = document.getElementById('exportFilterToggle');
 
       let trendModal = null;
+      let partsModal = null;
       let monthlyChart = null;
       let dailyChart = null;
       let selectedMonthKey = null;
+      let currentPartsRequest = null;
+      let currentTrendItemname = null;
 
       function formatValue(value, { includeSymbol = true } = {}) {
         const numericValue = Number(value) || 0;
@@ -487,6 +534,11 @@
         return numericValue.toLocaleString();
       }
 
+      function formatPrice(value) {
+        const numericValue = Number(value) || 0;
+        return `£${numericValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+      }
+	  
       function axisLabel(value) {
         if (valueFormat === 'currency') {
           return '£' + value.toLocaleString();
@@ -559,21 +611,106 @@
         };
       }
 
-      function renderItemMonthlyChart(labels, values, monthKeys, itemname) {
+      function buildStackedMonthlyBarConfig(labels, inventoryValues, soldValues, deletedValues, onBarClick) {
+        const totals = labels.map((_, index) => (Number(inventoryValues[index]) || 0) + (Number(soldValues[index]) || 0) + (Number(deletedValues[index]) || 0));
+        return {
+          type: 'bar',
+          data: {
+            labels,
+            datasets: [
+              { label: 'Available in inventory', data: inventoryValues, backgroundColor: '#5c9c13', stack: 'parts' },
+              { label: 'Sold', data: soldValues, backgroundColor: '#0d6efd', stack: 'parts' },
+              { label: 'Deleted', data: deletedValues, backgroundColor: '#dc3545', stack: 'parts' }
+            ]
+          },
+          options: {
+            responsive: true,
+            onClick: function(evt, activeEls) {
+              if (onBarClick && activeEls.length) {
+                onBarClick(activeEls[0].index, activeEls[0].datasetIndex);
+              }
+            },
+            layout: {
+              padding: { top: 28 }
+            },
+            plugins: {
+              legend: { display: true },
+              datalabels: {
+                labels: {
+                  section: {
+                    display: function(context) {
+                      return (Number(context.dataset.data[context.dataIndex]) || 0) > 0;
+                    },
+                    color: '#fff',
+                    font: { weight: 'bold', size: 11 },
+                    formatter: function(value) {
+                      const numericValue = Number(value) || 0;
+                      return numericValue > 0 ? numericValue.toLocaleString() : '';
+                    },
+                    anchor: 'center',
+                    align: 'center'
+                  },
+                  total: {
+                    display: function(context) {
+                      return context.datasetIndex === context.chart.data.datasets.length - 1 && totals[context.dataIndex] > 0;
+                    },
+                    color: '#000',
+                    font: { weight: 'bold', size: 16 },
+                    formatter: function(value, context) {
+                      return totals[context.dataIndex].toLocaleString();
+                    },
+                    anchor: 'end',
+                    align: 'end',
+                    offset: 6,
+                    clip: false
+                  }
+                }
+              },
+              tooltip: {
+                callbacks: {
+                  label: function(context) {
+                    const value = Number(context.parsed.y) || 0;
+                    return `${context.dataset.label}: ${value.toLocaleString()}`;
+                  },
+                  footer: function(items) {
+                    if (!items.length) return '';
+                    return `Total: ${totals[items[0].dataIndex].toLocaleString()}`;
+                  }
+                }
+              }
+            },
+            scales: {
+              x: { stacked: true },
+              y: {
+                stacked: true,
+                beginAtZero: true,
+                ticks: {
+                  callback: function(value) {
+                    return value.toLocaleString();
+                  }
+                }
+              }
+            }
+          }
+        };
+      }
+
+      function renderItemMonthlyChart(labels, values, monthKeys, itemname, inventoryValues = [], soldValues = [], deletedValues = []) {
         if (monthlyChart) {
           monthlyChart.destroy();
         }
 
-        trendMonthlyTitle.textContent = `${itemname} - ${valueLabel} by month (last 12 months)`;
+        trendMonthlyTitle.textContent = `${itemname} - Parts added by month (last 12 months)`;
         trendDailySection.classList.add('d-none');
 
         monthlyChart = new Chart(
           trendMonthlyCanvas,
-          buildItemBarConfig(labels, values, (index) => {
+          buildStackedMonthlyBarConfig(labels, inventoryValues, soldValues, deletedValues, (index, datasetIndex) => {
             const monthKey = monthKeys[index];
-            if (!monthKey) return;
-            loadItemDaily(itemname, monthKey.year, monthKey.month, labels[index]);
-          }, computeDatalabelRotation(labels.length))
+            const section = ['inventory', 'sold', 'deleted'][datasetIndex];
+            if (!monthKey || !section) return;
+            loadItemParts(itemname, monthKey.year, monthKey.month, labels[index], section);
+          })
         );
       }
 
@@ -591,6 +728,105 @@
         );
       }
 
+      const monthlySectionLabels = {
+        inventory: 'Available in inventory',
+        sold: 'Sold',
+        deleted: 'Deleted'
+      };
+
+      function supportsExportFilter(itemname) {
+        const normalizedItem = String(itemname || '').trim().toUpperCase();
+        return ['ENGINE', 'TRANS/GEARBOX'].includes(normalizedItem);
+      }
+
+      function updateExportFilterVisibility(itemname, section = 'trend') {
+        const showFilter = supportsExportFilter(itemname) && (section === 'trend' || section === 'sold');
+        if (exportFilterWrapper) {
+          exportFilterWrapper.classList.toggle('d-none', !showFilter);
+        }
+        if (!showFilter && exportFilterToggle) {
+          exportFilterToggle.checked = false;
+        }
+      }
+
+
+      function getTrendPartsModal() {
+        if (!partsModalEl || !window.bootstrap || !window.bootstrap.Modal) return null;
+        if (!partsModal) {
+          partsModal = window.bootstrap.Modal.getOrCreateInstance(partsModalEl);
+        }
+        return partsModal;
+      }
+
+      function escapeHtml(value) {
+        return String(value ?? '').replace(/[&<>'"]/g, (char) => ({
+          '&': '&amp;',
+          '<': '&lt;',
+          '>': '&gt;',
+          "'": '&#39;',
+          '"': '&quot;'
+        }[char]));
+      }
+
+      function renderPartsRows(parts, emptyMessage = 'No parts found for this section.') {
+        if (!partsTableBody || !partsEmptyMessage) return;
+        partsTableBody.innerHTML = '';
+        if (!parts.length) {
+          partsEmptyMessage.textContent = emptyMessage;
+          partsEmptyMessage.classList.remove('d-none');
+          return;
+        }
+        partsEmptyMessage.classList.add('d-none');
+        parts.forEach((part) => {
+          const row = document.createElement('tr');
+          row.innerHTML = `
+            <td>${escapeHtml(part.invdate)}</td>
+            <td>${escapeHtml(part.tag)}</td>
+            <td>${escapeHtml(part.itemname)}</td>
+            <td>${escapeHtml(part.make)}</td>
+            <td>${escapeHtml(part.model)}</td>
+            <td class="text-end">${formatPrice(part.price)}</td>
+          `;
+          partsTableBody.appendChild(row);
+        });
+      }
+
+      async function loadItemParts(itemname, year, month, monthLabel, section, preserveExportFilter = false) {
+        try {
+          currentPartsRequest = { itemname, year, month, monthLabel, section };
+          updateExportFilterVisibility(itemname, section);
+          const url = new URL(`/inventory_stats/item/${encodeURIComponent(itemname)}/parts`, window.location.origin);
+          url.searchParams.set('month', month);
+          url.searchParams.set('year', year);
+          url.searchParams.set('section', section);
+          if (section === 'sold' && supportsExportFilter(itemname) && exportFilterToggle && exportFilterToggle.checked) {
+            url.searchParams.set('export', '1');
+          }
+          applyFiltersToUrl(url);
+          if (partsModalLabel) {
+            partsModalLabel.textContent = `${itemname} - ${monthlySectionLabels[section] || section}`;
+          }
+          if (partsModalSubtitle) {
+            partsModalSubtitle.textContent = `${monthLabel} ${year}`;
+          }
+          renderPartsRows([], 'Loading parts...');
+          const modal = getTrendPartsModal();
+          if (modal) {
+            modal.show();
+          }
+          const response = await fetch(url.toString());
+          if (!response.ok) return;
+          const data = await response.json();
+          renderPartsRows(data.parts || []);
+          if (partsModalSubtitle) {
+            const count = (data.parts || []).length;
+            partsModalSubtitle.textContent = `${monthLabel} ${year} · ${count.toLocaleString()} part${count === 1 ? '' : 's'}`;
+          }
+        } catch (err) {
+          console.error('Failed to load item parts', err);
+        }
+      }
+	  
       function getTrendModal() {
         if (!trendModalEl || !window.bootstrap || !window.bootstrap.Modal) return null;
         if (!trendModal) {
@@ -603,6 +839,9 @@
         try {
           const url = new URL(`/inventory_stats/item/${encodeURIComponent(itemname)}/monthly`, window.location.origin);
           url.searchParams.set('mode', inventoryMode);
+          if (supportsExportFilter(itemname) && exportFilterToggle && exportFilterToggle.checked) {
+            url.searchParams.set('export', '1');
+          }
           applyFiltersToUrl(url);
           const response = await fetch(url.toString());
           if (!response.ok) return;
@@ -611,7 +850,7 @@
             trendDailySection.classList.add('d-none');
             return;
           }
-          renderItemMonthlyChart(data.labels, data.values, data.month_keys, itemname);
+          renderItemMonthlyChart(data.labels, data.values, data.month_keys, itemname, data.inventory_values, data.sold_values, data.deleted_values);
           if (!preserveDaily || !selectedMonthKey) {
             selectedMonthKey = null;
             trendDailySection.classList.add('d-none');
@@ -697,11 +936,17 @@
             const itemname = row.dataset.itemname;
             if (!itemname) return;
             selectedMonthKey = null;
+            currentPartsRequest = null;
+            currentTrendItemname = itemname;
+            if (exportFilterToggle) {
+              exportFilterToggle.checked = false;
+            }
+            updateExportFilterVisibility(itemname);
             if (trendModalLabel) {
               trendModalLabel.textContent = `${itemname} - Inventory trend`;
             }
             if (trendModalSubtitle) {
-              trendModalSubtitle.textContent = inventoryMode === 'value' ? 'Showing total value by month' : 'Showing count of items by month';
+              trendModalSubtitle.textContent = 'Showing parts added by month: available inventory, sold, and deleted';
             }
             const modal = getTrendModal();
             if (modal) {
@@ -778,6 +1023,24 @@
         });
       }
 
+      if (exportFilterToggle) {
+        exportFilterToggle.addEventListener('change', () => {
+          if (currentTrendItemname) {
+            loadItemMonthly(currentTrendItemname, { preserveDaily: true });
+          }
+          if (currentPartsRequest && currentPartsRequest.section === 'sold') {
+            loadItemParts(
+              currentPartsRequest.itemname,
+              currentPartsRequest.year,
+              currentPartsRequest.month,
+              currentPartsRequest.monthLabel,
+              currentPartsRequest.section,
+              true
+            );
+          }
+        });
+      }
+	  
       sortTableRows(inventoryOrder);
       updateInlineBars();
       attachRowHandlers();
