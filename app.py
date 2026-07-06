@@ -2778,6 +2778,11 @@ def normalize_inventory_order(order: str) -> str:
     return "name" if str(order).lower() in {"name", "item", "itemname"} else "value"
 
 
+def inventory_item_supports_export_filter(itemname: str) -> bool:
+    normalized_item = str(itemname or "").strip().upper()
+    return normalized_item in {"ENGINE", "TRANS/GEARBOX"}
+
+
 def shift_month(value: date, months: int) -> date:
     month_index = value.month - 1 + months
     year = value.year + month_index // 12
@@ -2830,6 +2835,7 @@ def fetch_inventory_item_monthly_totals(
     end_date: date,
     exclude_oncar: bool,
     with_images: bool,
+    export_only: bool = False,
 ) -> List[Tuple[date, int, int, int, int, float]]:
     conn = get_db_connection()
     cur = conn.cursor()
@@ -2845,6 +2851,11 @@ def fetch_inventory_item_monthly_totals(
     ]
     inventory_params: List[object] = [start_date, end_date, itemname]
     sold_params: List[object] = [start_date, end_date, itemname]
+    if inventory_item_supports_export_filter(itemname):
+        if export_only:
+            sold_filters.append("UPPER(COALESCE(sold_inv.departmentname, '')) = 'EXPORT'")
+        else:
+            sold_filters.append("UPPER(COALESCE(sold_inv.departmentname, '')) <> 'EXPORT'")
     if exclude_oncar:
         inventory_filters.append("COALESCE(inv.oncar, false) = false")
         sold_filters.append("COALESCE(sold.oncar, false) = false")
@@ -2887,11 +2898,12 @@ def fetch_inventory_item_monthly_totals(
             SELECT
                 DATE_TRUNC('month', sold.invdate)::date AS month_start,
                 0 AS inventory_count,
-                COUNT(sold.invnumber) FILTER (WHERE sold.issold) AS sold_count,
+                COUNT(sold.invnumber) FILTER (WHERE sold.issold AND sold.restocked IS NULL) AS sold_count,
                 COUNT(sold.invnumber) FILTER (WHERE NOT sold.issold) AS deleted_count,
                 0 AS inventory_value
             FROM sold
             LEFT JOIN itemtype it ON it.itemtype_id = sold.itemtype_id
+            LEFT JOIN invoice sold_inv ON sold_inv.invoice_id = sold.invoice_id
             WHERE {" AND ".join(sold_filters)}
             GROUP BY month_start
         )
@@ -2921,11 +2933,15 @@ def fetch_inventory_item_monthly_parts(
     section: str,
     exclude_oncar: bool,
     with_images: bool,
+    export_only: bool = False,
 ) -> List[dict]:
     start_month = date(year, month, 1)
     end_month = shift_month(start_month, 1)
     source_alias = "inv" if section == "inventory" else "sold"
     source_table = "inventory inv" if section == "inventory" else "sold"
+    joins = f"LEFT JOIN itemtype it ON it.itemtype_id = {source_alias}.itemtype_id"
+    if section != "inventory":
+        joins += " LEFT JOIN invoice sold_inv ON sold_inv.invoice_id = sold.invoice_id"
     filters = [
         f"{source_alias}.invdate >= %s",
         f"{source_alias}.invdate < %s",
@@ -2934,6 +2950,12 @@ def fetch_inventory_item_monthly_parts(
     params: List[object] = [start_month, end_month, itemname]
     if section == "sold":
         filters.append("sold.issold")
+        filters.append("sold.restocked IS NULL")
+        if inventory_item_supports_export_filter(itemname):
+            if export_only:
+                filters.append("UPPER(COALESCE(sold_inv.departmentname, '')) = 'EXPORT'")
+            else:
+                filters.append("UPPER(COALESCE(sold_inv.departmentname, '')) <> 'EXPORT'")
     elif section == "deleted":
         filters.append("NOT sold.issold")
     elif section != "inventory":
@@ -2963,7 +2985,7 @@ def fetch_inventory_item_monthly_parts(
             COALESCE(row_to_json({source_alias})->>'model', '') AS model,
             COALESCE({source_alias}.price, 0) AS price
         FROM {source_table}
-        LEFT JOIN itemtype it ON it.itemtype_id = {source_alias}.itemtype_id
+        {joins}
         WHERE {" AND ".join(filters)}
         ORDER BY {source_alias}.invdate, {source_alias}.tag
         """,
@@ -5321,6 +5343,12 @@ def inventory_item_monthly(itemname):
         "yes",
         "on",
     }
+    export_only = str(request.args.get("export", "")).lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
     today = date.today()
     current_month_start = date(today.year, today.month, 1)
     start_month = shift_month(current_month_start, -11)
@@ -5332,6 +5360,7 @@ def inventory_item_monthly(itemname):
         end_month,
         exclude_oncar,
         with_images,
+        export_only,
     )
     row_map = {
         (row[0].year, row[0].month): {
@@ -5393,6 +5422,12 @@ def inventory_item_parts(itemname):
         "yes",
         "on",
     }
+    export_only = str(request.args.get("export", "")).lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
     try:
         month = int(request.args.get("month", date.today().month))
         year = int(request.args.get("year", date.today().year))
@@ -5410,6 +5445,7 @@ def inventory_item_parts(itemname):
         section,
         exclude_oncar,
         with_images,
+        export_only,
     )
     return jsonify({"parts": parts, "section": section, "year": year, "month": month})
 
