@@ -1249,6 +1249,20 @@ def normalize_vehicle_group_mode(group_mode: str) -> str:
     return "company"
 
 
+EXECUTIVE_VEHICLES_IN_EXCLUDED_CONTRACT_COMPANIES = frozenset(
+    {
+        ("other", "iaa purchase"),
+        ("other", "iaa purchases"),
+        ("others", "iaa purchase"),
+        ("others", "iaa purchases"),
+    }
+)
+
+
+def normalize_contract_company_pair(contract_group: str, company: str) -> tuple[str, str]:
+    return (str(contract_group or "").strip().lower(), str(company or "").strip().lower())
+    
+    
 def fetch_atlas_vehicle_counts_by_insurance(
     start_date: date, end_date: date, date_mode: str, contract_group_filter: Optional[str] = None
 ):
@@ -2783,6 +2797,9 @@ def inventory_item_supports_export_filter(itemname: str) -> bool:
     return normalized_item in {"ENGINE", "TRANS/GEARBOX"}
 
 
+EXPORT_LOCATION_ID = "11995"
+
+
 def shift_month(value: date, months: int) -> date:
     month_index = value.month - 1 + months
     year = value.year + month_index // 12
@@ -2836,6 +2853,7 @@ def fetch_inventory_item_monthly_totals(
     exclude_oncar: bool,
     with_images: bool,
     export_only: bool = False,
+    retail_only: bool = False,
 ) -> List[Tuple[date, int, int, int, int, float]]:
     conn = get_db_connection()
     cur = conn.cursor()
@@ -2853,9 +2871,15 @@ def fetch_inventory_item_monthly_totals(
     sold_params: List[object] = [start_date, end_date, itemname]
     if inventory_item_supports_export_filter(itemname):
         if export_only:
-            sold_filters.append("UPPER(COALESCE(sold_inv.departmentname, '')) = 'EXPORT'")
-        else:
-            sold_filters.append("UPPER(COALESCE(sold_inv.departmentname, '')) <> 'EXPORT'")
+            inventory_filters.append("inv.location_id::text = %s")
+            sold_filters.append("sold.location_id::text = %s")
+            inventory_params.append(EXPORT_LOCATION_ID)
+            sold_params.append(EXPORT_LOCATION_ID)
+        elif retail_only:
+            inventory_filters.append("COALESCE(inv.location_id::text, '') <> %s")
+            sold_filters.append("COALESCE(sold.location_id::text, '') <> %s")
+            inventory_params.append(EXPORT_LOCATION_ID)
+            sold_params.append(EXPORT_LOCATION_ID)
     if exclude_oncar:
         inventory_filters.append("COALESCE(inv.oncar, false) = false")
         sold_filters.append("COALESCE(sold.oncar, false) = false")
@@ -2903,7 +2927,6 @@ def fetch_inventory_item_monthly_totals(
                 0 AS inventory_value
             FROM sold
             LEFT JOIN itemtype it ON it.itemtype_id = sold.itemtype_id
-            LEFT JOIN invoice sold_inv ON sold_inv.invoice_id = sold.invoice_id
             WHERE {" AND ".join(sold_filters)}
             GROUP BY month_start
         )
@@ -2934,14 +2957,13 @@ def fetch_inventory_item_monthly_parts(
     exclude_oncar: bool,
     with_images: bool,
     export_only: bool = False,
+    retail_only: bool = False,
 ) -> List[dict]:
     start_month = date(year, month, 1)
     end_month = shift_month(start_month, 1)
     source_alias = "inv" if section == "inventory" else "sold"
     source_table = "inventory inv" if section == "inventory" else "sold"
     joins = f"LEFT JOIN itemtype it ON it.itemtype_id = {source_alias}.itemtype_id"
-    if section != "inventory":
-        joins += " LEFT JOIN invoice sold_inv ON sold_inv.invoice_id = sold.invoice_id"
     filters = [
         f"{source_alias}.invdate >= %s",
         f"{source_alias}.invdate < %s",
@@ -2951,15 +2973,17 @@ def fetch_inventory_item_monthly_parts(
     if section == "sold":
         filters.append("sold.issold")
         filters.append("sold.restocked IS NULL")
-        if inventory_item_supports_export_filter(itemname):
-            if export_only:
-                filters.append("UPPER(COALESCE(sold_inv.departmentname, '')) = 'EXPORT'")
-            else:
-                filters.append("UPPER(COALESCE(sold_inv.departmentname, '')) <> 'EXPORT'")
     elif section == "deleted":
         filters.append("NOT sold.issold")
     elif section != "inventory":
         return []
+    if inventory_item_supports_export_filter(itemname):
+        if export_only:
+            filters.append(f"{source_alias}.location_id::text = %s")
+            params.append(EXPORT_LOCATION_ID)
+        elif retail_only:
+            filters.append(f"COALESCE({source_alias}.location_id::text, '') <> %s")
+            params.append(EXPORT_LOCATION_ID)
     if exclude_oncar:
         filters.append(f"COALESCE({source_alias}.oncar, false) = false")
     if with_images:
@@ -3902,6 +3926,7 @@ def build_vehicle_stats_context(
     date_mode: str,
     exclusion_scope: str = "insurance_company",
     contract_group_filter: Optional[str] = None,
+    excluded_contract_company_pairs: Optional[set[tuple[str, str]]] = None,
 ):
     start_date, end_date = parse_date_filter(filter_type, start_date_str, end_date_str)
     date_range_label = describe_date_range(filter_type, start_date, end_date)
@@ -3931,23 +3956,26 @@ def build_vehicle_stats_context(
         group_totals: dict[str, int] = {}
         contract_company_breakdown: dict[str, List[Tuple[str, int]]] = {}
         all_companies = sorted({row[1] for row in rows})
+        excluded_pairs = excluded_contract_company_pairs or set()
         for contract_group, company, count in rows:
-            if company in excluded_companies:
-                continue
             vehicle_count = int(count)
-            group_totals[contract_group] = group_totals.get(contract_group, 0) + vehicle_count
+            is_total_only_excluded = (
+                normalize_contract_company_pair(contract_group, company) in excluded_pairs
+            )
+            if company in excluded_companies and not is_total_only_excluded:
+                continue
             contract_company_breakdown.setdefault(contract_group, []).append(
                 (company, vehicle_count)
             )
+            # Show total-only excluded pairs in the expanded list, but omit
+            # their counts from contract group totals and chart totals.
+            if is_total_only_excluded:
+                continue
+            group_totals[contract_group] = group_totals.get(contract_group, 0) + vehicle_count
         filtered_rows = sorted(
             group_totals.items(),
             key=lambda item: (-item[1], item[0]),
         )
-        for contract_group, companies in contract_company_breakdown.items():
-            contract_company_breakdown[contract_group] = sorted(
-                companies,
-                key=lambda item: (-item[1], item[0]),
-            )
         entity_label = "Contract Group"
         exclusion_label = "Insurance Companies"
     elif resolved_group_mode == "status":
@@ -4565,6 +4593,11 @@ def executive_stats():
             group_mode,
             date_mode,
             exclusion_scope="executive_insurance_company",
+            excluded_contract_company_pairs=(
+                EXECUTIVE_VEHICLES_IN_EXCLUDED_CONTRACT_COMPANIES
+                if normalize_vehicle_date_mode(date_mode) == "recovered"
+                else set()
+            ),
         )
         if normalize_vehicle_date_mode(date_mode) == "recovered":
             _, grouped_rows, group_status_breakdown = fetch_atlas_vehicle_in_status_groups(
@@ -4903,6 +4936,11 @@ def executive_stats_data():
         group_mode,
         resolved_date_mode,
         exclusion_scope="executive_insurance_company",
+        excluded_contract_company_pairs=(
+            EXECUTIVE_VEHICLES_IN_EXCLUDED_CONTRACT_COMPANIES
+            if resolved_date_mode == "recovered"
+            else set()
+        ),
     )
 
     vehicle_in_status_context = None
@@ -5349,6 +5387,15 @@ def inventory_item_monthly(itemname):
         "yes",
         "on",
     }
+    retail_only = str(request.args.get("retail", "")).lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    if export_only and retail_only:
+        export_only = False
+        retail_only = False
     today = date.today()
     current_month_start = date(today.year, today.month, 1)
     start_month = shift_month(current_month_start, -11)
@@ -5361,6 +5408,7 @@ def inventory_item_monthly(itemname):
         exclude_oncar,
         with_images,
         export_only,
+        retail_only,
     )
     row_map = {
         (row[0].year, row[0].month): {
@@ -5428,6 +5476,15 @@ def inventory_item_parts(itemname):
         "yes",
         "on",
     }
+    retail_only = str(request.args.get("retail", "")).lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    if export_only and retail_only:
+        export_only = False
+        retail_only = False
     try:
         month = int(request.args.get("month", date.today().month))
         year = int(request.args.get("year", date.today().year))
@@ -5446,6 +5503,7 @@ def inventory_item_parts(itemname):
         exclude_oncar,
         with_images,
         export_only,
+        retail_only,
     )
     return jsonify({"parts": parts, "section": section, "year": year, "month": month})
 
