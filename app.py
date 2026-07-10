@@ -2513,6 +2513,18 @@ def fetch_image_timeline(start_date: date, end_date: date) -> List[dict]:
             thumb.relativeurl AS thumb_url,
             fullimg.full_urls AS full_urls,
             COALESCE(inv.tag, sold.tag, '') AS tag,
+            COALESCE(manu.manuname, '') AS make,
+            COALESCE(mdl.modelname, '') AS model,
+            COALESCE(REPLACE(REPLACE(REPLACE(it.itemname, '[', ''), ']', ''), '_', ' '), '') AS itemname,
+            COALESCE(
+                row_to_json(inv)->>'partcomments',
+                row_to_json(inv)->>'part_comments',
+                row_to_json(inv)->>'comments',
+                row_to_json(sold)->>'partcomments',
+                row_to_json(sold)->>'part_comments',
+                row_to_json(sold)->>'comments',
+                ''
+            ) AS part_comments,
             CASE
                 WHEN EXISTS (
                     SELECT 1
@@ -2537,6 +2549,9 @@ def fetch_image_timeline(start_date: date, end_date: date) -> List[dict]:
         LEFT JOIN pinuser us ON us.user_id = invl.user_id
         LEFT JOIN inventory inv ON inv.invnumber = invl.invnumber
         LEFT JOIN sold ON sold.invnumber = invl.invnumber
+        LEFT JOIN itemtype it ON it.itemtype_id = COALESCE(inv.itemtype_id, sold.itemtype_id)
+        LEFT JOIN model mdl ON mdl.model_id = COALESCE(inv.model_id, sold.model_id)
+        LEFT JOIN manufacturer manu ON manu.manufacturer_id = mdl.manufacturer_id
         LEFT JOIN LATERAL (
             SELECT relativeurl
             FROM image
@@ -2564,7 +2579,7 @@ def fetch_image_timeline(start_date: date, end_date: date) -> List[dict]:
     cur.close()
     conn.close()
     timeline = []
-    for shortname, invnumber, created, thumb_url, full_urls, tag, status in rows:
+    for shortname, invnumber, created, thumb_url, full_urls, tag, make, model, itemname, part_comments, status in rows:
         full_urls = full_urls or []
         cleaned_full_urls = [
             normalize_image_url(url)
@@ -2589,6 +2604,10 @@ def fetch_image_timeline(start_date: date, end_date: date) -> List[dict]:
                 "full_urls": cleaned_full_urls or [normalized_thumb],
                 "preview_urls": preview_urls,
                 "tag": tag,
+                "make": make,
+                "model": model,
+                "itemname": itemname,
+                "part_comments": part_comments,
                 "status": status,
             }
         )
@@ -4287,6 +4306,10 @@ def build_image_timeline_context(
                         "full_urls": item["full_urls"],
                         "preview_urls": item["preview_urls"],
                         "tag": item["tag"],
+                        "make": item["make"],
+                        "model": item["model"],
+                        "itemname": item["itemname"],
+                        "part_comments": item["part_comments"],
                         "time_label": created.strftime("%H:%M"),
                         "position": position,
                         "stack_index": stack_index,
