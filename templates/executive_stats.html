@@ -237,7 +237,7 @@
       .toggle-links {
         position: relative;
         display: grid;
-        grid-template-columns: repeat(3, 1fr);
+        grid-template-columns: repeat(4, 1fr);
         width: 100%;
         font-size: 0.78rem;
         font-weight: 700;
@@ -251,18 +251,25 @@
         color: rgba(31, 59, 8, 0.7);
         line-height: 32px;
       }
-      .toggle-three .toggle-track {
-        width: calc(33.333% - 3px);
+      .toggle-four {
+        width: 360px;
       }
-      .toggle-three.group-company .toggle-track {
+      .toggle-four .toggle-track {
+        width: calc(25% - 2px);
+      }
+      .toggle-four.group-company .toggle-track {
         transform: translateX(100%);
       }
-      .toggle-three.group-status .toggle-track {
+      .toggle-four.group-status .toggle-track {
         transform: translateX(200%);
       }
-      .toggle-three.group-contract .toggle-links a.contract-link,
-      .toggle-three.group-company .toggle-links a.company-link,
-      .toggle-three.group-status .toggle-links a.status-link {
+      .toggle-four.group-body_type .toggle-track {
+        transform: translateX(300%);
+      }
+      .toggle-four.group-contract .toggle-links a.contract-link,
+      .toggle-four.group-company .toggle-links a.company-link,
+      .toggle-four.group-status .toggle-links a.status-link,
+      .toggle-four.group-body_type .toggle-links a.body-type-link {
         color: #fff;
       }
       .contract-row-toggle {
@@ -524,12 +531,13 @@
               </div>
               <div class="toggle-wrapper">
                 <span class="toggle-label">Group By</span>
-                <div class="toggle toggle-three group-{{ group_mode }}" role="group" aria-label="Toggle grouping criteria">
+                <div class="toggle toggle-four group-{{ group_mode }}" role="group" aria-label="Toggle grouping criteria">
                   <span class="toggle-track"></span>
                   <div class="toggle-links">
                     <a class="contract-link" href="{{ url_for('executive_stats', filter=filter_type, start_date=start_date.isoformat() if start_date else None, end_date=end_date.isoformat() if end_date else None, group='contract', date_mode=date_mode, parts_dimension=parts_sold_context.stats_dimension if parts_sold_context else 'department', exclude=excluded_companies, live=1 if live_enabled else None) }}">Contract</a>
                     <a class="company-link" href="{{ url_for('executive_stats', filter=filter_type, start_date=start_date.isoformat() if start_date else None, end_date=end_date.isoformat() if end_date else None, group='company', date_mode=date_mode, parts_dimension=parts_sold_context.stats_dimension if parts_sold_context else 'department', exclude=excluded_companies, live=1 if live_enabled else None) }}">Insurance</a>
                     <a class="status-link" href="{{ url_for('executive_stats', filter=filter_type, start_date=start_date.isoformat() if start_date else None, end_date=end_date.isoformat() if end_date else None, group='status', date_mode=date_mode, parts_dimension=parts_sold_context.stats_dimension if parts_sold_context else 'department', exclude=excluded_companies, live=1 if live_enabled else None) }}">Status</a>
+                    <a class="body-type-link" href="{{ url_for('executive_stats', filter=filter_type, start_date=start_date.isoformat() if start_date else None, end_date=end_date.isoformat() if end_date else None, group='body_type', date_mode=date_mode, parts_dimension=parts_sold_context.stats_dimension if parts_sold_context else 'department', exclude=excluded_companies, live=1 if live_enabled else None) }}">Body Type</a>
                   </div>
                 </div>
               </div>
