@@ -2525,6 +2525,7 @@ def fetch_image_timeline(start_date: date, end_date: date) -> List[dict]:
                 row_to_json(sold)->>'comments',
                 ''
             ) AS part_comments,
+            COALESCE(condition.shortcode, '') AS condition_shortcode,
             CASE
                 WHEN EXISTS (
                     SELECT 1
@@ -2552,6 +2553,7 @@ def fetch_image_timeline(start_date: date, end_date: date) -> List[dict]:
         LEFT JOIN itemtype it ON it.itemtype_id = COALESCE(inv.itemtype_id, sold.itemtype_id)
         LEFT JOIN model mdl ON mdl.model_id = COALESCE(inv.model_id, sold.model_id)
         LEFT JOIN manufacturer manu ON manu.manufacturer_id = mdl.manufacturer_id
+        LEFT JOIN lookupvalue condition ON condition.lookupvalue_id = COALESCE(inv.usercondition_id, sold.usercondition_id)
         LEFT JOIN LATERAL (
             SELECT relativeurl
             FROM image
@@ -2579,7 +2581,20 @@ def fetch_image_timeline(start_date: date, end_date: date) -> List[dict]:
     cur.close()
     conn.close()
     timeline = []
-    for shortname, invnumber, created, thumb_url, full_urls, tag, make, model, itemname, part_comments, status in rows:
+    for (
+        shortname,
+        invnumber,
+        created,
+        thumb_url,
+        full_urls,
+        tag,
+        make,
+        model,
+        itemname,
+        part_comments,
+        condition_shortcode,
+        status,
+    ) in rows:
         full_urls = full_urls or []
         cleaned_full_urls = [
             normalize_image_url(url)
@@ -2608,6 +2623,7 @@ def fetch_image_timeline(start_date: date, end_date: date) -> List[dict]:
                 "model": model,
                 "itemname": itemname,
                 "part_comments": part_comments,
+                "condition_shortcode": condition_shortcode,
                 "status": status,
             }
         )
@@ -4310,6 +4326,7 @@ def build_image_timeline_context(
                         "model": item["model"],
                         "itemname": item["itemname"],
                         "part_comments": item["part_comments"],
+                        "condition_shortcode": item["condition_shortcode"],
                         "time_label": created.strftime("%H:%M"),
                         "position": position,
                         "stack_index": stack_index,
