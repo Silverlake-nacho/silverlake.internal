@@ -656,7 +656,11 @@
                     <tr>
                       <th id="partsSoldEntityHeader">{{ parts_sold_context.entity_label if parts_sold_context else 'Department' }}</th>
                       <th class="text-end">Parts Sold</th>
-                      <th class="text-end" id="partsSoldPreviousHeader">{{ parts_sold_context.value_vat_label if parts_sold_context else 'Parts Sold (Prev Period)' }}</th>
+                      <th class="text-end">Value</th>
+                      <th class="text-end">AVG</th>
+                      <th class="text-end" id="partsSoldPreviousHeader">Parts Sold Prev</th>
+                      <th class="text-end">Value Prev</th>
+                      <th class="text-end">AVG Prev</th>
                     </tr>
                   </thead>
                   <tbody id="partsSoldTableBody">
@@ -665,7 +669,11 @@
                         <tr>
                           <td>{{ row[0] }}</td>
                           <td class="text-end parts-breakdown-trigger" data-entity="{{ row[0] }}" data-period="current" title="Show parts sold breakdown">{{ '{:,.0f}'.format(row[1]) }}</td>
+                          <td class="text-end">£{{ '{:,.2f}'.format(row[3]) }}</td>
+                          <td class="text-end">£{{ '{:,.2f}'.format(row[4]) }}</td>
                           <td class="text-end parts-breakdown-trigger" data-entity="{{ row[0] }}" data-period="previous" title="Show previous-period parts sold breakdown">{{ '{:,.0f}'.format(row[2]) }}</td>
+                          <td class="text-end">£{{ '{:,.2f}'.format(row[5]) }}</td>
+                          <td class="text-end">£{{ '{:,.2f}'.format(row[6]) }}</td>
                         </tr>
                       {% endfor %}
                     {% endif %}
@@ -674,7 +682,11 @@
                     <tr class="fw-bold">
                       <td>Total</td>
                       <td class="text-end parts-breakdown-trigger" id="partsSoldTotalCell" data-entity="" data-period="current" title="Show all parts sold breakdown">{{ '{:,.0f}'.format(parts_sold_context.sum_total if parts_sold_context else 0) }}</td>
+                      <td class="text-end" id="partsSoldValueTotalCell">£{{ '{:,.2f}'.format(parts_sold_context.sum_sales_value if parts_sold_context else 0) }}</td>
+                      <td class="text-end" id="partsSoldAverageTotalCell">£{{ '{:,.2f}'.format(parts_sold_context.average_value if parts_sold_context else 0) }}</td>
                       <td class="text-end parts-breakdown-trigger" id="partsSoldPreviousTotalCell" data-entity="" data-period="previous" title="Show all previous-period parts sold breakdown">{{ '{:,.0f}'.format(parts_sold_context.sum_total_vat if parts_sold_context else 0) }}</td>
+                      <td class="text-end" id="partsSoldPreviousValueTotalCell">£{{ '{:,.2f}'.format(parts_sold_context.sum_previous_sales_value if parts_sold_context else 0) }}</td>
+                      <td class="text-end" id="partsSoldPreviousAverageTotalCell">£{{ '{:,.2f}'.format(parts_sold_context.previous_average_value if parts_sold_context else 0) }}</td>
                     </tr>
                   </tfoot>
                 </table>
@@ -1222,11 +1234,19 @@
           const label = Array.isArray(row) ? row[0] : row.label ?? 'Unassigned';
           const total = Number(Array.isArray(row) ? row[1] : row.total ?? 0);
           const previousTotal = Number(Array.isArray(row) ? row[2] : row.previous_total ?? 0);
+          const salesValue = Number(Array.isArray(row) ? row[3] : row.sales_value ?? 0);
+          const averageValue = Number(Array.isArray(row) ? row[4] : row.average_value ?? 0);
+          const previousSalesValue = Number(Array.isArray(row) ? row[5] : row.previous_sales_value ?? 0);
+          const previousAverageValue = Number(Array.isArray(row) ? row[6] : row.previous_average_value ?? 0);
           const tr = document.createElement('tr');
           tr.innerHTML = `
             <td>${escapeHtml(label)}</td>
             <td class="text-end parts-breakdown-trigger" data-entity="${escapeHtml(label)}" data-period="current" title="Show parts sold breakdown">${total.toLocaleString()}</td>
+            <td class="text-end">${salesValue.toLocaleString('en-GB', { style: 'currency', currency: 'GBP' })}</td>
+            <td class="text-end">${averageValue.toLocaleString('en-GB', { style: 'currency', currency: 'GBP' })}</td>
             <td class="text-end parts-breakdown-trigger" data-entity="${escapeHtml(label)}" data-period="previous" title="Show previous-period parts sold breakdown">${previousTotal.toLocaleString()}</td>
+            <td class="text-end">${previousSalesValue.toLocaleString('en-GB', { style: 'currency', currency: 'GBP' })}</td>
+            <td class="text-end">${previousAverageValue.toLocaleString('en-GB', { style: 'currency', currency: 'GBP' })}</td>
           `;
           partsSoldTableBody.appendChild(tr);
         });
@@ -1239,6 +1259,11 @@
         if (partsSoldPreviousTotalCell) {
           partsSoldPreviousTotalCell.textContent = Number(data.sum_total_previous ?? data.sum_total_vat ?? 0).toLocaleString();
         }
+        const currency = (value) => Number(value ?? 0).toLocaleString('en-GB', { style: 'currency', currency: 'GBP' });
+        document.getElementById('partsSoldValueTotalCell').textContent = currency(data.sum_sales_value);
+        document.getElementById('partsSoldAverageTotalCell').textContent = currency(data.average_value);
+        document.getElementById('partsSoldPreviousValueTotalCell').textContent = currency(data.sum_previous_sales_value);
+        document.getElementById('partsSoldPreviousAverageTotalCell').textContent = currency(data.previous_average_value);
         if (partsSoldDateRangeLabel) {
           partsSoldDateRangeLabel.textContent = `Showing: ${data.date_range_label || ''}`;
         }
@@ -1249,7 +1274,7 @@
           partsSoldEntityHeader.textContent = data.entity_label || 'Department';
         }
         if (partsSoldPreviousHeader) {
-          partsSoldPreviousHeader.textContent = data.value_vat_label || 'Parts Sold (Prev Period)';
+          partsSoldPreviousHeader.textContent = 'Parts Sold Prev';
         }
         if (partsSoldTogglePrevModeBtn && data.prev_mode) {
           partsSoldTogglePrevModeBtn.textContent = data.prev_mode === 'mirror'
