@@ -2452,7 +2452,9 @@ def fetch_department_parts_sold(start_date: date, end_date: date) -> List[Tuple[
     cur.execute(
         """
         SELECT COALESCE(inv.departmentname, 'Unknown') AS departmentname,
-               COUNT(sold.invnumber) AS parts_sold
+               COUNT(sold.invnumber) AS parts_sold,
+               COALESCE(SUM(sold.soldprice), 0) AS sales_value,
+               COALESCE(AVG(sold.soldprice), 0) AS average_value
         FROM sold
         LEFT JOIN invoice inv ON inv.invoice_id = sold.invoice_id
         WHERE sold.issold AND solddate >= %s AND solddate < %s
@@ -2464,8 +2466,7 @@ def fetch_department_parts_sold(start_date: date, end_date: date) -> List[Tuple[
     rows = cur.fetchall()
     cur.close()
     conn.close()
-    # Reuse the same tuple shape as sales totals so the rest of the code can stay generic.
-    return [(row[0], float(row[1]), float(row[1])) for row in rows]
+    return rows
 
 
 def fetch_user_parts_sold(start_date: date, end_date: date) -> List[Tuple[str, float, float]]:
@@ -2474,7 +2475,9 @@ def fetch_user_parts_sold(start_date: date, end_date: date) -> List[Tuple[str, f
     cur.execute(
         """
         SELECT COALESCE(us.shortname, 'Unknown') AS shortname,
-               COUNT(sold.invnumber) AS parts_sold
+               COUNT(sold.invnumber) AS parts_sold,
+               COALESCE(SUM(sold.soldprice), 0) AS sales_value,
+               COALESCE(AVG(sold.soldprice), 0) AS average_value
         FROM sold
         LEFT JOIN invoice inv ON inv.invoice_id = sold.invoice_id
         LEFT JOIN pinuser us ON us.user_id = inv.whocreated_id
@@ -2487,7 +2490,7 @@ def fetch_user_parts_sold(start_date: date, end_date: date) -> List[Tuple[str, f
     rows = cur.fetchall()
     cur.close()
     conn.close()
-    return [(row[0], float(row[1]), float(row[1])) for row in rows]
+    return rows
 
 
 def fetch_user_images(start_date: date, end_date: date) -> List[Tuple[str, int]]:
@@ -3883,8 +3886,8 @@ def build_stats_context(
         else f"Prev Period ({prev_start.strftime('%d/%m/%Y')})"
     )
     prev_rows = fetch_rows(prev_start, prev_end)
-    current_row_map = {row[0]: float(row[1]) for row in rows}
-    prev_row_map = {row[0]: float(row[1]) for row in prev_rows}
+    current_row_map = {row[0]: tuple(float(value) for value in row[1:]) for row in rows}
+    prev_row_map = {row[0]: tuple(float(value) for value in row[1:]) for row in prev_rows}
     current_user = session.get("username")
     saved_order = load_department_order(current_user)
     order_index = {name: idx for idx, name in enumerate(saved_order)}
@@ -3902,9 +3905,28 @@ def build_stats_context(
     for entity in row_entities:
         if entity in excluded_departments:
             continue
-        current_value = current_row_map.get(entity, 0.0)
-        prev_value = prev_row_map.get(entity, 0.0)
-        filtered_rows.append((entity, float(current_value), float(prev_value)))
+        current_values = current_row_map.get(entity, (0.0,))
+        prev_values = prev_row_map.get(entity, (0.0,))
+        if resolved_mode == "parts":
+            current_count = current_values[0]
+            previous_count = prev_values[0]
+            current_sales_value = current_values[1] if len(current_values) > 1 else 0.0
+            previous_sales_value = prev_values[1] if len(prev_values) > 1 else 0.0
+            current_average = current_values[2] if len(current_values) > 2 else 0.0
+            previous_average = prev_values[2] if len(prev_values) > 2 else 0.0
+            filtered_rows.append(
+                (
+                    entity,
+                    current_count,
+                    previous_count,
+                    current_sales_value,
+                    current_average,
+                    previous_sales_value,
+                    previous_average,
+                )
+            )
+        else:
+            filtered_rows.append((entity, current_values[0], prev_values[0]))
     filtered_rows = sorted(
         filtered_rows,
         key=lambda row: (order_index.get(row[0], float("inf")), row[0]),
@@ -3912,6 +3934,12 @@ def build_stats_context(
 
     sum_total = sum(float(row[1]) for row in filtered_rows)
     sum_total_vat = sum(float(row[2]) for row in filtered_rows)
+    sum_sales_value = (
+        sum(float(row[3]) for row in filtered_rows) if resolved_mode == "parts" else 0.0
+    )
+    sum_previous_sales_value = (
+        sum(float(row[5]) for row in filtered_rows) if resolved_mode == "parts" else 0.0
+    )
 
     chart_labels = [row[0] for row in filtered_rows]
     chart_values = [float(row[1]) for row in filtered_rows]
@@ -3926,6 +3954,12 @@ def build_stats_context(
         "rows": filtered_rows,
         "sum_total": sum_total,
         "sum_total_vat": sum_total_vat,
+        "sum_sales_value": sum_sales_value,
+        "sum_previous_sales_value": sum_previous_sales_value,
+        "average_value": sum_sales_value / sum_total if sum_total else 0.0,
+        "previous_average_value": (
+            sum_previous_sales_value / sum_total_vat if sum_total_vat else 0.0
+        ),
         "chart_labels": chart_labels,
         "chart_values": chart_values,
         "all_departments": all_departments,
@@ -4757,6 +4791,10 @@ def executive_stats():
             "rows": [],
             "sum_total": 0,
             "sum_total_vat": 0,
+            "sum_sales_value": 0,
+            "sum_previous_sales_value": 0,
+            "average_value": 0,
+            "previous_average_value": 0,
             "stats_dimension": parts_dimension,
             "prev_mode": parts_prev_mode,
             "chart_labels": [],
@@ -5101,11 +5139,19 @@ def executive_stats_data():
                         "label": row[0],
                         "total": float(row[1]),
                         "previous_total": float(row[2]),
+                        "sales_value": float(row[3]),
+                        "average_value": float(row[4]),
+                        "previous_sales_value": float(row[5]),
+                        "previous_average_value": float(row[6]),
                     }
                     for row in parts_sold_context["rows"]
                 ],
                 "sum_total": parts_sold_context["sum_total"],
                 "sum_total_previous": parts_sold_context["sum_total_vat"],
+                "sum_sales_value": parts_sold_context["sum_sales_value"],
+                "sum_previous_sales_value": parts_sold_context["sum_previous_sales_value"],
+                "average_value": parts_sold_context["average_value"],
+                "previous_average_value": parts_sold_context["previous_average_value"],
                 "chart_labels": parts_sold_context["chart_labels"],
                 "chart_values": parts_sold_context["chart_values"],
                 "entity_label": parts_sold_context["entity_label"],
