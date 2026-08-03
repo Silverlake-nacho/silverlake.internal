@@ -1244,7 +1244,7 @@ def _vehicle_status_sql_expression() -> str:
 
 def normalize_vehicle_group_mode(group_mode: str) -> str:
     value = str(group_mode).lower()
-    if value in {"contract", "status"}:
+    if value in {"contract", "status", "body_type"}:
         return value
     return "company"
 
@@ -1366,6 +1366,41 @@ def fetch_atlas_vehicle_counts_by_status(
                     ELSE 'Unknown'
                 END
                 ORDER BY VehicleCount DESC, VehicleStatus
+            """.format(date_expression=date_expression)
+            cur.execute(query, (start_date, end_date, contract_group_filter, contract_group_filter))
+            rows = cur.fetchall()
+            cur.close()
+            conn.close()
+            return database_name, rows
+        except Exception as exc:
+            last_error = exc
+    raise last_error if last_error else RuntimeError("No Atlas database names configured.")
+
+
+def fetch_atlas_vehicle_counts_by_body_type(
+    start_date: date, end_date: date, date_mode: str, contract_group_filter: Optional[str] = None
+):
+    last_error = None
+    for database_name in _get_atlas_db_name_candidates():
+        try:
+            conn = get_atlas_db_connection(database_name)
+            cur = conn.cursor()
+            date_expression = _vehicle_date_sql_expression(date_mode)
+            query = """
+                SELECT
+                    COALESCE(bt.Name, 'Unknown') AS BodyType,
+                    COUNT(*) AS VehicleCount
+                FROM CT_Vehicles v
+                LEFT JOIN SalvageRecoveries sr ON v.SalvageRecoveryId = sr.Id
+                INNER JOIN InsuranceBranches ib ON v.InsuranceBranchId = ib.Id
+                INNER JOIN InsuranceCompanies ic ON ib.InsuranceCompanyId = ic.Id
+                LEFT JOIN ContractGroups cg ON ic.ContractGroupId = cg.Id
+                LEFT JOIN PartDataBodyTypes bt ON v.BodyTypeId = bt.ID
+                WHERE {date_expression} >= ?
+                  AND {date_expression} < ?
+                  AND (? IS NULL OR cg.Name = ?)
+                GROUP BY COALESCE(bt.Name, 'Unknown')
+                ORDER BY VehicleCount DESC, BodyType
             """.format(date_expression=date_expression)
             cur.execute(query, (start_date, end_date, contract_group_filter, contract_group_filter))
             rows = cur.fetchall()
@@ -3976,6 +4011,10 @@ def build_vehicle_stats_context(
         database_name, rows = fetch_atlas_vehicle_counts_by_status(
             start_date, end_date, resolved_date_mode, contract_group_filter
         )
+    elif resolved_group_mode == "body_type":
+        database_name, rows = fetch_atlas_vehicle_counts_by_body_type(
+            start_date, end_date, resolved_date_mode, contract_group_filter
+        )
     else:
         database_name, rows = fetch_atlas_vehicle_counts_by_insurance(
             start_date, end_date, resolved_date_mode, contract_group_filter
@@ -3997,13 +4036,17 @@ def build_vehicle_stats_context(
             is_total_only_excluded = (
                 normalize_contract_company_pair(contract_group, company) in excluded_pairs
             )
+            display_contract_group = (
+                "Purchase" if is_total_only_excluded else contract_group
+            )
             if company in excluded_companies and not is_total_only_excluded:
                 continue
-            contract_company_breakdown.setdefault(contract_group, []).append(
+            contract_company_breakdown.setdefault(display_contract_group, []).append(
                 (company, vehicle_count)
             )
-            # Show total-only excluded pairs in the expanded list, but omit
-            # their counts from contract group totals and chart totals.
+            # Vehicles IN from IAA Purchases are stored under Other in Atlas.
+            # Display them under Purchase while continuing to omit their counts
+            # from contract group totals and chart totals.
             if is_total_only_excluded:
                 continue
             group_totals[contract_group] = group_totals.get(contract_group, 0) + vehicle_count
@@ -4023,6 +4066,16 @@ def build_vehicle_stats_context(
         all_companies = sorted({row[0] for row in rows})
         entity_label = "Vehicle Status"
         exclusion_label = "Statuses"
+    elif resolved_group_mode == "body_type":
+        filtered_rows = [
+            (row[0], int(row[1]))
+            for row in rows
+            if row[0] not in excluded_companies
+        ]
+        contract_company_breakdown = {}
+        all_companies = sorted({row[0] for row in rows})
+        entity_label = "Body Type"
+        exclusion_label = "Body Types"
     else:
         filtered_rows = [
             (row[0], int(row[1]))
@@ -4517,7 +4570,11 @@ def vehicle_stats():
         start_date, end_date = parse_date_filter(
             filter_type, start_date_str, end_date_str
         )
-        entity_label = "Contract Group" if group_mode == "contract" else "Insurance Company"
+        entity_label = {
+            "contract": "Contract Group",
+            "status": "Vehicle Status",
+            "body_type": "Body Type",
+        }.get(normalize_vehicle_group_mode(group_mode), "Insurance Company")
         context = {
             "filter_type": filter_type,
             "start_date": start_date,
@@ -4572,7 +4629,11 @@ def purchase_vehicle_stats():
         start_date, end_date = parse_date_filter(
             filter_type, start_date_str, end_date_str
         )
-        entity_label = "Contract Group" if group_mode == "contract" else "Insurance Company"
+        entity_label = {
+            "contract": "Contract Group",
+            "status": "Vehicle Status",
+            "body_type": "Body Type",
+        }.get(normalize_vehicle_group_mode(group_mode), "Insurance Company")
         context = {
             "filter_type": filter_type,
             "start_date": start_date,
@@ -4669,7 +4730,11 @@ def executive_stats():
         start_date, end_date = parse_date_filter(
             filter_type, start_date_str, end_date_str
         )
-        entity_label = "Contract Group" if group_mode == "contract" else "Insurance Company"
+        entity_label = {
+            "contract": "Contract Group",
+            "status": "Vehicle Status",
+            "body_type": "Body Type",
+        }.get(normalize_vehicle_group_mode(group_mode), "Insurance Company")
         context = {
             "filter_type": filter_type,
             "start_date": start_date,
