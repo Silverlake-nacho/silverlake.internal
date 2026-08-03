@@ -286,6 +286,9 @@
         color: #dc3545;
         font-weight: 700;
       }
+      .contract-type-light-grey td {
+        color: #adb5bd;
+      }
       .vehicle-status-group-toggle {
         cursor: pointer;
       }
@@ -860,6 +863,8 @@
       const currentGroupMode = {{ group_mode|tojson }};
       let contractCompanyBreakdown = {{ contract_company_breakdown|tojson }};
       const collapsedContracts = new Set();
+      const lightGreyContractTypes = new Set(['IAA Purchases']);
+      const lightGreyContractColor = '#adb5bd';
 
 
       function generateColors(count) {
@@ -867,8 +872,16 @@
         return Array.from({ length: count }, (_, index) => palette[index % palette.length]);
       }
 
+      function getLabelColor(label, fallbackColor) {
+        return lightGreyContractTypes.has(label) ? lightGreyContractColor : fallbackColor;
+      }
+
+      function generateLabelColors(dataLabels) {
+        return generateColors(dataLabels.length).map((color, index) => getLabelColor(dataLabels[index], color));
+      }
+
       function buildChartConfig(type, dataLabels, dataValues) {
-        const colors = generateColors(dataLabels.length);
+        const colors = generateLabelColors(dataLabels);
         const isPie = type === 'pie';
         return {
           type,
@@ -969,7 +982,7 @@
         if (chartInstance) {
           chartInstance.data.labels = labels;
           chartInstance.data.datasets[0].data = values;
-          chartInstance.data.datasets[0].backgroundColor = generateColors(labels.length);
+          chartInstance.data.datasets[0].backgroundColor = generateLabelColors(labels);
           chartInstance.update();
         }
       }
@@ -1021,7 +1034,7 @@
         if (partsSoldChartInstance) {
           partsSoldChartInstance.data.labels = partsSoldLabels;
           partsSoldChartInstance.data.datasets[0].data = partsSoldValues;
-          partsSoldChartInstance.data.datasets[0].backgroundColor = generateColors(partsSoldLabels.length);
+          partsSoldChartInstance.data.datasets[0].backgroundColor = generateLabelColors(partsSoldLabels);
           partsSoldChartInstance.update();
         }
         if (partsSoldChartTitle) {
@@ -1099,7 +1112,7 @@
         if (vehicleInStatusChartInstance) {
           vehicleInStatusChartInstance.data.labels = vehicleInStatusLabels;
           vehicleInStatusChartInstance.data.datasets[0].data = vehicleInStatusValues;
-          vehicleInStatusChartInstance.data.datasets[0].backgroundColor = generateColors(vehicleInStatusLabels.length);
+          vehicleInStatusChartInstance.data.datasets[0].backgroundColor = generateLabelColors(vehicleInStatusLabels);
           vehicleInStatusChartInstance.update();
         }
       }
@@ -1151,6 +1164,9 @@
           const safeTotal = Number(rowTotal ?? 0);
           const tr = document.createElement('tr');
           const isExpanded = canExpandContracts && !collapsedContracts.has(safeLabel);
+          if (lightGreyContractTypes.has(safeLabel)) {
+            tr.classList.add('contract-type-light-grey');
+          }
 
           if (canExpandContracts) {
             tr.classList.add('contract-row-toggle');
