@@ -2446,11 +2446,23 @@ def fetch_user_sales(start_date: date, end_date: date) -> List[Tuple[str, float,
     return rows
 
 
+UNCREDITED_PARTS_FILTER = """
+          AND NOT EXISTS (
+              SELECT 1
+              FROM invoicedetail credit_detail
+              JOIN invoice credit_invoice
+                ON credit_invoice.invoice_id = credit_detail.invoice_id
+              WHERE credit_detail.inventory_id = sold.inventory_id
+                AND credit_invoice.ordertype_id = 345
+                AND credit_invoice.taxonly = false
+          )
+"""
+
 def fetch_department_parts_sold(start_date: date, end_date: date) -> List[Tuple[str, float, float]]:
     conn = get_db_connection()
     cur = conn.cursor()
     cur.execute(
-        """
+        f"""
         SELECT COALESCE(inv.departmentname, 'Unknown') AS departmentname,
                COUNT(sold.invnumber) AS parts_sold,
                COALESCE(SUM(sold.soldprice), 0) AS sales_value,
@@ -2458,6 +2470,7 @@ def fetch_department_parts_sold(start_date: date, end_date: date) -> List[Tuple[
         FROM sold
         LEFT JOIN invoice inv ON inv.invoice_id = sold.invoice_id
         WHERE sold.issold AND solddate >= %s AND solddate < %s
+          {UNCREDITED_PARTS_FILTER}
         GROUP BY departmentname
         ORDER BY departmentname
         """,
@@ -2473,7 +2486,7 @@ def fetch_user_parts_sold(start_date: date, end_date: date) -> List[Tuple[str, f
     conn = get_db_connection()
     cur = conn.cursor()
     cur.execute(
-        """
+        f"""
         SELECT COALESCE(us.shortname, 'Unknown') AS shortname,
                COUNT(sold.invnumber) AS parts_sold,
                COALESCE(SUM(sold.soldprice), 0) AS sales_value,
@@ -2482,6 +2495,7 @@ def fetch_user_parts_sold(start_date: date, end_date: date) -> List[Tuple[str, f
         LEFT JOIN invoice inv ON inv.invoice_id = sold.invoice_id
         LEFT JOIN pinuser us ON us.user_id = inv.whocreated_id
         WHERE sold.issold AND solddate >= %s AND solddate < %s
+          {UNCREDITED_PARTS_FILTER}
         GROUP BY us.shortname
         ORDER BY us.shortname
         """,
@@ -2837,6 +2851,7 @@ def fetch_parts_breakdown(
         FROM sold
         {joins}
         WHERE sold.issold
+          {UNCREDITED_PARTS_FILTER}
           AND solddate >= %s
           AND solddate < %s
           {filter_clause}
@@ -2850,6 +2865,53 @@ def fetch_parts_breakdown(
     cur.close()
     conn.close()
     return [(row[0], int(row[1]), float(row[2] or 0)) for row in rows]
+
+
+def fetch_parts_full_detail(
+    entity_value: Optional[str], start_date: date, end_date: date, dimension: str
+) -> List[Tuple[str, str, float]]:
+    """Return each uncredited sold part with its item, tag number, and sold price."""
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+    dimension_key = "user" if normalize_stats_dimension(dimension) == "user" else "department"
+    joins = """
+        LEFT JOIN invoice inv ON inv.invoice_id = sold.invoice_id
+        LEFT JOIN itemtype it ON it.itemtype_id = sold.itemtype_id
+    """ + UNCREDITED_PARTS_JOIN
+    filter_clause = ""
+    params = [start_date, end_date]
+
+    if entity_value:
+        filter_clause = "AND COALESCE(inv.departmentname, 'Unknown') = %s"
+        params.append(entity_value)
+
+    if dimension_key == "user":
+        joins += " LEFT JOIN pinuser us ON us.user_id = inv.whocreated_id"
+        if entity_value:
+            filter_clause = "AND COALESCE(us.shortname, 'Unknown') = %s"
+
+    cur.execute(
+        f"""
+        SELECT
+            COALESCE(REPLACE(REPLACE(REPLACE(it.itemname, '[', ''), ']', ''), '_', ' '), 'Unknown') AS itemname,
+            sold.invnumber,
+            COALESCE(sold.soldprice, 0) AS sold_price
+        FROM sold
+        {joins}
+        WHERE sold.issold
+          AND credits.credit_no IS NULL
+          AND solddate >= %s
+          AND solddate < %s
+          {filter_clause}
+        ORDER BY itemname, sold.invnumber
+        """,
+        params,
+    )
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    return [(row[0], str(row[1] or ""), float(row[2] or 0)) for row in rows]
 
 
 INVENTORY_ITEMNAME_EXPR = (
@@ -3243,6 +3305,7 @@ def fetch_total_parts_monthly_totals(
         WHERE solddate >= %s
           AND solddate < %s
           AND sold.issold
+          {UNCREDITED_PARTS_FILTER}
           {exclusion_clause}
         GROUP BY year, month
         ORDER BY year, month
@@ -3298,7 +3361,7 @@ def fetch_department_parts_monthly_totals(
     conn = get_db_connection()
     cur = conn.cursor()
     cur.execute(
-        """
+        f"""
         SELECT EXTRACT(YEAR FROM solddate)::int AS year,
                EXTRACT(MONTH FROM solddate)::int AS month,
                COUNT(sold.invnumber) AS parts_sold
@@ -3308,6 +3371,7 @@ def fetch_department_parts_monthly_totals(
           AND solddate < %s
           AND COALESCE(inv.departmentname, 'Unknown') = %s
           AND sold.issold
+          {UNCREDITED_PARTS_FILTER}
         GROUP BY year, month
         ORDER BY year, month
         """,
@@ -3380,7 +3444,7 @@ def fetch_department_daily_totals(department: str, year: int, month: int) -> Lis
     conn = get_db_connection()
     cur = conn.cursor()
     cur.execute(
-        """
+        f"""
         SELECT EXTRACT(MONTH FROM solddate)::int AS month,
                COUNT(sold.invnumber) AS parts_sold
         FROM sold
@@ -3389,6 +3453,7 @@ def fetch_department_daily_totals(department: str, year: int, month: int) -> Lis
           AND solddate < %s
           AND COALESCE(inv.departmentname, 'Unknown') = %s
           AND sold.issold
+          {UNCREDITED_PARTS_FILTER}
         GROUP BY month
         ORDER BY month
         """,
@@ -3432,7 +3497,7 @@ def fetch_user_parts_monthly_totals(
     conn = get_db_connection()
     cur = conn.cursor()
     cur.execute(
-        """
+        f"""
         SELECT EXTRACT(YEAR FROM solddate)::int AS year,
                EXTRACT(MONTH FROM solddate)::int AS month,
                COUNT(sold.invnumber) AS parts_sold
@@ -3443,6 +3508,7 @@ def fetch_user_parts_monthly_totals(
           AND solddate < %s
           AND us.shortname = %s
           AND sold.issold
+          {UNCREDITED_PARTS_FILTER}
         GROUP BY year, month
         ORDER BY year, month
         """,
@@ -3580,7 +3646,7 @@ def fetch_department_parts_daily_totals(department: str, year: int, month: int) 
     conn = get_db_connection()
     cur = conn.cursor()
     cur.execute(
-        """
+        f"""
         SELECT EXTRACT(DAY FROM solddate)::int AS day,
                COUNT(sold.invnumber) AS parts_sold
         FROM sold
@@ -3589,6 +3655,7 @@ def fetch_department_parts_daily_totals(department: str, year: int, month: int) 
           AND solddate < %s
           AND COALESCE(inv.departmentname, 'Unknown') = %s
           AND sold.issold
+          {UNCREDITED_PARTS_FILTER}
         GROUP BY day
         ORDER BY day
         """,
@@ -3610,7 +3677,7 @@ def fetch_user_parts_daily_totals(user: str, year: int, month: int) -> List[Tupl
     conn = get_db_connection()
     cur = conn.cursor()
     cur.execute(
-        """
+        f"""
         SELECT EXTRACT(DAY FROM solddate)::int AS day,
                COUNT(sold.invnumber) AS parts_sold
         FROM sold
@@ -3620,6 +3687,7 @@ def fetch_user_parts_daily_totals(user: str, year: int, month: int) -> List[Tupl
           AND solddate < %s
           AND us.shortname = %s
           AND sold.issold
+          {UNCREDITED_PARTS_FILTER}
         GROUP BY day
         ORDER BY day
         """,
@@ -5194,6 +5262,7 @@ def executive_stats_parts_breakdown():
     prev_mode = normalize_prev_period_mode(request.args.get("parts_prev_mode", "mirror"))
     period = "previous" if request.args.get("period") == "previous" else "current"
     entity_value = request.args.get("entity")
+    full_detail = request.args.get("full_detail", "").lower() in {"1", "true", "yes"}
 
     start_date, end_date = parse_date_filter(filter_type, start_date_str, end_date_str)
     if period == "previous":
@@ -5205,6 +5274,24 @@ def executive_stats_parts_breakdown():
         )
     else:
         date_range_label = describe_date_range(filter_type, start_date, end_date)
+    if full_detail:
+        detail_rows = fetch_parts_full_detail(entity_value, start_date, end_date, dimension)
+        return jsonify(
+            {
+                "entity": entity_value,
+                "dimension": dimension,
+                "date_range_label": date_range_label,
+                "period": period,
+                "full_detail": True,
+                "items": [
+                    {"itemname": row[0], "tag_number": row[1], "sold_price": row[2]}
+                    for row in detail_rows
+                ],
+                "total": len(detail_rows),
+                "sales_total": sum(row[2] for row in detail_rows),
+            }
+        )
+
     rows = fetch_parts_breakdown(entity_value, start_date, end_date, dimension)
     total = sum(row[1] for row in rows)
 
