@@ -2878,7 +2878,7 @@ def fetch_parts_full_detail(
     joins = """
         LEFT JOIN invoice inv ON inv.invoice_id = sold.invoice_id
         LEFT JOIN itemtype it ON it.itemtype_id = sold.itemtype_id
-    """ + UNCREDITED_PARTS_JOIN
+    """
     filter_clause = ""
     params = [start_date, end_date]
 
@@ -2895,16 +2895,16 @@ def fetch_parts_full_detail(
         f"""
         SELECT
             COALESCE(REPLACE(REPLACE(REPLACE(it.itemname, '[', ''), ']', ''), '_', ' '), 'Unknown') AS itemname,
-            sold.invnumber,
+            COALESCE(sold.tag, sold.invnumber::text, '') AS tag_number,
             COALESCE(sold.soldprice, 0) AS sold_price
         FROM sold
         {joins}
         WHERE sold.issold
-          AND credits.credit_no IS NULL
+          {UNCREDITED_PARTS_FILTER}
           AND solddate >= %s
           AND solddate < %s
           {filter_clause}
-        ORDER BY itemname, sold.invnumber
+        ORDER BY itemname, tag_number
         """,
         params,
     )
