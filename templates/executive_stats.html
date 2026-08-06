@@ -784,9 +784,12 @@
             <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
           </div>
           <div class="modal-body">
-            <div class="form-check mb-2">
-              <input class="form-check-input" type="checkbox" value="1" id="partsBreakdownFullDetail">
-              <label class="form-check-label text-success" for="partsBreakdownFullDetail">Full detail</label>
+            <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
+              <div class="form-check mb-0">
+                <input class="form-check-input" type="checkbox" value="1" id="partsBreakdownFullDetail">
+                <label class="form-check-label text-success" for="partsBreakdownFullDetail">Full detail</label>
+              </div>
+              <a class="btn btn-sm btn-outline-success" href="#" id="partsBreakdownDownloadBtn">Download Excel</a>
             </div>
             <p class="text-muted small mb-2" id="partsBreakdownStatus"></p>
             <div class="table-responsive">
@@ -833,6 +836,7 @@
       const partsBreakdownList = document.getElementById('partsBreakdownList');
       const partsBreakdownHeaderRow = document.getElementById('partsBreakdownHeaderRow');
       const partsBreakdownFullDetail = document.getElementById('partsBreakdownFullDetail');
+      const partsBreakdownDownloadBtn = document.getElementById('partsBreakdownDownloadBtn');
       const partsBreakdownStatus = document.getElementById('partsBreakdownStatus');
       const partsSoldPreviousTotalCell = document.getElementById('partsSoldPreviousTotalCell');
       const partsSoldDateRangeLabel = document.getElementById('partsSoldDateRangeLabel');
@@ -1299,7 +1303,7 @@
         return partsBreakdownModal;
       }
 
-      function buildPartsBreakdownUrl(entity, period = 'current', fullDetail = false) {
+      function buildPartsBreakdownUrl(entity, period = 'current', fullDetail = false, exportExcel = false) {
         const url = new URL("{{ url_for('executive_stats_parts_breakdown') }}", window.location.origin);
         const params = new URLSearchParams(window.location.search);
         if (!params.has('filter')) {
@@ -1316,6 +1320,11 @@
           params.set('full_detail', '1');
         } else {
           params.delete('full_detail');
+        }
+        if (exportExcel) {
+          params.set('export', 'excel');
+        } else {
+          params.delete('export');
         }
         params.forEach((value, key) => url.searchParams.append(key, value));
         return url.toString();
@@ -1366,6 +1375,9 @@
         partsBreakdownStatus.textContent = 'Loading parts...';
         partsBreakdownList.innerHTML = '';
         setPartsBreakdownHeader(fullDetail);
+        if (partsBreakdownDownloadBtn) {
+          partsBreakdownDownloadBtn.href = buildPartsBreakdownUrl(entity, period, fullDetail, true);
+        }
         modal.show();
 
         try {
