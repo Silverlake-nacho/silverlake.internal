@@ -5253,6 +5253,72 @@ def executive_stats_data():
     return jsonify(payload)
 
 
+def build_parts_breakdown_excel(
+    entity_value: Optional[str],
+    dimension: str,
+    period: str,
+    date_range_label: str,
+    rows: List[Tuple],
+    full_detail: bool,
+) -> BytesIO:
+    """Build an Excel workbook for a parts breakdown response."""
+
+    entity_label = entity_value or ("All users" if dimension == "user" else "All departments")
+    if full_detail:
+        export_rows = [
+            {"Item": row[0], "Tag Number": row[1], "Price Sold": row[2]}
+            for row in rows
+        ]
+        columns = ["Item", "Tag Number", "Price Sold"]
+    else:
+        export_rows = [
+            {"Item": row[0], "Quantity": row[1], "Avg Sold Price": row[2]}
+            for row in rows
+        ]
+        columns = ["Item", "Quantity", "Avg Sold Price"]
+
+    df = pd.DataFrame(export_rows, columns=columns)
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+        df.to_excel(writer, index=False, sheet_name="Parts Breakdown", startrow=4)
+        workbook = writer.book
+        worksheet = writer.sheets["Parts Breakdown"]
+        title_format = workbook.add_format({"bold": True, "font_size": 14})
+        label_format = workbook.add_format({"bold": True})
+        header_format = workbook.add_format({"bold": True, "bg_color": "#5c9c13", "font_color": "#FFFFFF"})
+        currency_format = workbook.add_format({"num_format": "£#,##0.00"})
+
+        worksheet.write(0, 0, "Parts Sold Breakdown", title_format)
+        worksheet.write(1, 0, "Entity", label_format)
+        worksheet.write(1, 1, entity_label)
+        worksheet.write(2, 0, "Period", label_format)
+        worksheet.write(2, 1, date_range_label)
+        worksheet.write(3, 0, "View", label_format)
+        worksheet.write(3, 1, "Full detail" if full_detail else "Summary")
+
+        for col_idx, column_name in enumerate(columns):
+            worksheet.write(4, col_idx, column_name, header_format)
+            worksheet.set_column(col_idx, col_idx, max(len(column_name) + 2, 18))
+
+        price_column = "Price Sold" if full_detail else "Avg Sold Price"
+        if price_column in columns:
+            price_idx = columns.index(price_column)
+            worksheet.set_column(price_idx, price_idx, 18, currency_format)
+        worksheet.freeze_panes(5, 0)
+
+    output.seek(0)
+    return output
+
+
+def parts_breakdown_filename(
+    entity_value: Optional[str], start_date: date, end_date: date, period: str, full_detail: bool
+) -> str:
+    entity_slug = re.sub(r"[^a-z0-9]+", "_", (entity_value or "all").lower()).strip("_") or "all"
+    date_slug = f"{start_date:%Y%m%d}_{(end_date - timedelta(days=1)):%Y%m%d}"
+    detail_slug = "full_detail" if full_detail else "summary"
+    return f"parts_breakdown_{period}_{entity_slug}_{date_slug}_{detail_slug}.xlsx"
+
+
 @app.route("/executive_stats/parts_breakdown", methods=["GET"])
 def executive_stats_parts_breakdown():
     filter_type = request.args.get("filter", "today")
@@ -5263,6 +5329,7 @@ def executive_stats_parts_breakdown():
     period = "previous" if request.args.get("period") == "previous" else "current"
     entity_value = request.args.get("entity")
     full_detail = request.args.get("full_detail", "").lower() in {"1", "true", "yes"}
+    export_excel = request.args.get("export", "").lower() in {"1", "excel", "xlsx"}
 
     start_date, end_date = parse_date_filter(filter_type, start_date_str, end_date_str)
     if period == "previous":
@@ -5276,6 +5343,18 @@ def executive_stats_parts_breakdown():
         date_range_label = describe_date_range(filter_type, start_date, end_date)
     if full_detail:
         detail_rows = fetch_parts_full_detail(entity_value, start_date, end_date, dimension)
+        if export_excel:
+            output = build_parts_breakdown_excel(
+                entity_value, dimension, period, date_range_label, detail_rows, True
+            )
+            return send_file(
+                output,
+                download_name=parts_breakdown_filename(
+                    entity_value, start_date, end_date, period, True
+                ),
+                as_attachment=True,
+                mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
         return jsonify(
             {
                 "entity": entity_value,
@@ -5293,6 +5372,18 @@ def executive_stats_parts_breakdown():
         )
 
     rows = fetch_parts_breakdown(entity_value, start_date, end_date, dimension)
+    if export_excel:
+        output = build_parts_breakdown_excel(
+            entity_value, dimension, period, date_range_label, rows, False
+        )
+        return send_file(
+            output,
+            download_name=parts_breakdown_filename(
+                entity_value, start_date, end_date, period, False
+            ),
+            as_attachment=True,
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
     total = sum(row[1] for row in rows)
 
     return jsonify(
