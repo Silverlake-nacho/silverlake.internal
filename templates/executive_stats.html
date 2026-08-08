@@ -849,6 +849,47 @@
       const partsSoldTogglePrevModeBtn = document.getElementById('partsSoldTogglePrevModeBtn');
       const customStartDate = document.getElementById('customStartDate');
       const customEndDate = document.getElementById('customEndDate');
+      const scrollPositionStorageKey = 'executiveStatsScrollPosition';
+
+      function rememberScrollPosition() {
+        try {
+          window.sessionStorage.setItem(scrollPositionStorageKey, JSON.stringify({
+            path: window.location.pathname,
+            top: window.scrollY,
+          }));
+        } catch (err) {
+          console.warn('Unable to remember the Executive Stats scroll position', err);
+        }
+      }
+
+      function restoreScrollPosition() {
+        let savedPosition = null;
+        try {
+          savedPosition = JSON.parse(window.sessionStorage.getItem(scrollPositionStorageKey));
+          window.sessionStorage.removeItem(scrollPositionStorageKey);
+        } catch (err) {
+          console.warn('Unable to restore the Executive Stats scroll position', err);
+        }
+
+        if (!savedPosition || savedPosition.path !== window.location.pathname) return;
+
+        // Wait for tables and charts to be rebuilt before restoring the viewport.
+        window.requestAnimationFrame(() => {
+          window.requestAnimationFrame(() => window.scrollTo(0, Number(savedPosition.top) || 0));
+        });
+      }
+
+      document.addEventListener('click', (event) => {
+        const link = event.target.closest('a[href]');
+        if (!link || link.target || link.hasAttribute('download')) return;
+
+        const destination = new URL(link.href, window.location.href);
+        if (destination.origin === window.location.origin && destination.pathname === window.location.pathname) {
+          rememberScrollPosition();
+        }
+      });
+
+      document.addEventListener('submit', rememberScrollPosition);
 
       function syncCustomEndDate() {
         if (!customStartDate || !customEndDate) return;
@@ -1744,6 +1785,7 @@
         partsDimensionToggle.addEventListener('change', () => {
           const url = new URL(window.location.href);
           url.searchParams.set('parts_dimension', partsDimensionToggle.checked ? 'user' : 'department');
+          rememberScrollPosition();
           window.location.href = url.toString();
         });
       }
@@ -1770,6 +1812,7 @@
           const currentPrevMode = url.searchParams.get('parts_prev_mode') || {{ (parts_sold_context.prev_mode if parts_sold_context else 'mirror')|tojson }};
           const nextPrevMode = currentPrevMode === 'month' ? 'mirror' : 'month';
           url.searchParams.set('parts_prev_mode', nextPrevMode);
+          rememberScrollPosition();
           window.location.href = url.toString();
         });
       }
@@ -1778,6 +1821,7 @@
         dateModeToggle.addEventListener('change', () => {
           const url = new URL(window.location.href);
           url.searchParams.set('date_mode', dateModeToggle.checked ? 'collected' : 'recovered');
+          rememberScrollPosition();
           window.location.href = url.toString();
         });
       }
@@ -1815,6 +1859,7 @@
         });
         renderVehicleInStatusChart(vehicleInStatusCurrentChartType);
       }
+      restoreScrollPosition();
     </script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
   </body>
