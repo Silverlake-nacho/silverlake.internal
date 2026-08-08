@@ -312,48 +312,65 @@
       }
       .vehicle-status-breakdown td:last-child {
         font-size: 0.875rem;
-      }ehicleDetailsTable {
+      }
+      .vehicle-details-table {
         --vehicle-title-row-height: 42px;
         --vehicle-first-column-width: 120px;
       }
-      #vehicleDetailsTable thead tr.title-row th {
+      .vehicle-details-table thead tr.title-row th {
         position: sticky;
         top: 0;
         z-index: 4;
         background: #f8f9fa;
       }
-      #vehicleDetailsTable thead tr.filter-row th {
+      .vehicle-details-table thead tr.filter-row th {
         position: sticky;
         top: var(--vehicle-title-row-height);
-        z-index: 3;
+        z-index: 3 !important;
         background: #fff;
         padding: 6px;
+        overflow: hidden;
       }
-      #vehicleDetailsTable tr > :nth-child(1) {
+      .vehicle-details-table tr > :nth-child(1) {
         position: sticky;
         left: 0;
       }
-      #vehicleDetailsTable tr > :nth-child(2) {
+      .vehicle-details-table tr > :nth-child(2) {
         position: sticky;
         left: var(--vehicle-first-column-width);
       }
-      #vehicleDetailsTable tbody tr > :nth-child(1),
-      #vehicleDetailsTable tbody tr > :nth-child(2) {
+      .vehicle-details-table tbody tr > :nth-child(1),
+      .vehicle-details-table tbody tr > :nth-child(2) {
         z-index: 2;
         background: #fff;
       }
-      #vehicleDetailsTable thead tr.title-row > :nth-child(1),
-      #vehicleDetailsTable thead tr.title-row > :nth-child(2) {
+      .vehicle-details-table thead tr.title-row > :nth-child(1),
+      .vehicle-details-table thead tr.title-row > :nth-child(2) {
         z-index: 6;
       }
-      #vehicleDetailsTable thead tr.filter-row > :nth-child(1),
-      #vehicleDetailsTable thead tr.filter-row > :nth-child(2) {
-        z-index: 5;
+      .vehicle-details-table thead tr.filter-row > :nth-child(1),
+      .vehicle-details-table thead tr.filter-row > :nth-child(2) {
+        position: sticky !important;
+        z-index: 100 !important;
+        background-color: #fff !important;
+        background-clip: padding-box;
+        overflow: hidden;
+        box-shadow: inset 0 0 0 100vmax #fff;
+      }
+      .vehicle-details-table thead tr.filter-row > :nth-child(1) {
+        left: 0 !important;
+      }
+      .vehicle-details-table thead tr.filter-row > :nth-child(2) {
+        left: var(--vehicle-first-column-width) !important;
+        box-shadow: inset 0 0 0 100vmax #fff, 4px 0 4px -4px rgba(0, 0, 0, 0.35);
       }
       .vehicle-details-filter {
         width: 100%;
         min-width: 110px;
         font-size: 0.8rem;
+      }
+      .vehicle-details-table thead tr.filter-row .dt-column-order {
+        display: none !important;
       }
       .vehicle-table-frame {
         width: 100%;
@@ -580,6 +597,65 @@
               </div>
             </div>
 
+            <div class="row g-4 mb-4" id="vehicleSoldSection">
+              <div class="col-12">
+                <div class="toggle-wrapper mb-2">
+                  <span class="toggle-label">Date Type</span>
+                  <div class="toggle group-company" role="group" aria-label="Vehicle sold date type">
+                    <span class="toggle-track"></span>
+                    <div class="toggle-links"><span class="company-link active"><i class="fas fa-gavel"></i> Vehicle Sold</span></div>
+                  </div>
+                </div>
+              </div>
+              <div class="col-lg-6">
+                <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+                  <h5 class="text-success mb-0" id="vehicleSoldDateRangeLabel">Showing: {{ vehicle_sold_context.date_range_label }}</h5>
+                </div>
+                <table class="table table-striped">
+                  <thead>
+                    <tr>
+                      <th id="vehicleSoldEntityHeader">{{ vehicle_sold_context.entity_label }}</th>
+                      <th class="text-end">Vehicles</th>
+                      <th class="text-end">Sale Price</th>
+                      <th class="text-end">Premium</th>
+                    </tr>
+                  </thead>
+                  <tbody id="vehicleSoldTableBody">
+                    {% for row in vehicle_sold_context.rows %}
+                    <tr>
+                      <td>{{ row[0] }}</td>
+                      <td class="text-end">{{ '{:,.0f}'.format(row[1]) }}</td>
+                      <td class="text-end">£{{ '{:,.2f}'.format(row[2]) }}</td>
+                      <td class="text-end">£{{ '{:,.2f}'.format(row[3]) }}</td>
+                    </tr>
+                    {% endfor %}
+                  </tbody>
+                  <tfoot>
+                    <tr class="fw-bold">
+                      <td class="text-end">Total Vehicles Sold</td>
+                      <td class="text-end" id="vehicleSoldTotalCell">{{ '{:,.0f}'.format(vehicle_sold_context.sum_total) }}</td>
+                      <td class="text-end" id="vehicleSoldSalePriceTotalCell">Total: £{{ '{:,.2f}'.format(vehicle_sold_context.sum_sale_price) }}</td>
+                      <td class="text-end" id="vehicleSoldPremiumTotalCell">Total: £{{ '{:,.2f}'.format(vehicle_sold_context.sum_premium) }}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+              <div class="col-lg-6">
+                <div class="card shadow-sm">
+                  <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                      <h5 class="card-title mb-0" id="vehicleSoldChartTitle">{{ vehicle_sold_context.chart_title_base }} (Bar)</h5>
+                      <div class="d-flex gap-2">
+                        <button id="vehicleSoldResetZoomBtn" class="btn btn-sm btn-outline-secondary">Reset Zoom</button>
+                        <button id="vehicleSoldToggleChartBtn" class="btn btn-sm btn-success">Show Pie Chart</button>
+                      </div>
+                    </div>
+                    <canvas id="vehicleSoldChart" height="180"></canvas>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             {% if date_mode == 'recovered' and vehicle_in_status_context %}
             <div class="row g-4 mb-4" id="vehicleInStatusSection">
               <div class="col-12">
@@ -721,7 +797,7 @@
                           <th>{{ column }}</th>
                         {% endfor %}
                       </tr>
-                      <tr class="filter-row">
+                      <tr class="filter-row" data-dt-order="disable">
                         {% for column in detail_columns %}
                           <th><input type="text" class="form-control form-control-sm vehicle-details-filter" placeholder="Filter {{ column }}"></th>
                         {% endfor %}
@@ -729,6 +805,46 @@
                     </thead>
                     <tbody id="vehicleDetailsTableBody">
                       {% for row in detail_rows %}
+                        <tr>
+                          {% for value in row %}
+                            {% if value is mapping and value.get('kind') == 'single' %}
+                              <td style="background-color: {{ value.get('background_color', '') }}; color: #111; font-weight: 600;">{{ value.get('label', '') }}</td>
+                            {% elif value is mapping and value.get('kind') == 'multiple' %}
+                              <td><button type="button" class="btn btn-sm btn-link p-0">{{ value.get('label', 'More') }}</button></td>
+                            {% else %}
+                              <td>{{ value }}</td>
+                            {% endif %}
+                          {% endfor %}
+                        </tr>
+                      {% endfor %}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            <div class="card shadow-sm" id="vehicleSoldDetailsSection">
+              <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+                  <h5 class="card-title mb-0">Vehicle Sold Details</h5>
+                  <small class="text-muted">Matches the DateSold range and exclusions used by the Vehicle Sold figures.</small>
+                </div>
+                <div class="vehicle-table-frame">
+                  <table id="vehicleSoldDetailsTable" class="table table-striped table-sm align-middle vehicle-details-table">
+                    <thead>
+                      <tr class="title-row">
+                        {% for column in vehicle_sold_context.detail_columns %}
+                          <th>{{ column }}</th>
+                        {% endfor %}
+                      </tr>
+                      <tr class="filter-row" data-dt-order="disable">
+                        {% for column in vehicle_sold_context.detail_columns %}
+                          <th><input type="text" class="form-control form-control-sm vehicle-details-filter" placeholder="Filter {{ column }}"></th>
+                        {% endfor %}
+                      </tr>
+                    </thead>
+                    <tbody id="vehicleSoldDetailsTableBody">
+                      {% for row in vehicle_sold_context.detail_rows %}
                         <tr>
                           {% for value in row %}
                             {% if value is mapping and value.get('kind') == 'single' %}
@@ -824,6 +940,15 @@
       const vehicleInStatusChartTitle = document.getElementById('vehicleInStatusChartTitle');
       const vehicleInStatusResetZoomBtn = document.getElementById('vehicleInStatusResetZoomBtn');
       const vehicleInStatusToggleChartBtn = document.getElementById('vehicleInStatusToggleChartBtn');
+      const vehicleSoldTableBody = document.getElementById('vehicleSoldTableBody');
+      const vehicleSoldDateRangeLabel = document.getElementById('vehicleSoldDateRangeLabel');
+      const vehicleSoldEntityHeader = document.getElementById('vehicleSoldEntityHeader');
+      const vehicleSoldTotalCell = document.getElementById('vehicleSoldTotalCell');
+      const vehicleSoldSalePriceTotalCell = document.getElementById('vehicleSoldSalePriceTotalCell');
+      const vehicleSoldPremiumTotalCell = document.getElementById('vehicleSoldPremiumTotalCell');
+      const vehicleSoldChartTitle = document.getElementById('vehicleSoldChartTitle');
+      const vehicleSoldResetZoomBtn = document.getElementById('vehicleSoldResetZoomBtn');
+      const vehicleSoldToggleChartBtn = document.getElementById('vehicleSoldToggleChartBtn');
       const liveCheckbox = document.getElementById('liveToggle');
 	  const dateModeToggle = document.getElementById('dateModeToggle');
       const partsDimensionToggle = document.getElementById('partsDimensionToggle');
@@ -903,13 +1028,17 @@
         customEndDate.addEventListener('focus', syncCustomEndDate);
       }
       const vehicleDetailsTableBody = document.getElementById('vehicleDetailsTableBody');
+      const vehicleSoldDetailsTableBody = document.getElementById('vehicleSoldDetailsTableBody');
       const vehicleFlagsModalBody = document.getElementById('vehicleFlagsModalBody');
       const vehicleFlagsModalElement = document.getElementById('vehicleFlagsModal');
       let vehicleFlagsModal = null;
       let vehicleDetailColumns = {{ detail_columns|tojson }};
       let vehicleDetailRows = {{ detail_rows|tojson }};
+      let vehicleSoldDetailColumns = {{ vehicle_sold_context.detail_columns|tojson }};
+      let vehicleSoldDetailRows = {{ vehicle_sold_context.detail_rows|tojson }};
       const chartTitleBase = {{ chart_title_base|tojson }}
       let detailsDataTable = null;
+      let vehicleSoldDetailsDataTable = null;
 
       let chartInstance = null;
       let currentChartType = 'bar';
@@ -922,6 +1051,12 @@
       let vehicleInStatusLabels = (vehicleInStatusDataset.chart_labels || []).slice();
       let vehicleInStatusValues = (vehicleInStatusDataset.chart_values || []).slice();
       let vehicleInStatusBreakdown = vehicleInStatusDataset.group_status_breakdown || {};
+
+      const vehicleSoldDataset = {{ (vehicle_sold_context or {})|tojson }};
+      let vehicleSoldChartInstance = null;
+      let vehicleSoldCurrentChartType = 'bar';
+      let vehicleSoldLabels = (vehicleSoldDataset.chart_labels || []).slice();
+      let vehicleSoldValues = (vehicleSoldDataset.chart_values || []).slice();
 
       const partsSoldDataset = {{ (parts_sold_context or {})|tojson }};
       let partsSoldChartInstance = null;
@@ -1075,6 +1210,35 @@
             ? `${baseTitle} (Pie)`
             : `${baseTitle} (Bar)`;
         }
+      }
+
+      function renderVehicleSoldChart(type) {
+        const canvas = document.getElementById('vehicleSoldChart');
+        if (!canvas) return;
+        if (vehicleSoldChartInstance) vehicleSoldChartInstance.destroy();
+        vehicleSoldChartInstance = new Chart(canvas, buildChartConfig(type, vehicleSoldLabels, vehicleSoldValues));
+        vehicleSoldCurrentChartType = type;
+        const baseTitle = vehicleSoldDataset.chart_title_base || 'Vehicles Sold';
+        if (vehicleSoldChartTitle) vehicleSoldChartTitle.textContent = `${baseTitle} (${type === 'pie' ? 'Pie' : 'Bar'})`;
+      }
+
+      function updateVehicleSoldData(data) {
+        if (!data || !vehicleSoldTableBody) return;
+        vehicleSoldTableBody.innerHTML = '';
+        (data.rows || []).forEach((row) => {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `<td>${row.label ?? 'Unknown'}</td><td class="text-end">${Number(row.total || 0).toLocaleString()}</td><td class="text-end">£${Number(row.sale_price || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td><td class="text-end">£${Number(row.premium || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>`;
+          vehicleSoldTableBody.appendChild(tr);
+        });
+        if (vehicleSoldDateRangeLabel) vehicleSoldDateRangeLabel.textContent = `Showing: ${data.date_range_label}`;
+        if (vehicleSoldEntityHeader) vehicleSoldEntityHeader.textContent = data.entity_label || 'Insurance Company';
+        if (vehicleSoldTotalCell) vehicleSoldTotalCell.textContent = Number(data.sum_total || 0).toLocaleString();
+        if (vehicleSoldSalePriceTotalCell) vehicleSoldSalePriceTotalCell.textContent = `Total: £${Number(data.sum_sale_price || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+        if (vehicleSoldPremiumTotalCell) vehicleSoldPremiumTotalCell.textContent = `Total: £${Number(data.sum_premium || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+        vehicleSoldLabels = (data.chart_labels || []).slice();
+        vehicleSoldValues = (data.chart_values || []).slice();
+        renderVehicleSoldChart(vehicleSoldCurrentChartType);
+        rebuildVehicleSoldDetailsTable(data);
       }
 
       function renderPartsSoldChart(type) {
@@ -1586,9 +1750,35 @@
         initializeDetailsTable();
       }
 
+      function rebuildVehicleSoldDetailsTable(data) {
+        if (!vehicleSoldDetailsTableBody) return;
+        vehicleSoldDetailsTableBody.innerHTML = '';
+        vehicleSoldDetailColumns = data.detail_columns || vehicleSoldDetailColumns || [];
+        vehicleSoldDetailRows = data.detail_rows || [];
+        vehicleSoldDetailRows.forEach((row) => {
+          const tr = document.createElement('tr');
+          row.forEach((value, index) => {
+            const td = document.createElement('td');
+            const columnKey = normalizeColumnName(vehicleSoldDetailColumns[index]);
+            if (columnKey === 'flag') {
+              renderFlagCell(td, value);
+            } else {
+              td.textContent = formatDateTimeForDisplay(value, vehicleSoldDetailColumns[index]);
+            }
+            tr.appendChild(td);
+          });
+          vehicleSoldDetailsTableBody.appendChild(tr);
+        });
+        initializeVehicleSoldDetailsTable();
+      }
+
 
       function syncDetailsHeaderOffsets() {
-        const detailsTable = document.getElementById('vehicleDetailsTable');
+        syncTableHeaderOffsets('vehicleDetailsTable');
+      }
+
+      function syncTableHeaderOffsets(tableId) {
+        const detailsTable = document.getElementById(tableId);
         if (!detailsTable) return;
         const titleRowCell = detailsTable.querySelector('thead tr.title-row th');
         const firstColumnCell = detailsTable.querySelector('thead tr.title-row th:nth-child(1)');
@@ -1634,6 +1824,35 @@
         syncDetailsHeaderOffsets();
       }
 
+      function initializeVehicleSoldDetailsTable() {
+        if (!window.jQuery || !jQuery.fn.DataTable) return;
+        const $table = jQuery('#vehicleSoldDetailsTable');
+        if (!$table.length) return;
+        if (vehicleSoldDetailsDataTable) vehicleSoldDetailsDataTable.destroy();
+
+        const $filterInputs = $table.find('thead tr.filter-row th input');
+        $filterInputs.off('keyup change clear').val('');
+        vehicleSoldDetailsDataTable = $table.DataTable({
+          paging: false,
+          info: false,
+          order: [],
+          dom: 't',
+          autoWidth: false,
+          ordering: true,
+          initComplete: function () {
+            const api = this.api();
+            api.columns().every(function (index) {
+              const column = this;
+              jQuery($filterInputs[index]).on('keyup change clear', function () {
+                if (column.search() !== this.value) column.search(this.value).draw();
+              });
+            });
+            syncTableHeaderOffsets('vehicleSoldDetailsTable');
+          },
+        });
+        syncTableHeaderOffsets('vehicleSoldDetailsTable');
+      }
+
       function getContrastTextColor(hexColor) {
         if (!hexColor || typeof hexColor !== 'string') return '#111111';
         const normalized = hexColor.trim().replace('#', '');
@@ -1667,6 +1886,9 @@
           const data = await response.json();
           rebuildTable(data);
           updateChartData(data);
+          if (data.vehicle_sold) {
+            updateVehicleSoldData(data.vehicle_sold);
+          }
           if (data.vehicle_in_status) {
             updateVehicleInStatusData(data.vehicle_in_status);
           }
@@ -1781,6 +2003,20 @@
         });
       }
 
+      if (vehicleSoldToggleChartBtn) {
+        vehicleSoldToggleChartBtn.addEventListener('click', () => {
+          const nextType = vehicleSoldCurrentChartType === 'bar' ? 'pie' : 'bar';
+          vehicleSoldToggleChartBtn.textContent = nextType === 'bar' ? 'Show Pie Chart' : 'Show Bar Chart';
+          renderVehicleSoldChart(nextType);
+        });
+      }
+
+      if (vehicleSoldResetZoomBtn) {
+        vehicleSoldResetZoomBtn.addEventListener('click', () => {
+          if (vehicleSoldChartInstance) vehicleSoldChartInstance.resetZoom();
+        });
+      }
+
       if (partsDimensionToggle) {
         partsDimensionToggle.addEventListener('change', () => {
           const url = new URL(window.location.href);
@@ -1846,9 +2082,17 @@
         detail_columns: vehicleDetailColumns,
         detail_rows: vehicleDetailRows,
       });
+      rebuildVehicleSoldDetailsTable({
+        detail_columns: vehicleSoldDetailColumns,
+        detail_rows: vehicleSoldDetailRows,
+      });
       syncDetailsHeaderOffsets();
-      window.addEventListener('resize', syncDetailsHeaderOffsets);
+      window.addEventListener('resize', () => {
+        syncDetailsHeaderOffsets();
+        syncTableHeaderOffsets('vehicleSoldDetailsTable');
+      });
       renderChart(currentChartType);
+      renderVehicleSoldChart(vehicleSoldCurrentChartType);
 
       if (vehicleInStatusSection) {
         rebuildVehicleInStatusTable({
