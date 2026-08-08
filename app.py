@@ -1412,6 +1412,128 @@ def fetch_atlas_vehicle_counts_by_body_type(
     raise last_error if last_error else RuntimeError("No Atlas database names configured.")
 
 
+def fetch_atlas_vehicle_sales_summary(
+    start_date: date,
+    end_date: date,
+    group_mode: str,
+    contract_group_filter: Optional[str] = None,
+):
+    """Return vehicles sold, sale price and premium grouped for Executive Stats."""
+
+    resolved_group_mode = normalize_vehicle_group_mode(group_mode)
+    group_expressions = {
+        "contract": "COALESCE(cg.Name, 'Unassigned')",
+        "status": _vehicle_status_sql_expression(),
+        "body_type": "COALESCE(bt.Name, 'Unknown')",
+        "company": "ic.Name",
+    }
+    group_expression = group_expressions[resolved_group_mode]
+    last_error = None
+    for database_name in _get_atlas_db_name_candidates():
+        try:
+            conn = get_atlas_db_connection(database_name)
+            cur = conn.cursor()
+            query = """
+                SELECT
+                    {group_expression} AS SaleGroup,
+                    ic.Name AS InsuranceCompany,
+                    COUNT(*) AS VehicleCount,
+                    COALESCE(SUM(ss.exVAT), 0) AS SalePrice,
+                    COALESCE(SUM(ss.PremiumExVAT), 0) AS Premium
+                FROM SalvageSales ss
+                INNER JOIN CT_Vehicles v ON v.Id = ss.CtVehicleId
+                INNER JOIN InsuranceBranches ib ON v.InsuranceBranchId = ib.Id
+                INNER JOIN InsuranceCompanies ic ON ib.InsuranceCompanyId = ic.Id
+                LEFT JOIN ContractGroups cg ON ic.ContractGroupId = cg.Id
+                LEFT JOIN StatusColors stc ON v.StatusEnum = stc.Status
+                LEFT JOIN PartDataBodyTypes bt ON v.BodyTypeId = bt.ID
+                WHERE CAST(ss.DateSold AS datetime2) >= ?
+                  AND CAST(ss.DateSold AS datetime2) < ?
+                  AND (? IS NULL OR cg.Name = ?)
+                GROUP BY {group_expression}, ic.Name
+                ORDER BY VehicleCount DESC, SaleGroup, InsuranceCompany
+            """.format(group_expression=group_expression)
+            cur.execute(
+                query,
+                (start_date, end_date, contract_group_filter, contract_group_filter),
+            )
+            rows = cur.fetchall()
+            cur.close()
+            conn.close()
+            return database_name, rows
+        except Exception as exc:
+            last_error = exc
+    raise last_error if last_error else RuntimeError("No Atlas database names configured.")
+
+
+def fetch_atlas_vehicle_sold_details(
+    start_date: date,
+    end_date: date,
+    contract_group_filter: Optional[str] = None,
+):
+    """Return the individual sale records included in the DateSold summary."""
+
+    last_error = None
+    for database_name in _get_atlas_db_name_candidates():
+        try:
+            conn = get_atlas_db_connection(database_name)
+            cur = conn.cursor()
+            query = """
+                SELECT
+                    v.Id,
+                    v.RegNo AS Registration,
+                    CAST(v.DateEntered AS datetime2) AS DateEntered,
+                    m.Name AS Manufacturer,
+                    mg.Name AS Model,
+                    dd.TrimLevel,
+                    col.Name AS colour,
+                    dm.Name AS Derivative,
+                    ib.Name AS InsuranceBranch,
+                    ic.Name AS InsuranceCompany,
+                    c.Code AS Category_Code,
+                    c.Name AS Category,
+                    CAST(ss.DateSold AS datetime2) AS DateSold,
+                    ss.exVAT AS SalePrice,
+                    ss.PremiumExVAT AS Premium,
+                    CASE
+                        WHEN stc.Name IS NOT NULL THEN stc.Name
+                        WHEN v.StatusEnum = 301 THEN 'IAA Complete'
+                        WHEN v.StatusEnum IS NOT NULL THEN CONCAT('Status ', CAST(v.StatusEnum AS varchar(20)))
+                        ELSE 'Unknown'
+                    END AS Status,
+                    v.FlagColorId AS FlagColorIdRef
+                FROM SalvageSales ss
+                INNER JOIN CT_Vehicles v ON v.Id = ss.CtVehicleId
+                LEFT JOIN PartDataManufacturers m ON v.ManufacturerId = m.Id
+                LEFT JOIN PartDataModelGroups mg ON v.ModelGroupId = mg.Id
+                LEFT JOIN PartDataDerivativeDetails dd ON v.DerivativeId = dd.Id
+                LEFT JOIN PartDataModels dm ON v.DerivativeId = dm.Id
+                INNER JOIN InsuranceBranches ib ON v.InsuranceBranchId = ib.Id
+                INNER JOIN InsuranceCompanies ic ON ib.InsuranceCompanyId = ic.Id
+                LEFT JOIN ContractGroups cg ON ic.ContractGroupId = cg.Id
+                LEFT JOIN Categories c ON v.CategoryId = c.Id
+                LEFT JOIN PartDataColours col ON v.ColourId = col.Id
+                LEFT JOIN StatusColors stc ON v.StatusEnum = stc.Status
+                WHERE CAST(ss.DateSold AS datetime2) >= ?
+                  AND CAST(ss.DateSold AS datetime2) < ?
+                  AND (? IS NULL OR cg.Name = ?)
+                ORDER BY ss.DateSold DESC, v.Id DESC
+            """
+            cur.execute(
+                query,
+                (start_date, end_date, contract_group_filter, contract_group_filter),
+            )
+            rows = cur.fetchall()
+            columns = [desc[0] for desc in cur.description]
+            columns, rows = hydrate_vehicle_flags(cur, columns, rows)
+            cur.close()
+            conn.close()
+            return database_name, columns, rows
+        except Exception as exc:
+            last_error = exc
+    raise last_error if last_error else RuntimeError("No Atlas database names configured.")
+
+
 def fetch_atlas_vehicle_details_by_insurance(
     start_date: date, end_date: date, date_mode: str, contract_group_filter: Optional[str] = None
 ):
@@ -4218,6 +4340,63 @@ def build_vehicle_stats_context(
     }
 
 
+def build_vehicle_sold_context(
+    filter_type: str,
+    start_date_str: str,
+    end_date_str: str,
+    excluded_companies: List[str],
+    group_mode: str,
+    contract_group_filter: Optional[str] = None,
+):
+    """Build the independent DateSold-based vehicle sales summary."""
+
+    start_date, end_date = parse_date_filter(filter_type, start_date_str, end_date_str)
+    resolved_group_mode = normalize_vehicle_group_mode(group_mode)
+    database_name, raw_rows = fetch_atlas_vehicle_sales_summary(
+        start_date, end_date, resolved_group_mode, contract_group_filter
+    )
+    details_db_name, detail_columns, detail_rows = fetch_atlas_vehicle_sold_details(
+        start_date, end_date, contract_group_filter
+    )
+    company_index = detail_columns.index("InsuranceCompany")
+    detail_rows = [
+        row for row in detail_rows if row[company_index] not in excluded_companies
+    ]
+    totals = {}
+    for label, company, vehicle_count, sale_price, premium in raw_rows:
+        if company in excluded_companies:
+            continue
+        row = totals.setdefault(str(label), [0, 0.0, 0.0])
+        row[0] += int(vehicle_count or 0)
+        row[1] += float(sale_price or 0)
+        row[2] += float(premium or 0)
+
+    rows = sorted(
+        [(label, values[0], values[1], values[2]) for label, values in totals.items()],
+        key=lambda row: (-row[1], row[0]),
+    )
+    entity_label = {
+        "contract": "Contract Group",
+        "status": "Vehicle Status",
+        "body_type": "Body Type",
+    }.get(resolved_group_mode, "Insurance Company")
+    return {
+        "database_name": database_name or details_db_name,
+        "date_range_label": describe_date_range(filter_type, start_date, end_date),
+        "rows": rows,
+        "sum_total": sum(row[1] for row in rows),
+        "sum_sale_price": sum(row[2] for row in rows),
+        "sum_premium": sum(row[3] for row in rows),
+        "chart_labels": [row[0] for row in rows],
+        "chart_values": [float(row[1]) for row in rows],
+        "entity_label": entity_label,
+        "chart_title_base": f"Vehicles Sold by {entity_label}",
+        "group_mode": resolved_group_mode,
+        "detail_columns": detail_columns,
+        "detail_rows": detail_rows,
+    }
+
+
 def hydrate_vehicle_flags(cursor, columns, rows):
     hydrated_columns = list(columns)
     if "FlagColorIdRef" not in hydrated_columns:
@@ -4786,6 +4965,7 @@ def executive_stats():
 
     error_message = None
     vehicle_in_status_context = None
+    vehicle_sold_context = None
     parts_sold_context = None
     try:
         context = build_vehicle_stats_context(
@@ -4818,6 +4998,13 @@ def executive_stats():
                 "chart_title_base": "Vehicles IN by Status Group",
                 "group_status_breakdown": group_status_breakdown,
             }
+        vehicle_sold_context = build_vehicle_sold_context(
+            filter_type,
+            start_date_str,
+            end_date_str,
+            context.get("excluded_companies", []),
+            group_mode,
+        )
         parts_sold_context = build_stats_context(
             filter_type,
             start_date_str,
@@ -4872,12 +5059,26 @@ def executive_stats():
             "value_vat_label": "Parts Sold (Prev Period)",
             "prev_date_range_label": "Prev Period",
         }
+        vehicle_sold_context = {
+            "date_range_label": context["date_range_label"],
+            "rows": [],
+            "sum_total": 0,
+            "sum_sale_price": 0,
+            "sum_premium": 0,
+            "chart_labels": [],
+            "chart_values": [],
+            "entity_label": entity_label,
+            "chart_title_base": f"Vehicles Sold by {entity_label}",
+            "detail_columns": [],
+            "detail_rows": [],
+        }
         error_message = f"Unable to load executive stats: {exc}"
 
     return render_template(
         "executive_stats.html",
         **context,
         vehicle_in_status_context=vehicle_in_status_context,
+        vehicle_sold_context=vehicle_sold_context,
         parts_sold_context=parts_sold_context,
         live_enabled=live_enabled,
         error_message=error_message,
@@ -5171,6 +5372,14 @@ def executive_stats_data():
             "chart_title_base": "Vehicles IN by Status Group",
             "group_status_breakdown": group_status_breakdown,
         }
+
+    vehicle_sold_context = build_vehicle_sold_context(
+        filter_type,
+        start_date_str,
+        end_date_str,
+        context.get("excluded_companies", []),
+        group_mode,
+    )
         
     parts_sold_context = build_stats_context(
         filter_type,
@@ -5186,6 +5395,10 @@ def executive_stats_data():
     detail_rows = []
     for row in context.get("detail_rows", []):
         detail_rows.append([serialize_vehicle_detail_cell(value) for value in row])
+    vehicle_sold_detail_rows = [
+        [serialize_vehicle_detail_cell(value) for value in row]
+        for row in vehicle_sold_context.get("detail_rows", [])
+    ]
 
     payload = {
             "date_range_label": context["date_range_label"],
@@ -5200,6 +5413,27 @@ def executive_stats_data():
             "entity_label": context.get("entity_label", "Insurance Company"),
             "chart_title_base": context.get("chart_title_base", "Vehicles by Insurance Company"),
             "contract_company_breakdown": context.get("contract_company_breakdown", {}),
+            "vehicle_sold": {
+                "date_range_label": vehicle_sold_context["date_range_label"],
+                "rows": [
+                    {
+                        "label": row[0],
+                        "total": row[1],
+                        "sale_price": row[2],
+                        "premium": row[3],
+                    }
+                    for row in vehicle_sold_context["rows"]
+                ],
+                "sum_total": vehicle_sold_context["sum_total"],
+                "sum_sale_price": vehicle_sold_context["sum_sale_price"],
+                "sum_premium": vehicle_sold_context["sum_premium"],
+                "chart_labels": vehicle_sold_context["chart_labels"],
+                "chart_values": vehicle_sold_context["chart_values"],
+                "entity_label": vehicle_sold_context["entity_label"],
+                "chart_title_base": vehicle_sold_context["chart_title_base"],
+                "detail_columns": vehicle_sold_context.get("detail_columns", []),
+                "detail_rows": vehicle_sold_detail_rows,
+            },
             "parts_sold": {
                 "date_range_label": parts_sold_context["date_range_label"],
                 "rows": [
