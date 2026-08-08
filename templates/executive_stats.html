@@ -190,8 +190,8 @@
         position: relative;
         display: inline-flex;
         align-items: center;
-        width: 270px;
-        height: 40px;
+        width: 300px;
+        height: 50px;
         border-radius: 999px;
         background: rgba(92, 156, 19, 0.15);
         cursor: pointer;
@@ -315,7 +315,6 @@
       }
       .vehicle-details-table {
         --vehicle-title-row-height: 42px;
-        --vehicle-first-column-width: 120px;
       }
       .vehicle-details-table thead tr.title-row th {
         position: sticky;
@@ -330,39 +329,6 @@
         background: #fff;
         padding: 6px;
         overflow: hidden;
-      }
-      .vehicle-details-table tr > :nth-child(1) {
-        position: sticky;
-        left: 0;
-      }
-      .vehicle-details-table tr > :nth-child(2) {
-        position: sticky;
-        left: var(--vehicle-first-column-width);
-      }
-      .vehicle-details-table tbody tr > :nth-child(1),
-      .vehicle-details-table tbody tr > :nth-child(2) {
-        z-index: 2;
-        background: #fff;
-      }
-      .vehicle-details-table thead tr.title-row > :nth-child(1),
-      .vehicle-details-table thead tr.title-row > :nth-child(2) {
-        z-index: 6;
-      }
-      .vehicle-details-table thead tr.filter-row > :nth-child(1),
-      .vehicle-details-table thead tr.filter-row > :nth-child(2) {
-        position: sticky !important;
-        z-index: 100 !important;
-        background-color: #fff !important;
-        background-clip: padding-box;
-        overflow: hidden;
-        box-shadow: inset 0 0 0 100vmax #fff;
-      }
-      .vehicle-details-table thead tr.filter-row > :nth-child(1) {
-        left: 0 !important;
-      }
-      .vehicle-details-table thead tr.filter-row > :nth-child(2) {
-        left: var(--vehicle-first-column-width) !important;
-        box-shadow: inset 0 0 0 100vmax #fff, 4px 0 4px -4px rgba(0, 0, 0, 0.35);
       }
       .vehicle-details-filter {
         width: 100%;
@@ -1781,11 +1747,8 @@
         const detailsTable = document.getElementById(tableId);
         if (!detailsTable) return;
         const titleRowCell = detailsTable.querySelector('thead tr.title-row th');
-        const firstColumnCell = detailsTable.querySelector('thead tr.title-row th:nth-child(1)');
         const titleRowHeight = titleRowCell ? Math.ceil(titleRowCell.getBoundingClientRect().height) : 42;
-        const firstColumnWidth = firstColumnCell ? Math.ceil(firstColumnCell.getBoundingClientRect().width) : 120;
         detailsTable.style.setProperty('--vehicle-title-row-height', `${titleRowHeight}px`);
-        detailsTable.style.setProperty('--vehicle-first-column-width', `${firstColumnWidth}px`);
       }
 
       function initializeDetailsTable() {
