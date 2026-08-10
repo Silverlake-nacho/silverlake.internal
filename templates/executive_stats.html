@@ -272,6 +272,9 @@
       .toggle-four.group-body_type .toggle-links a.body-type-link {
         color: #fff;
       }
+      .vehicle-sold-toggle .toggle-labels span:first-child {
+        color: #fff;
+      }
       .contract-row-toggle {
         cursor: pointer;
       }
@@ -288,6 +291,12 @@
       }
       .contract-company-breakdown td:last-child {
         font-size: 0.875rem;
+      }
+      .vehicle-sold-contract-breakdown td {
+        font-size: 0.875rem;
+      }
+      .vehicle-sold-contract-breakdown td:first-child {
+        padding-left: 30px;
       }
       .contract-company-breakdown-total-excluded td {
         color: #dc3545;
@@ -437,18 +446,19 @@
             <div class="summary-card">
               <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
                 <div class="d-flex flex-wrap align-items-center gap-2">
-                  <a href="{{ url_for('executive_stats', filter='today', group=group_mode, date_mode=date_mode, parts_dimension=parts_sold_context.stats_dimension if parts_sold_context else 'department', parts_prev_mode=parts_sold_context.prev_mode if parts_sold_context else 'mirror', live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">Today</a>
-                  <a href="{{ url_for('executive_stats', filter='yesterday', group=group_mode, date_mode=date_mode, parts_dimension=parts_sold_context.stats_dimension if parts_sold_context else 'department', parts_prev_mode=parts_sold_context.prev_mode if parts_sold_context else 'mirror', live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">Yesterday</a>
-                  <a href="{{ url_for('executive_stats', filter='this_week', group=group_mode, date_mode=date_mode, parts_dimension=parts_sold_context.stats_dimension if parts_sold_context else 'department', parts_prev_mode=parts_sold_context.prev_mode if parts_sold_context else 'mirror', live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">This Week</a>
-                  <a href="{{ url_for('executive_stats', filter='last_week', group=group_mode, date_mode=date_mode, parts_dimension=parts_sold_context.stats_dimension if parts_sold_context else 'department', parts_prev_mode=parts_sold_context.prev_mode if parts_sold_context else 'mirror', live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">Last Week</a>
-                  <a href="{{ url_for('executive_stats', filter='this_month', group=group_mode, date_mode=date_mode, parts_dimension=parts_sold_context.stats_dimension if parts_sold_context else 'department', parts_prev_mode=parts_sold_context.prev_mode if parts_sold_context else 'mirror', live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">This Month</a>
-                  <a href="{{ url_for('executive_stats', filter='last_month', group=group_mode, date_mode=date_mode, parts_dimension=parts_sold_context.stats_dimension if parts_sold_context else 'department', parts_prev_mode=parts_sold_context.prev_mode if parts_sold_context else 'mirror', live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">Last Month</a>
+                  <a href="{{ url_for('executive_stats', filter='today', group=group_mode, date_mode=date_mode, parts_dimension=parts_sold_context.stats_dimension if parts_sold_context else 'department', parts_prev_mode=parts_sold_context.prev_mode if parts_sold_context else 'mirror', sold_only=1 if vehicle_sold_context.sold_only else 0, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">Today</a>
+                  <a href="{{ url_for('executive_stats', filter='yesterday', group=group_mode, date_mode=date_mode, parts_dimension=parts_sold_context.stats_dimension if parts_sold_context else 'department', parts_prev_mode=parts_sold_context.prev_mode if parts_sold_context else 'mirror', sold_only=1 if vehicle_sold_context.sold_only else 0, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">Yesterday</a>
+                  <a href="{{ url_for('executive_stats', filter='this_week', group=group_mode, date_mode=date_mode, parts_dimension=parts_sold_context.stats_dimension if parts_sold_context else 'department', parts_prev_mode=parts_sold_context.prev_mode if parts_sold_context else 'mirror', sold_only=1 if vehicle_sold_context.sold_only else 0, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">This Week</a>
+                  <a href="{{ url_for('executive_stats', filter='last_week', group=group_mode, date_mode=date_mode, parts_dimension=parts_sold_context.stats_dimension if parts_sold_context else 'department', parts_prev_mode=parts_sold_context.prev_mode if parts_sold_context else 'mirror', sold_only=1 if vehicle_sold_context.sold_only else 0, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">Last Week</a>
+                  <a href="{{ url_for('executive_stats', filter='this_month', group=group_mode, date_mode=date_mode, parts_dimension=parts_sold_context.stats_dimension if parts_sold_context else 'department', parts_prev_mode=parts_sold_context.prev_mode if parts_sold_context else 'mirror', sold_only=1 if vehicle_sold_context.sold_only else 0, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">This Month</a>
+                  <a href="{{ url_for('executive_stats', filter='last_month', group=group_mode, date_mode=date_mode, parts_dimension=parts_sold_context.stats_dimension if parts_sold_context else 'department', parts_prev_mode=parts_sold_context.prev_mode if parts_sold_context else 'mirror', sold_only=1 if vehicle_sold_context.sold_only else 0, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">Last Month</a>
                   <form method="get" class="d-inline">
                     <input type="hidden" name="filter" value="custom">
                     <input type="hidden" name="group" value="{{ group_mode }}">
                     <input type="hidden" name="date_mode" value="{{ date_mode }}">
                     <input type="hidden" name="parts_dimension" value="{{ parts_sold_context.stats_dimension if parts_sold_context else 'department' }}">
                     <input type="hidden" name="parts_prev_mode" value="{{ parts_sold_context.prev_mode if parts_sold_context else 'mirror' }}">
+                    <input type="hidden" name="sold_only" value="{{ 1 if vehicle_sold_context.sold_only else 0 }}">
                     <input type="date" name="start_date" id="customStartDate" required>
                     <input type="date" name="end_date" id="customEndDate" required>
                     {% if live_enabled %}
@@ -484,6 +494,7 @@
                     <input type="hidden" name="date_mode" value="{{ date_mode }}">
                     <input type="hidden" name="parts_dimension" value="{{ parts_sold_context.stats_dimension if parts_sold_context else 'department' }}">
                     <input type="hidden" name="parts_prev_mode" value="{{ parts_sold_context.prev_mode if parts_sold_context else 'mirror' }}">
+                    <input type="hidden" name="sold_only" value="{{ 1 if vehicle_sold_context.sold_only else 0 }}">
                     <input type="hidden" name="start_date" value="{{ start_date.isoformat() if start_date else '' }}">
                     <input type="hidden" name="end_date" value="{{ end_date.isoformat() if end_date else '' }}">
                     <input type="hidden" id="liveInputField" name="live" value="{{ 1 if live_enabled else '' }}">
@@ -565,11 +576,32 @@
 
             <div class="row g-4 mb-4" id="vehicleSoldSection">
               <div class="col-12">
-                <div class="toggle-wrapper mb-2">
-                  <span class="toggle-label">Date Type</span>
-                  <div class="toggle group-company" role="group" aria-label="Vehicle sold date type">
-                    <span class="toggle-track"></span>
-                    <div class="toggle-links"><span class="company-link active"><i class="fas fa-gavel"></i> Vehicle Sold</span></div>
+                <div class="toggle-stack mb-2">
+                  <div class="toggle-wrapper">
+                    <span class="toggle-label">Date Type</span>
+                    <div class="toggle vehicle-sold-toggle" role="group" aria-label="Vehicle sold date type">
+                      <span class="toggle-track"></span>
+                      <div class="toggle-labels">
+                        <span><i class="fas fa-gavel"></i> Vehicle Sold</span>
+                        <span aria-hidden="true"></span>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="toggle-wrapper">
+                    <span class="toggle-label">Group By</span>
+                    <div class="toggle toggle-four group-{{ group_mode }}" role="group" aria-label="Select Vehicle Sold grouping criteria">
+                      <span class="toggle-track"></span>
+                      <div class="toggle-links">
+                        <a class="contract-link" href="{{ url_for('executive_stats', filter=filter_type, start_date=start_date.isoformat() if start_date else None, end_date=end_date.isoformat() if end_date else None, group='contract', date_mode=date_mode, parts_dimension=parts_sold_context.stats_dimension if parts_sold_context else 'department', exclude=excluded_companies, sold_only=1 if vehicle_sold_context.sold_only else 0, live=1 if live_enabled else None) }}#vehicleSoldSection">Contract</a>
+                        <a class="company-link" href="{{ url_for('executive_stats', filter=filter_type, start_date=start_date.isoformat() if start_date else None, end_date=end_date.isoformat() if end_date else None, group='company', date_mode=date_mode, parts_dimension=parts_sold_context.stats_dimension if parts_sold_context else 'department', exclude=excluded_companies, sold_only=1 if vehicle_sold_context.sold_only else 0, live=1 if live_enabled else None) }}#vehicleSoldSection">Insurance</a>
+                        <a class="status-link" href="{{ url_for('executive_stats', filter=filter_type, start_date=start_date.isoformat() if start_date else None, end_date=end_date.isoformat() if end_date else None, group='status', date_mode=date_mode, parts_dimension=parts_sold_context.stats_dimension if parts_sold_context else 'department', exclude=excluded_companies, sold_only=1 if vehicle_sold_context.sold_only else 0, live=1 if live_enabled else None) }}#vehicleSoldSection">Status</a>
+                        <a class="body-type-link" href="{{ url_for('executive_stats', filter=filter_type, start_date=start_date.isoformat() if start_date else None, end_date=end_date.isoformat() if end_date else None, group='body_type', date_mode=date_mode, parts_dimension=parts_sold_context.stats_dimension if parts_sold_context else 'department', exclude=excluded_companies, sold_only=1 if vehicle_sold_context.sold_only else 0, live=1 if live_enabled else None) }}#vehicleSoldSection">Body Type</a>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="form-check align-self-center mb-0">
+                    <input class="form-check-input" type="checkbox" id="vehicleSoldOnlyToggle" {% if vehicle_sold_context.sold_only %}checked{% endif %}>
+                    <label class="form-check-label text-success" for="vehicleSoldOnlyToggle">Sold only</label>
                   </div>
                 </div>
               </div>
@@ -584,6 +616,7 @@
                       <th class="text-end">Vehicles</th>
                       <th class="text-end">Sale Price</th>
                       <th class="text-end">Premium</th>
+                      <th class="text-end">Total</th>
                     </tr>
                   </thead>
                   <tbody id="vehicleSoldTableBody">
@@ -593,6 +626,7 @@
                       <td class="text-end">{{ '{:,.0f}'.format(row[1]) }}</td>
                       <td class="text-end">£{{ '{:,.2f}'.format(row[2]) }}</td>
                       <td class="text-end">£{{ '{:,.2f}'.format(row[3]) }}</td>
+                      <td class="text-end">£{{ '{:,.2f}'.format(row[2] + row[3]) }}</td>
                     </tr>
                     {% endfor %}
                   </tbody>
@@ -602,6 +636,7 @@
                       <td class="text-end" id="vehicleSoldTotalCell">{{ '{:,.0f}'.format(vehicle_sold_context.sum_total) }}</td>
                       <td class="text-end" id="vehicleSoldSalePriceTotalCell">Total: £{{ '{:,.2f}'.format(vehicle_sold_context.sum_sale_price) }}</td>
                       <td class="text-end" id="vehicleSoldPremiumTotalCell">Total: £{{ '{:,.2f}'.format(vehicle_sold_context.sum_premium) }}</td>
+                      <td class="text-end" id="vehicleSoldGrandTotalCell">Grand Total: £{{ '{:,.2f}'.format(vehicle_sold_context.sum_sales_total) }}</td>
                     </tr>
                   </tfoot>
                 </table>
@@ -912,9 +947,11 @@
       const vehicleSoldTotalCell = document.getElementById('vehicleSoldTotalCell');
       const vehicleSoldSalePriceTotalCell = document.getElementById('vehicleSoldSalePriceTotalCell');
       const vehicleSoldPremiumTotalCell = document.getElementById('vehicleSoldPremiumTotalCell');
+      const vehicleSoldGrandTotalCell = document.getElementById('vehicleSoldGrandTotalCell');
       const vehicleSoldChartTitle = document.getElementById('vehicleSoldChartTitle');
       const vehicleSoldResetZoomBtn = document.getElementById('vehicleSoldResetZoomBtn');
       const vehicleSoldToggleChartBtn = document.getElementById('vehicleSoldToggleChartBtn');
+      const vehicleSoldOnlyToggle = document.getElementById('vehicleSoldOnlyToggle');
       const liveCheckbox = document.getElementById('liveToggle');
 	  const dateModeToggle = document.getElementById('dateModeToggle');
       const partsDimensionToggle = document.getElementById('partsDimensionToggle');
@@ -1023,6 +1060,7 @@
       let vehicleSoldCurrentChartType = 'bar';
       let vehicleSoldLabels = (vehicleSoldDataset.chart_labels || []).slice();
       let vehicleSoldValues = (vehicleSoldDataset.chart_values || []).slice();
+      let vehicleSoldContractCompanyBreakdown = vehicleSoldDataset.contract_company_breakdown || {};
 
       const partsSoldDataset = {{ (parts_sold_context or {})|tojson }};
       let partsSoldChartInstance = null;
@@ -1035,6 +1073,7 @@
       const currentGroupMode = {{ group_mode|tojson }};
       let contractCompanyBreakdown = {{ contract_company_breakdown|tojson }};
       const collapsedContracts = new Set();
+      const collapsedVehicleSoldContracts = new Set();
       const lightGreyContractTypes = new Set(['IAA Purchases']);
       const lightGreyContractColor = '#adb5bd';
 
@@ -1188,23 +1227,61 @@
         if (vehicleSoldChartTitle) vehicleSoldChartTitle.textContent = `${baseTitle} (${type === 'pie' ? 'Pie' : 'Bar'})`;
       }
 
-      function updateVehicleSoldData(data) {
+      function updateVehicleSoldData(data, refreshRelatedViews = true) {
         if (!data || !vehicleSoldTableBody) return;
         vehicleSoldTableBody.innerHTML = '';
+        vehicleSoldContractCompanyBreakdown = data.contract_company_breakdown || {};
+        const canExpandContracts = (data.group_mode || currentGroupMode) === 'contract';
         (data.rows || []).forEach((row) => {
+          const label = Array.isArray(row) ? row[0] : row.label;
+          const total = Array.isArray(row) ? row[1] : row.total;
+          const salePrice = Array.isArray(row) ? row[2] : row.sale_price;
+          const premium = Array.isArray(row) ? row[3] : row.premium;
+          const salesTotal = Number(salePrice || 0) + Number(premium || 0);
+          const safeLabel = label ?? 'Unassigned';
+          const isExpanded = canExpandContracts && !collapsedVehicleSoldContracts.has(safeLabel);
           const tr = document.createElement('tr');
-          tr.innerHTML = `<td>${row.label ?? 'Unknown'}</td><td class="text-end">${Number(row.total || 0).toLocaleString()}</td><td class="text-end">£${Number(row.sale_price || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td><td class="text-end">£${Number(row.premium || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>`;
+          if (canExpandContracts) {
+            tr.classList.add('contract-row-toggle');
+            if (isExpanded) tr.classList.add('contract-row-toggle-expanded');
+            tr.addEventListener('click', () => {
+              if (collapsedVehicleSoldContracts.has(safeLabel)) {
+                collapsedVehicleSoldContracts.delete(safeLabel);
+              } else {
+                collapsedVehicleSoldContracts.add(safeLabel);
+              }
+              updateVehicleSoldData(data, false);
+            });
+          }
+          tr.innerHTML = `<td>${escapeHtml(safeLabel)}</td><td class="text-end">${Number(total || 0).toLocaleString()}</td><td class="text-end">£${Number(salePrice || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td><td class="text-end">£${Number(premium || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td><td class="text-end">£${salesTotal.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>`;
           vehicleSoldTableBody.appendChild(tr);
+
+          if (isExpanded) {
+            (vehicleSoldContractCompanyBreakdown[safeLabel] || []).forEach((companyRow) => {
+              const company = Array.isArray(companyRow) ? companyRow[0] : companyRow.company;
+              const companyTotal = Array.isArray(companyRow) ? companyRow[1] : companyRow.total;
+              const companySalePrice = Array.isArray(companyRow) ? companyRow[2] : companyRow.sale_price;
+              const companyPremium = Array.isArray(companyRow) ? companyRow[3] : companyRow.premium;
+              const companySalesTotal = Number(companySalePrice || 0) + Number(companyPremium || 0);
+              const detailTr = document.createElement('tr');
+              detailTr.classList.add('vehicle-sold-contract-breakdown');
+              detailTr.innerHTML = `<td>└ ${escapeHtml(company || 'Unknown Insurance Company')}</td><td class="text-end">${Number(companyTotal || 0).toLocaleString()}</td><td class="text-end">£${Number(companySalePrice || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td><td class="text-end">£${Number(companyPremium || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td><td class="text-end">£${companySalesTotal.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>`;
+              vehicleSoldTableBody.appendChild(detailTr);
+            });
+          }
         });
         if (vehicleSoldDateRangeLabel) vehicleSoldDateRangeLabel.textContent = `Showing: ${data.date_range_label}`;
         if (vehicleSoldEntityHeader) vehicleSoldEntityHeader.textContent = data.entity_label || 'Insurance Company';
         if (vehicleSoldTotalCell) vehicleSoldTotalCell.textContent = Number(data.sum_total || 0).toLocaleString();
         if (vehicleSoldSalePriceTotalCell) vehicleSoldSalePriceTotalCell.textContent = `Total: £${Number(data.sum_sale_price || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
         if (vehicleSoldPremiumTotalCell) vehicleSoldPremiumTotalCell.textContent = `Total: £${Number(data.sum_premium || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
-        vehicleSoldLabels = (data.chart_labels || []).slice();
-        vehicleSoldValues = (data.chart_values || []).slice();
-        renderVehicleSoldChart(vehicleSoldCurrentChartType);
-        rebuildVehicleSoldDetailsTable(data);
+        if (vehicleSoldGrandTotalCell) vehicleSoldGrandTotalCell.textContent = `Grand Total: £${Number(data.sum_sales_total || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+        if (refreshRelatedViews) {
+          vehicleSoldLabels = (data.chart_labels || []).slice();
+          vehicleSoldValues = (data.chart_values || []).slice();
+          renderVehicleSoldChart(vehicleSoldCurrentChartType);
+          rebuildVehicleSoldDetailsTable(data);
+        }
       }
 
       function renderPartsSoldChart(type) {
@@ -1980,6 +2057,16 @@
         });
       }
 
+      if (vehicleSoldOnlyToggle) {
+        vehicleSoldOnlyToggle.addEventListener('change', () => {
+          const url = new URL(window.location.href);
+          url.searchParams.set('sold_only', vehicleSoldOnlyToggle.checked ? '1' : '0');
+          url.hash = 'vehicleSoldSection';
+          rememberScrollPosition();
+          window.location.href = url.toString();
+        });
+      }
+
       if (partsDimensionToggle) {
         partsDimensionToggle.addEventListener('change', () => {
           const url = new URL(window.location.href);
@@ -2055,7 +2142,7 @@
         syncTableHeaderOffsets('vehicleSoldDetailsTable');
       });
       renderChart(currentChartType);
-      renderVehicleSoldChart(vehicleSoldCurrentChartType);
+      updateVehicleSoldData(vehicleSoldDataset);
 
       if (vehicleInStatusSection) {
         rebuildVehicleInStatusTable({
