@@ -1417,6 +1417,7 @@ def fetch_atlas_vehicle_sales_summary(
     end_date: date,
     group_mode: str,
     contract_group_filter: Optional[str] = None,
+    sold_only: bool = True,
 ):
     """Return vehicles sold, sale price and premium grouped for Executive Stats."""
 
@@ -1450,12 +1451,22 @@ def fetch_atlas_vehicle_sales_summary(
                 WHERE CAST(ss.DateSold AS datetime2) >= ?
                   AND CAST(ss.DateSold AS datetime2) < ?
                   AND (? IS NULL OR cg.Name = ?)
+                  AND (? = 0 OR ({status_expression}) = 'Sold')
                 GROUP BY {group_expression}, ic.Name
                 ORDER BY VehicleCount DESC, SaleGroup, InsuranceCompany
-            """.format(group_expression=group_expression)
+            """.format(
+                group_expression=group_expression,
+                status_expression=_vehicle_status_sql_expression(),
+            )
             cur.execute(
                 query,
-                (start_date, end_date, contract_group_filter, contract_group_filter),
+                (
+                    start_date,
+                    end_date,
+                    contract_group_filter,
+                    contract_group_filter,
+                    1 if sold_only else 0,
+                ),
             )
             rows = cur.fetchall()
             cur.close()
@@ -1470,6 +1481,7 @@ def fetch_atlas_vehicle_sold_details(
     start_date: date,
     end_date: date,
     contract_group_filter: Optional[str] = None,
+    sold_only: bool = True,
 ):
     """Return the individual sale records included in the DateSold summary."""
 
@@ -1517,11 +1529,18 @@ def fetch_atlas_vehicle_sold_details(
                 WHERE CAST(ss.DateSold AS datetime2) >= ?
                   AND CAST(ss.DateSold AS datetime2) < ?
                   AND (? IS NULL OR cg.Name = ?)
+                  AND (? = 0 OR ({status_expression}) = 'Sold')
                 ORDER BY ss.DateSold DESC, v.Id DESC
-            """
+            """.format(status_expression=_vehicle_status_sql_expression())
             cur.execute(
                 query,
-                (start_date, end_date, contract_group_filter, contract_group_filter),
+                (
+                    start_date,
+                    end_date,
+                    contract_group_filter,
+                    contract_group_filter,
+                    1 if sold_only else 0,
+                ),
             )
             rows = cur.fetchall()
             columns = [desc[0] for desc in cur.description]
@@ -4347,29 +4366,44 @@ def build_vehicle_sold_context(
     excluded_companies: List[str],
     group_mode: str,
     contract_group_filter: Optional[str] = None,
+    sold_only: bool = True,
 ):
     """Build the independent DateSold-based vehicle sales summary."""
 
     start_date, end_date = parse_date_filter(filter_type, start_date_str, end_date_str)
     resolved_group_mode = normalize_vehicle_group_mode(group_mode)
     database_name, raw_rows = fetch_atlas_vehicle_sales_summary(
-        start_date, end_date, resolved_group_mode, contract_group_filter
+        start_date, end_date, resolved_group_mode, contract_group_filter, sold_only
     )
     details_db_name, detail_columns, detail_rows = fetch_atlas_vehicle_sold_details(
-        start_date, end_date, contract_group_filter
+        start_date, end_date, contract_group_filter, sold_only
     )
     company_index = detail_columns.index("InsuranceCompany")
     detail_rows = [
         row for row in detail_rows if row[company_index] not in excluded_companies
     ]
     totals = {}
+    contract_company_breakdown = {}
     for label, company, vehicle_count, sale_price, premium in raw_rows:
         if company in excluded_companies:
             continue
-        row = totals.setdefault(str(label), [0, 0.0, 0.0])
-        row[0] += int(vehicle_count or 0)
-        row[1] += float(sale_price or 0)
-        row[2] += float(premium or 0)
+        label = str(label)
+        vehicle_count = int(vehicle_count or 0)
+        sale_price = float(sale_price or 0)
+        premium = float(premium or 0)
+        row = totals.setdefault(label, [0, 0.0, 0.0])
+        row[0] += vehicle_count
+        row[1] += sale_price
+        row[2] += premium
+        if resolved_group_mode == "contract":
+            contract_company_breakdown.setdefault(label, []).append(
+                (str(company), vehicle_count, sale_price, premium)
+            )
+
+    for label, companies in contract_company_breakdown.items():
+        contract_company_breakdown[label] = sorted(
+            companies, key=lambda row: (-row[1], row[0])
+        )
 
     rows = sorted(
         [(label, values[0], values[1], values[2]) for label, values in totals.items()],
@@ -4387,11 +4421,14 @@ def build_vehicle_sold_context(
         "sum_total": sum(row[1] for row in rows),
         "sum_sale_price": sum(row[2] for row in rows),
         "sum_premium": sum(row[3] for row in rows),
+        "sum_sales_total": sum(row[2] + row[3] for row in rows),
         "chart_labels": [row[0] for row in rows],
         "chart_values": [float(row[1]) for row in rows],
         "entity_label": entity_label,
         "chart_title_base": f"Vehicles Sold by {entity_label}",
         "group_mode": resolved_group_mode,
+        "sold_only": sold_only,
+        "contract_company_breakdown": contract_company_breakdown,
         "detail_columns": detail_columns,
         "detail_rows": detail_rows,
     }
@@ -4962,6 +4999,9 @@ def executive_stats():
     parts_dimension = normalize_stats_dimension(request.args.get("parts_dimension", "department"))
     parts_prev_mode = normalize_prev_period_mode(request.args.get("parts_prev_mode", "mirror"))
     live_enabled = str(request.args.get("live", "")).lower() in {"1", "true", "yes", "on"}
+    sold_only = str(request.args.get("sold_only", "1")).lower() not in {
+        "0", "false", "no", "off"
+    }
 
     error_message = None
     vehicle_in_status_context = None
@@ -5004,6 +5044,7 @@ def executive_stats():
             end_date_str,
             context.get("excluded_companies", []),
             group_mode,
+            sold_only=sold_only,
         )
         parts_sold_context = build_stats_context(
             filter_type,
@@ -5065,10 +5106,14 @@ def executive_stats():
             "sum_total": 0,
             "sum_sale_price": 0,
             "sum_premium": 0,
+            "sum_sales_total": 0,
             "chart_labels": [],
             "chart_values": [],
             "entity_label": entity_label,
             "chart_title_base": f"Vehicles Sold by {entity_label}",
+            "group_mode": normalize_vehicle_group_mode(group_mode),
+            "sold_only": sold_only,
+            "contract_company_breakdown": {},
             "detail_columns": [],
             "detail_rows": [],
         }
@@ -5337,6 +5382,9 @@ def executive_stats_data():
     date_mode = request.args.get("date_mode", "recovered")
     parts_dimension = normalize_stats_dimension(request.args.get("parts_dimension", "department"))
     parts_prev_mode = normalize_prev_period_mode(request.args.get("parts_prev_mode", "mirror"))
+    sold_only = str(request.args.get("sold_only", "1")).lower() not in {
+        "0", "false", "no", "off"
+    }
 
     resolved_date_mode = normalize_vehicle_date_mode(date_mode)
 
@@ -5379,6 +5427,7 @@ def executive_stats_data():
         end_date_str,
         context.get("excluded_companies", []),
         group_mode,
+        sold_only=sold_only,
     )
         
     parts_sold_context = build_stats_context(
@@ -5421,16 +5470,23 @@ def executive_stats_data():
                         "total": row[1],
                         "sale_price": row[2],
                         "premium": row[3],
+                        "sales_total": row[2] + row[3],
                     }
                     for row in vehicle_sold_context["rows"]
                 ],
                 "sum_total": vehicle_sold_context["sum_total"],
                 "sum_sale_price": vehicle_sold_context["sum_sale_price"],
                 "sum_premium": vehicle_sold_context["sum_premium"],
+                "sum_sales_total": vehicle_sold_context["sum_sales_total"],
                 "chart_labels": vehicle_sold_context["chart_labels"],
                 "chart_values": vehicle_sold_context["chart_values"],
                 "entity_label": vehicle_sold_context["entity_label"],
                 "chart_title_base": vehicle_sold_context["chart_title_base"],
+                "group_mode": vehicle_sold_context.get("group_mode", group_mode),
+                "sold_only": vehicle_sold_context.get("sold_only", sold_only),
+                "contract_company_breakdown": vehicle_sold_context.get(
+                    "contract_company_breakdown", {}
+                ),
                 "detail_columns": vehicle_sold_context.get("detail_columns", []),
                 "detail_rows": vehicle_sold_detail_rows,
             },
