@@ -1360,15 +1360,21 @@ def fetch_atlas_executive_uncollected_sold_details(
                     ib.Name AS InsuranceBranch,
                     ic.Name AS InsuranceCompany,
                     cg.Name AS ContractGroup,
-                    invoice_contact.Firstname,
-                    invoice_contact.Surname,
-                    invoice_contact.CompanyName,
+                    ss.Firstname,
+                    ss.Surname,
+                    ss.CompanyName,
                     v.FlagColorId AS FlagColorIdRef
                 FROM CT_Vehicles v
                 LEFT JOIN SalvageRecoveries sr ON v.SalvageRecoveryId = sr.Id
                 OUTER APPLY (
-                    SELECT TOP (1) sale.DateSold
-                    FROM SalvageSales sale
+                    SELECT TOP (1)
+                        sale.DateSold,
+                        contact.Firstname,
+                        contact.Surname,
+                        contact.CompanyName
+                    FROM dbo.SalvageSales sale
+                    LEFT JOIN dbo.Contacts contact
+                        ON sale.SoldAddressContactId = contact.Id
                     WHERE sale.CtVehicleId = v.Id
                     ORDER BY sale.DateSold DESC
                 ) ss
@@ -1377,17 +1383,6 @@ def fetch_atlas_executive_uncollected_sold_details(
                 LEFT JOIN InsuranceBranches ib ON v.InsuranceBranchId = ib.Id
                 LEFT JOIN InsuranceCompanies ic ON ib.InsuranceCompanyId = ic.Id
                 LEFT JOIN ContractGroups cg ON ic.ContractGroupId = cg.Id
-                OUTER APPLY (
-                    SELECT TOP (1)
-                        contact.Firstname,
-                        contact.Surname,
-                        contact.CompanyName
-                    FROM dbo.InternalInvoices invoice
-                    INNER JOIN dbo.Contacts contact
-                        ON invoice.InvToContactId = contact.Id
-                    WHERE invoice.CtVehicleId = v.Id
-                    ORDER BY invoice.Id DESC
-                ) invoice_contact
                 OUTER APPLY (
                     SELECT TOP (1) sc.Name
                     FROM StatusColors sc
