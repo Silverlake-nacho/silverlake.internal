@@ -1,7 +1,7 @@
 from flask import Flask, request, render_template, send_file, redirect, url_for, session, flash, jsonify
 import pandas as pd
 from io import BytesIO
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from google.oauth2 import service_account
@@ -18,6 +18,7 @@ from calendar import monthrange
 import json
 import os
 import re
+import struct
 from urllib.parse import urljoin
 import pyodbc
 
@@ -1258,6 +1259,32 @@ def validate_atlas_query(query: str) -> str:
     return query_without_trailing_semicolon
 
 
+def convert_sql_server_datetimeoffset(raw_value: bytes) -> datetime:
+    """Convert SQL Server's ODBC datetimeoffset bytes into a Python datetime."""
+    (
+        year,
+        month,
+        day,
+        hour,
+        minute,
+        second,
+        nanoseconds,
+        offset_hours,
+        offset_minutes,
+    ) = struct.unpack("<6hI2h", raw_value)
+    offset = timedelta(hours=offset_hours, minutes=offset_minutes)
+    return datetime(
+        year,
+        month,
+        day,
+        hour,
+        minute,
+        second,
+        nanoseconds // 1000,
+        timezone(offset),
+    )
+
+
 def run_atlas_read_only_query(query: str):
     """Run a diagnostic SELECT against Atlas and cap the displayed result size."""
     validated_query = validate_atlas_query(query)
@@ -1267,6 +1294,9 @@ def run_atlas_read_only_query(query: str):
         cur = None
         try:
             conn = get_atlas_db_connection(database_name)
+            # pyodbc does not decode SQL Server's datetimeoffset type (-155) by
+            # default, so register the driver-specific conversion before fetching.
+            conn.add_output_converter(-155, convert_sql_server_datetimeoffset)
             cur = conn.cursor()
             cur.execute(validated_query)
             if cur.description is None:
