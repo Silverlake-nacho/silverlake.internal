@@ -666,6 +666,35 @@
               </div>
             </div>
 
+            <div class="row g-4 mb-4" id="currentStatusSection">
+              <div class="col-12 d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <div>
+                  <h5 class="text-success mb-1">Current Vehicle Status</h5>
+                  <small class="text-muted">Operational totals use each vehicle's status at the time this page is loaded.</small>
+                </div>
+                <div class="btn-group btn-group-sm" role="group" aria-label="Current vehicle status period">
+                  <button type="button" class="btn btn-success active" id="currentStatusNowBtn" aria-pressed="true">Currently</button>
+                  <button type="button" class="btn btn-outline-success" id="currentStatusSelectedBtn" aria-pressed="false">Date selected</button>
+                </div>
+              </div>
+              <div class="col-lg-6">
+                <h5 class="text-success mb-2" id="currentStatusRangeLabel">Showing: Current vehicle status</h5>
+                <table class="table table-striped">
+                  <thead><tr><th>Status group</th><th class="text-end">Vehicles</th></tr></thead>
+                  <tbody id="currentStatusTableBody"></tbody>
+                  <tfoot><tr class="fw-bold"><td class="text-end">Total Vehicles</td><td class="text-end" id="currentStatusTotalCell">0</td></tr></tfoot>
+                </table>
+              </div>
+              <div class="col-lg-6">
+                <div class="card shadow-sm">
+                  <div class="card-body">
+                    <h5 class="card-title mb-3">Current Vehicle Status (Bar)</h5>
+                    <canvas id="currentStatusChart" height="180"></canvas>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             {% if date_mode == 'recovered' and vehicle_in_status_context %}
             <div class="row g-4 mb-4" id="vehicleInStatusSection">
               <div class="col-12">
@@ -872,6 +901,23 @@
                 </div>
               </div>
             </div>
+            <div class="card shadow-sm" id="uncollectedSoldDetailsSection">
+              <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+                  <h5 class="card-title mb-0">Auction Vehicles Sold, Not Collected Details</h5>
+                  <small class="text-muted" id="uncollectedSoldDetailsLabel">Showing vehicles sold in 2026 currently in Sold or Sold Not Paid status without a CollectedDate or ActualDeliveryDate.</small>
+                </div>
+                <div class="vehicle-table-frame">
+                  <table id="uncollectedSoldDetailsTable" class="table table-striped table-sm align-middle vehicle-details-table">
+                    <thead>
+                      <tr class="title-row" id="uncollectedSoldDetailsTitleRow"></tr>
+                      <tr class="filter-row" id="uncollectedSoldDetailsFilterRow" data-dt-order="disable"></tr>
+                    </thead>
+                    <tbody id="uncollectedSoldDetailsTableBody"></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -950,6 +996,11 @@
       const vehicleInStatusChartTitle = document.getElementById('vehicleInStatusChartTitle');
       const vehicleInStatusResetZoomBtn = document.getElementById('vehicleInStatusResetZoomBtn');
       const vehicleInStatusToggleChartBtn = document.getElementById('vehicleInStatusToggleChartBtn');
+      const currentStatusTableBody = document.getElementById('currentStatusTableBody');
+      const currentStatusTotalCell = document.getElementById('currentStatusTotalCell');
+      const currentStatusRangeLabel = document.getElementById('currentStatusRangeLabel');
+      const currentStatusNowBtn = document.getElementById('currentStatusNowBtn');
+      const currentStatusSelectedBtn = document.getElementById('currentStatusSelectedBtn');
       const vehicleSoldTableBody = document.getElementById('vehicleSoldTableBody');
       const vehicleSoldDateRangeLabel = document.getElementById('vehicleSoldDateRangeLabel');
       const vehicleSoldEntityHeader = document.getElementById('vehicleSoldEntityHeader');
@@ -1042,6 +1093,10 @@
       }
       const vehicleDetailsTableBody = document.getElementById('vehicleDetailsTableBody');
       const vehicleSoldDetailsTableBody = document.getElementById('vehicleSoldDetailsTableBody');
+      const uncollectedSoldDetailsTableBody = document.getElementById('uncollectedSoldDetailsTableBody');
+      const uncollectedSoldDetailsTitleRow = document.getElementById('uncollectedSoldDetailsTitleRow');
+      const uncollectedSoldDetailsFilterRow = document.getElementById('uncollectedSoldDetailsFilterRow');
+      const uncollectedSoldDetailsLabel = document.getElementById('uncollectedSoldDetailsLabel');
       const vehicleFlagsModalBody = document.getElementById('vehicleFlagsModalBody');
       const vehicleFlagsModalElement = document.getElementById('vehicleFlagsModal');
       let vehicleFlagsModal = null;
@@ -1052,6 +1107,7 @@
       const chartTitleBase = {{ chart_title_base|tojson }}
       let detailsDataTable = null;
       let vehicleSoldDetailsDataTable = null;
+      let uncollectedSoldDetailsDataTable = null;
 
       let chartInstance = null;
       let currentChartType = 'bar';
@@ -1064,6 +1120,10 @@
       let vehicleInStatusLabels = (vehicleInStatusDataset.chart_labels || []).slice();
       let vehicleInStatusValues = (vehicleInStatusDataset.chart_values || []).slice();
       let vehicleInStatusBreakdown = vehicleInStatusDataset.group_status_breakdown || {};
+
+      let currentStatusDataset = {{ (current_status_context or {})|tojson }};
+      let currentStatusMode = 'current';
+      let currentStatusChartInstance = null;
 
       const vehicleSoldDataset = {{ (vehicle_sold_context or {})|tojson }};
       let vehicleSoldChartInstance = null;
@@ -1225,6 +1285,34 @@
             ? `${baseTitle} (Pie)`
             : `${baseTitle} (Bar)`;
         }
+      }
+
+      function renderCurrentStatus() {
+        const data = currentStatusDataset[currentStatusMode] || {};
+        if (currentStatusTableBody) {
+          currentStatusTableBody.innerHTML = (data.rows || []).map((row) => `
+            <tr><td>${escapeHtml(row[0])}</td><td class="text-end">${Number(row[1] || 0).toLocaleString()}</td></tr>
+          `).join('');
+        }
+        if (currentStatusTotalCell) currentStatusTotalCell.textContent = Number(data.sum_total || 0).toLocaleString();
+        if (currentStatusRangeLabel) currentStatusRangeLabel.textContent = `Showing: ${data.date_range_label || ''}`;
+        const canvas = document.getElementById('currentStatusChart');
+        if (canvas) {
+          if (currentStatusChartInstance) currentStatusChartInstance.destroy();
+          currentStatusChartInstance = new Chart(canvas.getContext('2d'), buildChartConfig(
+            'bar', data.chart_labels || [], data.chart_values || []
+          ));
+        }
+        const showingCurrent = currentStatusMode === 'current';
+        currentStatusNowBtn?.classList.toggle('active', showingCurrent);
+        currentStatusNowBtn?.classList.toggle('btn-success', showingCurrent);
+        currentStatusNowBtn?.classList.toggle('btn-outline-success', !showingCurrent);
+        currentStatusNowBtn?.setAttribute('aria-pressed', String(showingCurrent));
+        currentStatusSelectedBtn?.classList.toggle('active', !showingCurrent);
+        currentStatusSelectedBtn?.classList.toggle('btn-success', !showingCurrent);
+        currentStatusSelectedBtn?.classList.toggle('btn-outline-success', showingCurrent);
+        currentStatusSelectedBtn?.setAttribute('aria-pressed', String(!showingCurrent));
+        rebuildUncollectedSoldDetailsTable(data);
       }
 
       function renderVehicleSoldChart(type) {
@@ -1825,6 +1913,39 @@
         initializeVehicleSoldDetailsTable();
       }
 
+      function rebuildUncollectedSoldDetailsTable(data) {
+        if (!uncollectedSoldDetailsTableBody) return;
+        if (uncollectedSoldDetailsDataTable) {
+          uncollectedSoldDetailsDataTable.destroy();
+          uncollectedSoldDetailsDataTable = null;
+        }
+        const columns = data.detail_columns || [];
+        uncollectedSoldDetailsTitleRow.innerHTML = columns
+          .map((column) => `<th>${escapeHtml(column)}</th>`).join('');
+        uncollectedSoldDetailsFilterRow.innerHTML = columns
+          .map((column) => `<th><input type="text" class="form-control form-control-sm vehicle-details-filter" placeholder="Filter ${escapeHtml(column)}"></th>`).join('');
+        uncollectedSoldDetailsTableBody.innerHTML = '';
+        (data.detail_rows || []).forEach((row) => {
+          const tr = document.createElement('tr');
+          row.forEach((value, index) => {
+            const td = document.createElement('td');
+            if (normalizeColumnName(columns[index]) === 'flag') {
+              renderFlagCell(td, value);
+            } else {
+              td.textContent = formatDateTimeForDisplay(value, columns[index]);
+            }
+            tr.appendChild(td);
+          });
+          uncollectedSoldDetailsTableBody.appendChild(tr);
+        });
+        if (uncollectedSoldDetailsLabel) {
+          uncollectedSoldDetailsLabel.textContent = currentStatusMode === 'current'
+            ? 'Showing vehicles sold in 2026 currently in Sold or Sold Not Paid status without a CollectedDate or ActualDeliveryDate.'
+            : `Showing those vehicles sold in 2026 within ${data.date_range_label || 'the selected date range'}.`;
+        }
+        initializeUncollectedSoldDetailsTable();
+      }
+
 
       function syncDetailsHeaderOffsets() {
         syncTableHeaderOffsets('vehicleDetailsTable');
@@ -1913,6 +2034,33 @@
         syncTableHeaderOffsets('vehicleSoldDetailsTable');
       }
 
+      function initializeUncollectedSoldDetailsTable() {
+        if (!window.jQuery || !jQuery.fn.DataTable) return;
+        const $table = jQuery('#uncollectedSoldDetailsTable');
+        if (!$table.length) return;
+        removeEmptyDetailsHeaderRows($table[0]);
+        const $filterInputs = $table.find('thead tr.filter-row th input');
+        uncollectedSoldDetailsDataTable = $table.DataTable({
+          paging: false,
+          info: false,
+          order: [],
+          dom: 't',
+          autoWidth: false,
+          ordering: true,
+          initComplete: function () {
+            const api = this.api();
+            api.columns().every(function (index) {
+              const column = this;
+              jQuery($filterInputs[index]).on('keyup change clear', function () {
+                if (column.search() !== this.value) column.search(this.value).draw();
+              });
+            });
+            syncTableHeaderOffsets('uncollectedSoldDetailsTable');
+          },
+        });
+        syncTableHeaderOffsets('uncollectedSoldDetailsTable');
+      }
+
       function getContrastTextColor(hexColor) {
         if (!hexColor || typeof hexColor !== 'string') return '#111111';
         const normalized = hexColor.trim().replace('#', '');
@@ -1948,6 +2096,10 @@
           updateChartData(data);
           if (data.vehicle_sold) {
             updateVehicleSoldData(data.vehicle_sold);
+          }
+          if (data.current_status) {
+            currentStatusDataset = data.current_status;
+            renderCurrentStatus();
           }
           if (data.vehicle_in_status) {
             updateVehicleInStatusData(data.vehicle_in_status);
@@ -2054,6 +2206,15 @@
           renderVehicleInStatusChart(vehicleInStatusCurrentChartType);
         });
       }
+
+      currentStatusNowBtn?.addEventListener('click', () => {
+        currentStatusMode = 'current';
+        renderCurrentStatus();
+      });
+      currentStatusSelectedBtn?.addEventListener('click', () => {
+        currentStatusMode = 'selected';
+        renderCurrentStatus();
+      });
 
       if (vehicleInStatusResetZoomBtn) {
         vehicleInStatusResetZoomBtn.addEventListener('click', () => {
@@ -2183,6 +2344,7 @@
         });
         renderVehicleInStatusChart(vehicleInStatusCurrentChartType);
       }
+      renderCurrentStatus();
       restoreScrollPosition();
     </script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>

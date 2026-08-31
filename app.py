@@ -1247,6 +1247,210 @@ def _vehicle_status_sql_expression() -> str:
     """.strip()
 
 
+EXECUTIVE_CURRENT_STATUS_LABELS = (
+    "Auction vehicles waiting to be sold",
+    "Auction vehicles sold, not collected",
+    "Vehicles waiting to be cleared",
+)
+
+
+def fetch_atlas_executive_current_status_counts(
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    date_mode: str = "recovered",
+):
+    """Return operational vehicle counts, optionally limited by the page date range."""
+
+    last_error = None
+    for database_name in _get_atlas_db_name_candidates():
+        try:
+            conn = get_atlas_db_connection(database_name)
+            cur = conn.cursor()
+            status_expression = _vehicle_status_sql_expression()
+            date_expression = _vehicle_date_sql_expression(date_mode)
+            date_filter = ""
+            params = []
+            if start_date is not None and end_date is not None:
+                date_filter = f"WHERE {date_expression} >= ? AND {date_expression} < ?"
+                params = [start_date, end_date]
+            query = """
+                WITH CurrentVehicles AS (
+                    SELECT
+                        {status_expression} AS VehicleStatus,
+                        v.CollectedDate,
+                        v.ActualDeliveryDate,
+                        latest_sale.DateSold
+                    FROM CT_Vehicles v
+                    LEFT JOIN SalvageRecoveries sr ON v.SalvageRecoveryId = sr.Id
+                    OUTER APPLY (
+                        SELECT TOP (1) sale.DateSold
+                        FROM SalvageSales sale
+                        WHERE sale.CtVehicleId = v.Id
+                        ORDER BY sale.DateSold DESC
+                    ) latest_sale
+                    OUTER APPLY (
+                        SELECT TOP (1) sc.Name
+                        FROM StatusColors sc
+                        WHERE sc.Status = v.StatusEnum
+                    ) stc
+                    {date_filter}
+                )
+                SELECT
+                    COALESCE(SUM(CASE WHEN VehicleStatus = 'Auction' THEN 1 ELSE 0 END), 0),
+                    COALESCE(SUM(CASE
+                        WHEN VehicleStatus IN ('Sold', 'Sold Not Paid')
+                         AND CollectedDate IS NULL
+                         AND ActualDeliveryDate IS NULL
+                         AND DateSold >= CAST('2026-01-01' AS datetime2)
+                         AND DateSold < CAST('2027-01-01' AS datetime2)
+                        THEN 1 ELSE 0 END), 0),
+                    COALESCE(SUM(CASE
+                        WHEN VehicleStatus IN ('Notified', 'Recovered') THEN 1 ELSE 0 END), 0)
+                FROM CurrentVehicles
+            """.format(
+                status_expression=status_expression,
+                date_filter=date_filter,
+            )
+            cur.execute(query, params)
+            counts = cur.fetchone()
+            cur.close()
+            conn.close()
+            return database_name, [
+                (label, int(count or 0))
+                for label, count in zip(EXECUTIVE_CURRENT_STATUS_LABELS, counts)
+            ]
+        except Exception as exc:
+            last_error = exc
+    raise last_error if last_error else RuntimeError("No Atlas database names configured.")
+
+
+def fetch_atlas_executive_uncollected_sold_details(
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    date_mode: str = "recovered",
+):
+    """Return vehicles behind the Sold/Sold Not Paid without collection count."""
+
+    last_error = None
+    for database_name in _get_atlas_db_name_candidates():
+        try:
+            conn = get_atlas_db_connection(database_name)
+            cur = conn.cursor()
+            status_expression = _vehicle_status_sql_expression()
+            date_filter = ""
+            params = []
+            if start_date is not None and end_date is not None:
+                date_expression = _vehicle_date_sql_expression(date_mode)
+                date_filter = f"AND {date_expression} >= ? AND {date_expression} < ?"
+                params = [start_date, end_date]
+            query = """
+                SELECT
+                    v.Id,
+                    v.RegNo AS Registration,
+                    {status_expression} AS Status,
+                    CAST(v.DateEntered AS datetime2) AS DateEntered,
+                    CAST(sr.DateRecovered AS datetime2) AS DateRecovered,
+                    CAST(ss.DateSold AS datetime2) AS DateSold,
+                    CAST(v.CollectedDate AS datetime2) AS CollectedDate,
+                    CAST(v.ActualDeliveryDate AS datetime2) AS ActualDeliveryDate,
+                    v.isDeliveryIsCalculateDate,
+                    CAST(v.SLADeliveryDate AS datetime2) AS SLADeliveryDate,
+                    m.Name AS Manufacturer,
+                    mg.Name AS Model,
+                    ib.Name AS InsuranceBranch,
+                    ic.Name AS InsuranceCompany,
+                    cg.Name AS ContractGroup,
+                    invoice_contact.Firstname,
+                    invoice_contact.Surname,
+                    invoice_contact.CompanyName,
+                    v.FlagColorId AS FlagColorIdRef
+                FROM CT_Vehicles v
+                LEFT JOIN SalvageRecoveries sr ON v.SalvageRecoveryId = sr.Id
+                OUTER APPLY (
+                    SELECT TOP (1) sale.DateSold
+                    FROM SalvageSales sale
+                    WHERE sale.CtVehicleId = v.Id
+                    ORDER BY sale.DateSold DESC
+                ) ss
+                LEFT JOIN PartDataManufacturers m ON v.ManufacturerId = m.Id
+                LEFT JOIN PartDataModelGroups mg ON v.ModelGroupId = mg.Id
+                LEFT JOIN InsuranceBranches ib ON v.InsuranceBranchId = ib.Id
+                LEFT JOIN InsuranceCompanies ic ON ib.InsuranceCompanyId = ic.Id
+                LEFT JOIN ContractGroups cg ON ic.ContractGroupId = cg.Id
+                OUTER APPLY (
+                    SELECT TOP (1)
+                        contact.Firstname,
+                        contact.Surname,
+                        contact.CompanyName
+                    FROM dbo.InternalInvoices invoice
+                    INNER JOIN dbo.Contacts contact
+                        ON invoice.InvToContactId = contact.Id
+                    WHERE invoice.CtVehicleId = v.Id
+                    ORDER BY invoice.Id DESC
+                ) invoice_contact
+                OUTER APPLY (
+                    SELECT TOP (1) sc.Name
+                    FROM StatusColors sc
+                    WHERE sc.Status = v.StatusEnum
+                ) stc
+                WHERE ({status_expression}) IN ('Sold', 'Sold Not Paid')
+                  AND v.CollectedDate IS NULL
+                  AND v.ActualDeliveryDate IS NULL
+                  AND ss.DateSold >= CAST('2026-01-01' AS datetime2)
+                  AND ss.DateSold < CAST('2027-01-01' AS datetime2)
+                  {date_filter}
+                ORDER BY ss.DateSold DESC, v.Id DESC
+            """.format(
+                status_expression=status_expression,
+                date_filter=date_filter,
+            )
+            cur.execute(query, params)
+            rows = cur.fetchall()
+            columns = [description[0] for description in cur.description]
+            columns, rows = hydrate_vehicle_flags(cur, columns, rows)
+            cur.close()
+            conn.close()
+            return database_name, columns, rows
+        except Exception as exc:
+            last_error = exc
+    raise last_error if last_error else RuntimeError("No Atlas database names configured.")
+
+
+def build_executive_current_status_context(start_date: date, end_date: date, date_mode: str):
+    """Build both views needed by the Current/Date selected client-side toggle."""
+
+    database_name, current_rows = fetch_atlas_executive_current_status_counts()
+    _, selected_rows = fetch_atlas_executive_current_status_counts(
+        start_date, end_date, date_mode
+    )
+    _, current_detail_columns, current_detail_rows = (
+        fetch_atlas_executive_uncollected_sold_details()
+    )
+    _, selected_detail_columns, selected_detail_rows = (
+        fetch_atlas_executive_uncollected_sold_details(start_date, end_date, date_mode)
+    )
+    return {
+        "database_name": database_name,
+        "current": {
+            "rows": current_rows,
+            "sum_total": sum(row[1] for row in current_rows),
+            "chart_labels": [row[0] for row in current_rows],
+            "chart_values": [row[1] for row in current_rows],
+            "date_range_label": "Current vehicle status",
+            "detail_columns": current_detail_columns,
+            "detail_rows": current_detail_rows,
+        },
+        "selected": {
+            "rows": selected_rows,
+            "sum_total": sum(row[1] for row in selected_rows),
+            "chart_labels": [row[0] for row in selected_rows],
+            "chart_values": [row[1] for row in selected_rows],
+            "detail_columns": selected_detail_columns,
+            "detail_rows": selected_detail_rows,
+        },
+    }
+
+
 def normalize_vehicle_group_mode(group_mode: str) -> str:
     value = str(group_mode).lower()
     if value in {"contract", "status", "body_type"}:
@@ -5026,6 +5230,7 @@ def executive_stats():
 
     error_message = None
     vehicle_in_status_context = None
+    current_status_context = None
     vehicle_sold_context = None
     parts_sold_context = None
     try:
@@ -5068,6 +5273,10 @@ def executive_stats():
             sold_only=sold_only,
             sold_not_paid=sold_not_paid,
         )
+        current_status_context = build_executive_current_status_context(
+            context["start_date"], context["end_date"], context["date_mode"]
+        )
+        current_status_context["selected"]["date_range_label"] = context["date_range_label"]
         parts_sold_context = build_stats_context(
             filter_type,
             start_date_str,
@@ -5140,12 +5349,17 @@ def executive_stats():
             "detail_columns": [],
             "detail_rows": [],
         }
+        current_status_context = {
+            "current": {"rows": [], "sum_total": 0, "chart_labels": [], "chart_values": [], "date_range_label": "Current vehicle status", "detail_columns": [], "detail_rows": []},
+            "selected": {"rows": [], "sum_total": 0, "chart_labels": [], "chart_values": [], "date_range_label": context["date_range_label"], "detail_columns": [], "detail_rows": []},
+        }
         error_message = f"Unable to load executive stats: {exc}"
 
     return render_template(
         "executive_stats.html",
         **context,
         vehicle_in_status_context=vehicle_in_status_context,
+        current_status_context=current_status_context,
         vehicle_sold_context=vehicle_sold_context,
         parts_sold_context=parts_sold_context,
         live_enabled=live_enabled,
@@ -5460,6 +5674,10 @@ def executive_stats_data():
         sold_only=sold_only,
         sold_not_paid=sold_not_paid,
     )
+    current_status_context = build_executive_current_status_context(
+        context["start_date"], context["end_date"], context["date_mode"]
+    )
+    current_status_context["selected"]["date_range_label"] = context["date_range_label"]
         
     parts_sold_context = build_stats_context(
         filter_type,
@@ -5524,6 +5742,7 @@ def executive_stats_data():
                 "detail_columns": vehicle_sold_context.get("detail_columns", []),
                 "detail_rows": vehicle_sold_detail_rows,
             },
+            "current_status": current_status_context,
             "parts_sold": {
                 "date_range_label": parts_sold_context["date_range_label"],
                 "rows": [
