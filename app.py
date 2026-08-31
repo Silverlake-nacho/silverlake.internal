@@ -1363,6 +1363,7 @@ def fetch_atlas_executive_uncollected_sold_details(
                     ss.Firstname,
                     ss.Surname,
                     ss.CompanyName,
+                    ss.Username,
                     v.FlagColorId AS FlagColorIdRef
                 FROM CT_Vehicles v
                 LEFT JOIN SalvageRecoveries sr ON v.SalvageRecoveryId = sr.Id
@@ -1371,7 +1372,8 @@ def fetch_atlas_executive_uncollected_sold_details(
                         sale.DateSold,
                         contact.Firstname,
                         contact.Surname,
-                        contact.CompanyName
+                        contact.CompanyName,
+                        contact.Username
                     FROM dbo.SalvageSales sale
                     LEFT JOIN dbo.Contacts contact
                         ON sale.SoldAddressContactId = contact.Id
