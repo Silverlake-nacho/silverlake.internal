@@ -347,6 +347,9 @@
       .vehicle-details-table thead tr.filter-row .dt-column-order {
         display: none !important;
       }
+      .vehicle-details-table thead tr:not(.title-row):not(.filter-row) {
+        display: none;
+      }
       .vehicle-table-frame {
         width: 100%;
         max-width: 100%;
@@ -446,12 +449,12 @@
             <div class="summary-card">
               <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
                 <div class="d-flex flex-wrap align-items-center gap-2">
-                  <a href="{{ url_for('executive_stats', filter='today', group=group_mode, date_mode=date_mode, parts_dimension=parts_sold_context.stats_dimension if parts_sold_context else 'department', parts_prev_mode=parts_sold_context.prev_mode if parts_sold_context else 'mirror', sold_only=1 if vehicle_sold_context.sold_only else 0, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">Today</a>
-                  <a href="{{ url_for('executive_stats', filter='yesterday', group=group_mode, date_mode=date_mode, parts_dimension=parts_sold_context.stats_dimension if parts_sold_context else 'department', parts_prev_mode=parts_sold_context.prev_mode if parts_sold_context else 'mirror', sold_only=1 if vehicle_sold_context.sold_only else 0, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">Yesterday</a>
-                  <a href="{{ url_for('executive_stats', filter='this_week', group=group_mode, date_mode=date_mode, parts_dimension=parts_sold_context.stats_dimension if parts_sold_context else 'department', parts_prev_mode=parts_sold_context.prev_mode if parts_sold_context else 'mirror', sold_only=1 if vehicle_sold_context.sold_only else 0, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">This Week</a>
-                  <a href="{{ url_for('executive_stats', filter='last_week', group=group_mode, date_mode=date_mode, parts_dimension=parts_sold_context.stats_dimension if parts_sold_context else 'department', parts_prev_mode=parts_sold_context.prev_mode if parts_sold_context else 'mirror', sold_only=1 if vehicle_sold_context.sold_only else 0, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">Last Week</a>
-                  <a href="{{ url_for('executive_stats', filter='this_month', group=group_mode, date_mode=date_mode, parts_dimension=parts_sold_context.stats_dimension if parts_sold_context else 'department', parts_prev_mode=parts_sold_context.prev_mode if parts_sold_context else 'mirror', sold_only=1 if vehicle_sold_context.sold_only else 0, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">This Month</a>
-                  <a href="{{ url_for('executive_stats', filter='last_month', group=group_mode, date_mode=date_mode, parts_dimension=parts_sold_context.stats_dimension if parts_sold_context else 'department', parts_prev_mode=parts_sold_context.prev_mode if parts_sold_context else 'mirror', sold_only=1 if vehicle_sold_context.sold_only else 0, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">Last Month</a>
+                  <a href="{{ url_for('executive_stats', filter='today', group=group_mode, date_mode=date_mode, parts_dimension=parts_sold_context.stats_dimension if parts_sold_context else 'department', parts_prev_mode=parts_sold_context.prev_mode if parts_sold_context else 'mirror', sold_only=1 if vehicle_sold_context.sold_only else 0, sold_not_paid=1 if vehicle_sold_context.sold_not_paid else 0, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">Today</a>
+                  <a href="{{ url_for('executive_stats', filter='yesterday', group=group_mode, date_mode=date_mode, parts_dimension=parts_sold_context.stats_dimension if parts_sold_context else 'department', parts_prev_mode=parts_sold_context.prev_mode if parts_sold_context else 'mirror', sold_only=1 if vehicle_sold_context.sold_only else 0, sold_not_paid=1 if vehicle_sold_context.sold_not_paid else 0, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">Yesterday</a>
+                  <a href="{{ url_for('executive_stats', filter='this_week', group=group_mode, date_mode=date_mode, parts_dimension=parts_sold_context.stats_dimension if parts_sold_context else 'department', parts_prev_mode=parts_sold_context.prev_mode if parts_sold_context else 'mirror', sold_only=1 if vehicle_sold_context.sold_only else 0, sold_not_paid=1 if vehicle_sold_context.sold_not_paid else 0, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">This Week</a>
+                  <a href="{{ url_for('executive_stats', filter='last_week', group=group_mode, date_mode=date_mode, parts_dimension=parts_sold_context.stats_dimension if parts_sold_context else 'department', parts_prev_mode=parts_sold_context.prev_mode if parts_sold_context else 'mirror', sold_only=1 if vehicle_sold_context.sold_only else 0, sold_not_paid=1 if vehicle_sold_context.sold_not_paid else 0, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">Last Week</a>
+                  <a href="{{ url_for('executive_stats', filter='this_month', group=group_mode, date_mode=date_mode, parts_dimension=parts_sold_context.stats_dimension if parts_sold_context else 'department', parts_prev_mode=parts_sold_context.prev_mode if parts_sold_context else 'mirror', sold_only=1 if vehicle_sold_context.sold_only else 0, sold_not_paid=1 if vehicle_sold_context.sold_not_paid else 0, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">This Month</a>
+                  <a href="{{ url_for('executive_stats', filter='last_month', group=group_mode, date_mode=date_mode, parts_dimension=parts_sold_context.stats_dimension if parts_sold_context else 'department', parts_prev_mode=parts_sold_context.prev_mode if parts_sold_context else 'mirror', sold_only=1 if vehicle_sold_context.sold_only else 0, sold_not_paid=1 if vehicle_sold_context.sold_not_paid else 0, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">Last Month</a>
                   <form method="get" class="d-inline">
                     <input type="hidden" name="filter" value="custom">
                     <input type="hidden" name="group" value="{{ group_mode }}">
@@ -459,6 +462,7 @@
                     <input type="hidden" name="parts_dimension" value="{{ parts_sold_context.stats_dimension if parts_sold_context else 'department' }}">
                     <input type="hidden" name="parts_prev_mode" value="{{ parts_sold_context.prev_mode if parts_sold_context else 'mirror' }}">
                     <input type="hidden" name="sold_only" value="{{ 1 if vehicle_sold_context.sold_only else 0 }}">
+                    <input type="hidden" name="sold_not_paid" value="{{ 1 if vehicle_sold_context.sold_not_paid else 0 }}">
                     <input type="date" name="start_date" id="customStartDate" required>
                     <input type="date" name="end_date" id="customEndDate" required>
                     {% if live_enabled %}
@@ -495,6 +499,7 @@
                     <input type="hidden" name="parts_dimension" value="{{ parts_sold_context.stats_dimension if parts_sold_context else 'department' }}">
                     <input type="hidden" name="parts_prev_mode" value="{{ parts_sold_context.prev_mode if parts_sold_context else 'mirror' }}">
                     <input type="hidden" name="sold_only" value="{{ 1 if vehicle_sold_context.sold_only else 0 }}">
+					<input type="hidden" name="sold_not_paid" value="{{ 1 if vehicle_sold_context.sold_not_paid else 0 }}">
                     <input type="hidden" name="start_date" value="{{ start_date.isoformat() if start_date else '' }}">
                     <input type="hidden" name="end_date" value="{{ end_date.isoformat() if end_date else '' }}">
                     <input type="hidden" id="liveInputField" name="live" value="{{ 1 if live_enabled else '' }}">
@@ -592,16 +597,20 @@
                     <div class="toggle toggle-four group-{{ group_mode }}" role="group" aria-label="Select Vehicle Sold grouping criteria">
                       <span class="toggle-track"></span>
                       <div class="toggle-links">
-                        <a class="contract-link" href="{{ url_for('executive_stats', filter=filter_type, start_date=start_date.isoformat() if start_date else None, end_date=end_date.isoformat() if end_date else None, group='contract', date_mode=date_mode, parts_dimension=parts_sold_context.stats_dimension if parts_sold_context else 'department', exclude=excluded_companies, sold_only=1 if vehicle_sold_context.sold_only else 0, live=1 if live_enabled else None) }}#vehicleSoldSection">Contract</a>
-                        <a class="company-link" href="{{ url_for('executive_stats', filter=filter_type, start_date=start_date.isoformat() if start_date else None, end_date=end_date.isoformat() if end_date else None, group='company', date_mode=date_mode, parts_dimension=parts_sold_context.stats_dimension if parts_sold_context else 'department', exclude=excluded_companies, sold_only=1 if vehicle_sold_context.sold_only else 0, live=1 if live_enabled else None) }}#vehicleSoldSection">Insurance</a>
-                        <a class="status-link" href="{{ url_for('executive_stats', filter=filter_type, start_date=start_date.isoformat() if start_date else None, end_date=end_date.isoformat() if end_date else None, group='status', date_mode=date_mode, parts_dimension=parts_sold_context.stats_dimension if parts_sold_context else 'department', exclude=excluded_companies, sold_only=1 if vehicle_sold_context.sold_only else 0, live=1 if live_enabled else None) }}#vehicleSoldSection">Status</a>
-                        <a class="body-type-link" href="{{ url_for('executive_stats', filter=filter_type, start_date=start_date.isoformat() if start_date else None, end_date=end_date.isoformat() if end_date else None, group='body_type', date_mode=date_mode, parts_dimension=parts_sold_context.stats_dimension if parts_sold_context else 'department', exclude=excluded_companies, sold_only=1 if vehicle_sold_context.sold_only else 0, live=1 if live_enabled else None) }}#vehicleSoldSection">Body Type</a>
+                        <a class="contract-link" href="{{ url_for('executive_stats', filter=filter_type, start_date=start_date.isoformat() if start_date else None, end_date=end_date.isoformat() if end_date else None, group='contract', date_mode=date_mode, parts_dimension=parts_sold_context.stats_dimension if parts_sold_context else 'department', exclude=excluded_companies, sold_only=1 if vehicle_sold_context.sold_only else 0, sold_not_paid=1 if vehicle_sold_context.sold_not_paid else 0, live=1 if live_enabled else None) }}#vehicleSoldSection">Contract</a>
+                        <a class="company-link" href="{{ url_for('executive_stats', filter=filter_type, start_date=start_date.isoformat() if start_date else None, end_date=end_date.isoformat() if end_date else None, group='company', date_mode=date_mode, parts_dimension=parts_sold_context.stats_dimension if parts_sold_context else 'department', exclude=excluded_companies, sold_only=1 if vehicle_sold_context.sold_only else 0, sold_not_paid=1 if vehicle_sold_context.sold_not_paid else 0, live=1 if live_enabled else None) }}#vehicleSoldSection">Insurance</a>
+                        <a class="status-link" href="{{ url_for('executive_stats', filter=filter_type, start_date=start_date.isoformat() if start_date else None, end_date=end_date.isoformat() if end_date else None, group='status', date_mode=date_mode, parts_dimension=parts_sold_context.stats_dimension if parts_sold_context else 'department', exclude=excluded_companies, sold_only=1 if vehicle_sold_context.sold_only else 0, sold_not_paid=1 if vehicle_sold_context.sold_not_paid else 0, live=1 if live_enabled else None) }}#vehicleSoldSection">Status</a>
+                        <a class="body-type-link" href="{{ url_for('executive_stats', filter=filter_type, start_date=start_date.isoformat() if start_date else None, end_date=end_date.isoformat() if end_date else None, group='body_type', date_mode=date_mode, parts_dimension=parts_sold_context.stats_dimension if parts_sold_context else 'department', exclude=excluded_companies, sold_only=1 if vehicle_sold_context.sold_only else 0, sold_not_paid=1 if vehicle_sold_context.sold_not_paid else 0, live=1 if live_enabled else None) }}#vehicleSoldSection">Body Type</a>
                       </div>
                     </div>
                   </div>
                   <div class="form-check align-self-center mb-0">
                     <input class="form-check-input" type="checkbox" id="vehicleSoldOnlyToggle" {% if vehicle_sold_context.sold_only %}checked{% endif %}>
-                    <label class="form-check-label text-success" for="vehicleSoldOnlyToggle">Sold only</label>
+                    <label class="form-check-label text-success" for="vehicleSoldOnlyToggle">Sold</label>
+                  </div>
+                  <div class="form-check align-self-center mb-0">
+                    <input class="form-check-input" type="checkbox" id="vehicleSoldNotPaidToggle" {% if vehicle_sold_context.sold_not_paid %}checked{% endif %}>
+                    <label class="form-check-label text-success" for="vehicleSoldNotPaidToggle">Sold Not Paid</label>
                   </div>
                 </div>
               </div>
@@ -952,6 +961,7 @@
       const vehicleSoldResetZoomBtn = document.getElementById('vehicleSoldResetZoomBtn');
       const vehicleSoldToggleChartBtn = document.getElementById('vehicleSoldToggleChartBtn');
       const vehicleSoldOnlyToggle = document.getElementById('vehicleSoldOnlyToggle');
+	  const vehicleSoldNotPaidToggle = document.getElementById('vehicleSoldNotPaidToggle');
       const liveCheckbox = document.getElementById('liveToggle');
 	  const dateModeToggle = document.getElementById('dateModeToggle');
       const partsDimensionToggle = document.getElementById('partsDimensionToggle');
@@ -1828,10 +1838,17 @@
         detailsTable.style.setProperty('--vehicle-title-row-height', `${titleRowHeight}px`);
       }
 
+      function removeEmptyDetailsHeaderRows(table) {
+        table.querySelectorAll('thead tr:not(.title-row):not(.filter-row)').forEach((row) => {
+          row.remove();
+        });
+      }
+	  
       function initializeDetailsTable() {
         if (!window.jQuery || !jQuery.fn.DataTable) return;
         const $table = jQuery('#vehicleDetailsTable');
         if (!$table.length) return;
+		removeEmptyDetailsHeaderRows($table[0]);
 
         if (detailsDataTable) {
           detailsDataTable.destroy();
@@ -1848,6 +1865,7 @@
           autoWidth: false,
           ordering: true,
           initComplete: function () {
+            removeEmptyDetailsHeaderRows($table[0]);
             const api = this.api();
             api.columns().every(function (index) {
               const column = this;
@@ -1868,6 +1886,7 @@
         if (!window.jQuery || !jQuery.fn.DataTable) return;
         const $table = jQuery('#vehicleSoldDetailsTable');
         if (!$table.length) return;
+        removeEmptyDetailsHeaderRows($table[0]);
         if (vehicleSoldDetailsDataTable) vehicleSoldDetailsDataTable.destroy();
 
         const $filterInputs = $table.find('thead tr.filter-row th input');
@@ -1880,6 +1899,7 @@
           autoWidth: false,
           ordering: true,
           initComplete: function () {
+            removeEmptyDetailsHeaderRows($table[0]);
             const api = this.api();
             api.columns().every(function (index) {
               const column = this;
@@ -2067,6 +2087,16 @@
         });
       }
 
+      if (vehicleSoldNotPaidToggle) {
+        vehicleSoldNotPaidToggle.addEventListener('change', () => {
+          const url = new URL(window.location.href);
+          url.searchParams.set('sold_not_paid', vehicleSoldNotPaidToggle.checked ? '1' : '0');
+          url.hash = 'vehicleSoldSection';
+          rememberScrollPosition();
+          window.location.href = url.toString();
+        });
+      }
+	  
       if (partsDimensionToggle) {
         partsDimensionToggle.addEventListener('change', () => {
           const url = new URL(window.location.href);
