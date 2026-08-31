@@ -347,6 +347,7 @@ USERS = {
     'jamie': 'Silverlake7',
     'billy': 'Silverlake7',
     'laura': 'Silverlake7',
+    'msharp': 'Silverlake1!',
     'liam': 'Silverlake7',
     'nacho': 'Silverlake1!'
 }
@@ -1163,7 +1164,7 @@ def _build_select_list(column_types: List[Tuple[str, str]]) -> List[str]:
     return select_columns
 
 
-def fetch_atlas_vehicle_stats(limit: int = 1000):
+def fetch_atlas_vehicle_stats(registration: str = "BD61NFH"):
     last_error = None
     for database_name in _get_atlas_db_name_candidates():
         try:
@@ -1173,6 +1174,7 @@ def fetch_atlas_vehicle_stats(limit: int = 1000):
                 SELECT
                     v.Id,
                     v.RegNo AS "Registration",
+                    v.StatusEnum,
                     CAST(v.DateEntered AS datetime2) AS DateEntered,
                     m.Name AS Manufacturer,
                     mg.Name AS Model,
@@ -1181,6 +1183,7 @@ def fetch_atlas_vehicle_stats(limit: int = 1000):
                     dm.Name AS Derivative,
                     ib.Name AS InsuranceBranch,
                     ic.Name AS InsuranceCompany,
+                    cg.Name AS ContractGroup,
                     c.Code AS Category_Code,
                     c.Name AS Category,
                     CAST(v.DateRecoveredStart AS datetime2) AS "Date Recovered START",
@@ -1189,7 +1192,9 @@ def fetch_atlas_vehicle_stats(limit: int = 1000):
                     CAST(sc.DateCleared AS datetime2) AS DateCleared,
                     CAST(scn.DateCancelled AS datetime2) AS DateCancelled,
                     CAST(ss.DateSold AS datetime2) AS DateSold,
-                    ss.IncVAT AS Sold_price,
+                    ss.exVAT AS SalePriceExVAT,
+                    ss.PremiumExVAT,
+                    ss.IncVAT AS SalePriceIncVAT,
                     stc.Name AS "Status"
                 FROM CT_Vehicles v
                 LEFT JOIN SalvageRecoveries sr ON v.SalvageRecoveryId = sr.Id
@@ -1197,8 +1202,9 @@ def fetch_atlas_vehicle_stats(limit: int = 1000):
                 LEFT JOIN PartDataModelGroups mg ON v.ModelGroupId = mg.Id
                 LEFT JOIN PartDataDerivativeDetails dd ON v.DerivativeId = dd.Id
                 LEFT JOIN PartDataModels dm ON v.DerivativeId = dm.Id
-                INNER JOIN InsuranceBranches ib ON v.InsuranceBranchId = ib.Id
-                INNER JOIN InsuranceCompanies ic ON ib.InsuranceCompanyId = ic.Id
+                LEFT JOIN InsuranceBranches ib ON v.InsuranceBranchId = ib.Id
+                LEFT JOIN InsuranceCompanies ic ON ib.InsuranceCompanyId = ic.Id
+                LEFT JOIN ContractGroups cg ON ic.ContractGroupId = cg.Id
                 LEFT JOIN Categories c ON v.CategoryId = c.Id
                 LEFT JOIN SalvageClears sc ON v.Id = sc.CtVehicleId
                 LEFT JOIN SalvagesCancelled scn ON v.Id = scn.CtVehicleId
@@ -1206,11 +1212,10 @@ def fetch_atlas_vehicle_stats(limit: int = 1000):
                 LEFT JOIN SalvageRecoveries srec ON v.Id = srec.Id
                 LEFT JOIN PartDataColours col ON v.ColourId = col.Id
                 LEFT JOIN StatusColors stc ON stc.Status = v.StatusEnum
-                WHERE CAST(sr.DateRecovered AS datetime2) >= '2026-01-24'
-                AND CAST(sr.DateRecovered AS datetime2) < '2026-01-24'
+                WHERE UPPER(LTRIM(RTRIM(v.RegNo))) = UPPER(LTRIM(RTRIM(?)))
                 ORDER BY v.Id DESC
             """
-            cur.execute(query)
+            cur.execute(query, (registration,))
             rows = cur.fetchall()
             columns = [desc[0] for desc in cur.description]
             cur.close()
@@ -1418,6 +1423,7 @@ def fetch_atlas_vehicle_sales_summary(
     group_mode: str,
     contract_group_filter: Optional[str] = None,
     sold_only: bool = True,
+    sold_not_paid: bool = True,
 ):
     """Return vehicles sold, sale price and premium grouped for Executive Stats."""
 
@@ -1451,7 +1457,8 @@ def fetch_atlas_vehicle_sales_summary(
                 WHERE CAST(ss.DateSold AS datetime2) >= ?
                   AND CAST(ss.DateSold AS datetime2) < ?
                   AND (? IS NULL OR cg.Name = ?)
-                  AND (? = 0 OR ({status_expression}) = 'Sold')
+                  AND ((? = 1 AND ({status_expression}) = 'Sold')
+                       OR (? = 1 AND ({status_expression}) = 'Sold Not Paid'))
                 GROUP BY {group_expression}, ic.Name
                 ORDER BY VehicleCount DESC, SaleGroup, InsuranceCompany
             """.format(
@@ -1466,6 +1473,7 @@ def fetch_atlas_vehicle_sales_summary(
                     contract_group_filter,
                     contract_group_filter,
                     1 if sold_only else 0,
+                    1 if sold_not_paid else 0,
                 ),
             )
             rows = cur.fetchall()
@@ -1482,6 +1490,7 @@ def fetch_atlas_vehicle_sold_details(
     end_date: date,
     contract_group_filter: Optional[str] = None,
     sold_only: bool = True,
+    sold_not_paid: bool = True,
 ):
     """Return the individual sale records included in the DateSold summary."""
 
@@ -1529,7 +1538,8 @@ def fetch_atlas_vehicle_sold_details(
                 WHERE CAST(ss.DateSold AS datetime2) >= ?
                   AND CAST(ss.DateSold AS datetime2) < ?
                   AND (? IS NULL OR cg.Name = ?)
-                  AND (? = 0 OR ({status_expression}) = 'Sold')
+                  AND ((? = 1 AND ({status_expression}) = 'Sold')
+                       OR (? = 1 AND ({status_expression}) = 'Sold Not Paid'))
                 ORDER BY ss.DateSold DESC, v.Id DESC
             """.format(status_expression=_vehicle_status_sql_expression())
             cur.execute(
@@ -1540,6 +1550,7 @@ def fetch_atlas_vehicle_sold_details(
                     contract_group_filter,
                     contract_group_filter,
                     1 if sold_only else 0,
+                    1 if sold_not_paid else 0,
                 ),
             )
             rows = cur.fetchall()
@@ -4367,16 +4378,22 @@ def build_vehicle_sold_context(
     group_mode: str,
     contract_group_filter: Optional[str] = None,
     sold_only: bool = True,
+    sold_not_paid: bool = True,
 ):
     """Build the independent DateSold-based vehicle sales summary."""
 
     start_date, end_date = parse_date_filter(filter_type, start_date_str, end_date_str)
     resolved_group_mode = normalize_vehicle_group_mode(group_mode)
     database_name, raw_rows = fetch_atlas_vehicle_sales_summary(
-        start_date, end_date, resolved_group_mode, contract_group_filter, sold_only
+        start_date,
+        end_date,
+        resolved_group_mode,
+        contract_group_filter,
+        sold_only,
+        sold_not_paid,
     )
     details_db_name, detail_columns, detail_rows = fetch_atlas_vehicle_sold_details(
-        start_date, end_date, contract_group_filter, sold_only
+        start_date, end_date, contract_group_filter, sold_only, sold_not_paid
     )
     company_index = detail_columns.index("InsuranceCompany")
     detail_rows = [
@@ -4428,6 +4445,7 @@ def build_vehicle_sold_context(
         "chart_title_base": f"Vehicles Sold by {entity_label}",
         "group_mode": resolved_group_mode,
         "sold_only": sold_only,
+        "sold_not_paid": sold_not_paid,
         "contract_company_breakdown": contract_company_breakdown,
         "detail_columns": detail_columns,
         "detail_rows": detail_rows,
@@ -5002,6 +5020,9 @@ def executive_stats():
     sold_only = str(request.args.get("sold_only", "1")).lower() not in {
         "0", "false", "no", "off"
     }
+    sold_not_paid = str(request.args.get("sold_not_paid", "1")).lower() not in {
+        "0", "false", "no", "off"
+    }
 
     error_message = None
     vehicle_in_status_context = None
@@ -5045,6 +5066,7 @@ def executive_stats():
             context.get("excluded_companies", []),
             group_mode,
             sold_only=sold_only,
+            sold_not_paid=sold_not_paid,
         )
         parts_sold_context = build_stats_context(
             filter_type,
@@ -5113,6 +5135,7 @@ def executive_stats():
             "chart_title_base": f"Vehicles Sold by {entity_label}",
             "group_mode": normalize_vehicle_group_mode(group_mode),
             "sold_only": sold_only,
+            "sold_not_paid": sold_not_paid,
             "contract_company_breakdown": {},
             "detail_columns": [],
             "detail_rows": [],
@@ -5132,12 +5155,15 @@ def executive_stats():
 
 
 def atlas_vehicle_stats():
+    diagnostic_registration = "BD61NFH"
     error_message = None
     database_name = None
     columns = []
     rows = []
     try:
-        database_name, columns, rows = fetch_atlas_vehicle_stats()
+        database_name, columns, rows = fetch_atlas_vehicle_stats(
+            diagnostic_registration
+        )
     except Exception as exc:
         error_message = f"Unable to load Atlas vehicle stats: {exc}"
 
@@ -5146,6 +5172,7 @@ def atlas_vehicle_stats():
         database_name=database_name,
         columns=columns,
         rows=rows,
+        diagnostic_registration=diagnostic_registration,
         error_message=error_message,
         active_page="atlas_vehicle_stats",
     )
@@ -5385,7 +5412,10 @@ def executive_stats_data():
     sold_only = str(request.args.get("sold_only", "1")).lower() not in {
         "0", "false", "no", "off"
     }
-
+    sold_not_paid = str(request.args.get("sold_not_paid", "1")).lower() not in {
+        "0", "false", "no", "off"
+    }
+    
     resolved_date_mode = normalize_vehicle_date_mode(date_mode)
 
     context = build_vehicle_stats_context(
@@ -5428,6 +5458,7 @@ def executive_stats_data():
         context.get("excluded_companies", []),
         group_mode,
         sold_only=sold_only,
+        sold_not_paid=sold_not_paid,
     )
         
     parts_sold_context = build_stats_context(
@@ -5484,6 +5515,9 @@ def executive_stats_data():
                 "chart_title_base": vehicle_sold_context["chart_title_base"],
                 "group_mode": vehicle_sold_context.get("group_mode", group_mode),
                 "sold_only": vehicle_sold_context.get("sold_only", sold_only),
+                "sold_not_paid": vehicle_sold_context.get(
+                    "sold_not_paid", sold_not_paid
+                ),
                 "contract_company_breakdown": vehicle_sold_context.get(
                     "contract_company_breakdown", {}
                 ),
