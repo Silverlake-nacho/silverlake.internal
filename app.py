@@ -1,7 +1,7 @@
 from flask import Flask, request, render_template, send_file, redirect, url_for, session, flash, jsonify
 import pandas as pd
 from io import BytesIO
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from google.oauth2 import service_account
@@ -18,6 +18,7 @@ from calendar import monthrange
 import json
 import os
 import re
+import struct
 from urllib.parse import urljoin
 import pyodbc
 
@@ -1223,6 +1224,99 @@ def fetch_atlas_vehicle_stats(registration: str = "BD61NFH"):
             return database_name, columns, rows
         except Exception as exc:
             last_error = exc
+    raise last_error if last_error else RuntimeError("No Atlas database names configured.")
+
+
+ATLAS_QUERY_EXAMPLE = """SELECT TOP (20)
+    v.Id,
+    v.RegNo,
+    v.DateEntered
+FROM CT_Vehicles AS v
+ORDER BY v.Id DESC;"""
+ATLAS_QUERY_ROW_LIMIT = 500
+ATLAS_QUERY_BLOCKED_KEYWORDS = re.compile(
+    r"\b(?:ALTER|BACKUP|CREATE|DBCC|DELETE|DENY|DROP|EXEC(?:UTE)?|GRANT|INSERT|"
+    r"MERGE|RECONFIGURE|RESTORE|REVOKE|TRUNCATE|UPDATE|USE)\b",
+    re.IGNORECASE,
+)
+
+
+def validate_atlas_query(query: str) -> str:
+    """Return a safe, single read-only Atlas query or raise a helpful error."""
+    cleaned_query = query.strip()
+    if not cleaned_query:
+        raise ValueError("Enter a query before clicking Run query.")
+
+    query_without_trailing_semicolon = cleaned_query.rstrip(";").rstrip()
+    if ";" in query_without_trailing_semicolon:
+        raise ValueError("Run one query at a time; multiple SQL statements are not allowed.")
+    if not re.match(r"^(?:SELECT|WITH)\b", query_without_trailing_semicolon, re.IGNORECASE):
+        raise ValueError("Only read-only SELECT queries (including queries using WITH) are allowed.")
+    if ATLAS_QUERY_BLOCKED_KEYWORDS.search(query_without_trailing_semicolon):
+        raise ValueError("The query contains a database-changing SQL keyword and was not run.")
+    if re.search(r"\bINTO\b", query_without_trailing_semicolon, re.IGNORECASE):
+        raise ValueError("SELECT INTO is not allowed because it creates a table.")
+    return query_without_trailing_semicolon
+
+
+def convert_sql_server_datetimeoffset(raw_value: bytes) -> datetime:
+    """Convert SQL Server's ODBC datetimeoffset bytes into a Python datetime."""
+    (
+        year,
+        month,
+        day,
+        hour,
+        minute,
+        second,
+        nanoseconds,
+        offset_hours,
+        offset_minutes,
+    ) = struct.unpack("<6hI2h", raw_value)
+    offset = timedelta(hours=offset_hours, minutes=offset_minutes)
+    return datetime(
+        year,
+        month,
+        day,
+        hour,
+        minute,
+        second,
+        nanoseconds // 1000,
+        timezone(offset),
+    )
+
+
+def run_atlas_read_only_query(query: str):
+    """Run a diagnostic SELECT against Atlas and cap the displayed result size."""
+    validated_query = validate_atlas_query(query)
+    last_error = None
+    for database_name in _get_atlas_db_name_candidates():
+        conn = None
+        cur = None
+        try:
+            conn = get_atlas_db_connection(database_name)
+            # pyodbc does not decode SQL Server's datetimeoffset type (-155) by
+            # default, so register the driver-specific conversion before fetching.
+            conn.add_output_converter(-155, convert_sql_server_datetimeoffset)
+            cur = conn.cursor()
+            cur.execute(validated_query)
+            if cur.description is None:
+                raise ValueError("The query did not return a result set.")
+            columns = [description[0] for description in cur.description]
+            fetched_rows = cur.fetchmany(ATLAS_QUERY_ROW_LIMIT + 1)
+            was_truncated = len(fetched_rows) > ATLAS_QUERY_ROW_LIMIT
+            return (
+                database_name,
+                columns,
+                fetched_rows[:ATLAS_QUERY_ROW_LIMIT],
+                was_truncated,
+            )
+        except Exception as exc:
+            last_error = exc
+        finally:
+            if cur is not None:
+                cur.close()
+            if conn is not None:
+                conn.close()
     raise last_error if last_error else RuntimeError("No Atlas database names configured.")
 
 
@@ -5156,10 +5250,16 @@ def executive_stats():
 
 def atlas_vehicle_stats():
     diagnostic_registration = "BD61NFH"
+    atlas_query = request.form.get("atlas_query", ATLAS_QUERY_EXAMPLE)
     error_message = None
+    query_error_message = None
     database_name = None
     columns = []
     rows = []
+    query_columns = []
+    query_rows = []
+    query_was_run = request.method == "POST"
+    query_was_truncated = False
     try:
         database_name, columns, rows = fetch_atlas_vehicle_stats(
             diagnostic_registration
@@ -5167,12 +5267,28 @@ def atlas_vehicle_stats():
     except Exception as exc:
         error_message = f"Unable to load Atlas vehicle stats: {exc}"
 
+    if query_was_run:
+        try:
+            query_database_name, query_columns, query_rows, query_was_truncated = (
+                run_atlas_read_only_query(atlas_query)
+            )
+            database_name = database_name or query_database_name
+        except Exception as exc:
+            query_error_message = f"Unable to run Atlas query: {exc}"
+
     return render_template(
         "atlas_vehicle_stats.html",
         database_name=database_name,
         columns=columns,
         rows=rows,
         diagnostic_registration=diagnostic_registration,
+        atlas_query=atlas_query,
+        query_columns=query_columns,
+        query_rows=query_rows,
+        query_was_run=query_was_run,
+        query_was_truncated=query_was_truncated,
+        query_row_limit=ATLAS_QUERY_ROW_LIMIT,
+        query_error_message=query_error_message,
         error_message=error_message,
         active_page="atlas_vehicle_stats",
     )
@@ -5197,7 +5313,11 @@ def atlas_table_samples():
 
 
 if "atlas_vehicle_stats" not in app.view_functions:
-    app.add_url_rule("/atlas_vehicle_stats", view_func=atlas_vehicle_stats)
+    app.add_url_rule(
+        "/atlas_vehicle_stats",
+        view_func=atlas_vehicle_stats,
+        methods=["GET", "POST"],
+    )
 
 if "atlas_table_samples" not in app.view_functions:
     app.add_url_rule("/atlas_table_samples", view_func=atlas_table_samples)
