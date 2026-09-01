@@ -1279,12 +1279,17 @@ def fetch_atlas_executive_current_status_counts(
                         {status_expression} AS VehicleStatus,
                         v.CollectedDate,
                         v.ActualDeliveryDate,
-                        latest_sale.DateSold
+                        latest_sale.DateSold,
+                        latest_sale.Username
                     FROM CT_Vehicles v
                     LEFT JOIN SalvageRecoveries sr ON v.SalvageRecoveryId = sr.Id
                     OUTER APPLY (
-                        SELECT TOP (1) sale.DateSold
+                        SELECT TOP (1)
+                            sale.DateSold,
+                            contact.Username
                         FROM SalvageSales sale
+                        LEFT JOIN dbo.Contacts contact
+                            ON sale.SoldAddressContactId = contact.Id
                         WHERE sale.CtVehicleId = v.Id
                         ORDER BY sale.DateSold DESC
                     ) latest_sale
@@ -1301,6 +1306,7 @@ def fetch_atlas_executive_current_status_counts(
                         WHEN VehicleStatus IN ('Sold', 'Sold Not Paid')
                          AND CollectedDate IS NULL
                          AND ActualDeliveryDate IS NULL
+                         AND (Username IS NULL OR Username NOT LIKE '%@silverlake.co.uk%')
                          AND DateSold >= CAST('2026-01-01' AS datetime2)
                          AND DateSold < CAST('2027-01-01' AS datetime2)
                         THEN 1 ELSE 0 END), 0),
@@ -1324,12 +1330,12 @@ def fetch_atlas_executive_current_status_counts(
     raise last_error if last_error else RuntimeError("No Atlas database names configured.")
 
 
-def fetch_atlas_executive_uncollected_sold_details(
+def fetch_atlas_executive_status_details(
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
     date_mode: str = "recovered",
 ):
-    """Return vehicles behind the Sold/Sold Not Paid without collection count."""
+    """Return vehicle rows behind each operational status count."""
 
     last_error = None
     for database_name in _get_atlas_db_name_candidates():
@@ -1345,6 +1351,13 @@ def fetch_atlas_executive_uncollected_sold_details(
                 params = [start_date, end_date]
             query = """
                 SELECT
+                    CASE
+                        WHEN ({status_expression}) = 'Auction'
+                            THEN 'Auction vehicles waiting to be sold'
+                        WHEN ({status_expression}) IN ('Sold', 'Sold Not Paid')
+                            THEN 'Auction vehicles sold, not collected'
+                        ELSE 'Vehicles waiting to be cleared'
+                    END AS StatusGroup,
                     v.Id,
                     v.RegNo AS Registration,
                     {status_expression} AS Status,
@@ -1390,11 +1403,18 @@ def fetch_atlas_executive_uncollected_sold_details(
                     FROM StatusColors sc
                     WHERE sc.Status = v.StatusEnum
                 ) stc
-                WHERE ({status_expression}) IN ('Sold', 'Sold Not Paid')
-                  AND v.CollectedDate IS NULL
-                  AND v.ActualDeliveryDate IS NULL
-                  AND ss.DateSold >= CAST('2026-01-01' AS datetime2)
-                  AND ss.DateSold < CAST('2027-01-01' AS datetime2)
+                WHERE (
+                    ({status_expression}) = 'Auction'
+                    OR ({status_expression}) IN ('Notified', 'Recovered')
+                    OR (
+                        ({status_expression}) IN ('Sold', 'Sold Not Paid')
+                        AND v.CollectedDate IS NULL
+                        AND v.ActualDeliveryDate IS NULL
+                        AND (ss.Username IS NULL OR ss.Username NOT LIKE '%@silverlake.co.uk%')
+                        AND ss.DateSold >= CAST('2026-01-01' AS datetime2)
+                        AND ss.DateSold < CAST('2027-01-01' AS datetime2)
+                    )
+                  )
                   {date_filter}
                 ORDER BY ss.DateSold DESC, v.Id DESC
             """.format(
@@ -1421,11 +1441,29 @@ def build_executive_current_status_context(start_date: date, end_date: date, dat
         start_date, end_date, date_mode
     )
     _, current_detail_columns, current_detail_rows = (
-        fetch_atlas_executive_uncollected_sold_details()
+        fetch_atlas_executive_status_details()
     )
     _, selected_detail_columns, selected_detail_rows = (
-        fetch_atlas_executive_uncollected_sold_details(start_date, end_date, date_mode)
+        fetch_atlas_executive_status_details(start_date, end_date, date_mode)
     )
+    def split_detail_groups(columns, rows):
+        group_index = columns.index("StatusGroup")
+        visible_columns = [column for index, column in enumerate(columns) if index != group_index]
+        groups = {label: [] for label in EXECUTIVE_CURRENT_STATUS_LABELS}
+        for row in rows:
+            group = row[group_index]
+            groups.setdefault(group, []).append(
+                [value for index, value in enumerate(row) if index != group_index]
+            )
+        return visible_columns, groups
+
+    current_detail_columns, current_detail_groups = split_detail_groups(
+        current_detail_columns, current_detail_rows
+    )
+    selected_detail_columns, selected_detail_groups = split_detail_groups(
+        selected_detail_columns, selected_detail_rows
+    )
+    sold_label = EXECUTIVE_CURRENT_STATUS_LABELS[1]
     return {
         "database_name": database_name,
         "current": {
@@ -1435,7 +1473,8 @@ def build_executive_current_status_context(start_date: date, end_date: date, dat
             "chart_values": [row[1] for row in current_rows],
             "date_range_label": "Current vehicle status",
             "detail_columns": current_detail_columns,
-            "detail_rows": current_detail_rows,
+            "detail_rows": current_detail_groups[sold_label],
+            "detail_groups": current_detail_groups,
         },
         "selected": {
             "rows": selected_rows,
@@ -1443,7 +1482,8 @@ def build_executive_current_status_context(start_date: date, end_date: date, dat
             "chart_labels": [row[0] for row in selected_rows],
             "chart_values": [row[1] for row in selected_rows],
             "detail_columns": selected_detail_columns,
-            "detail_rows": selected_detail_rows,
+            "detail_rows": selected_detail_groups[sold_label],
+            "detail_groups": selected_detail_groups,
         },
     }
 
@@ -5347,8 +5387,8 @@ def executive_stats():
             "detail_rows": [],
         }
         current_status_context = {
-            "current": {"rows": [], "sum_total": 0, "chart_labels": [], "chart_values": [], "date_range_label": "Current vehicle status", "detail_columns": [], "detail_rows": []},
-            "selected": {"rows": [], "sum_total": 0, "chart_labels": [], "chart_values": [], "date_range_label": context["date_range_label"], "detail_columns": [], "detail_rows": []},
+            "current": {"rows": [], "sum_total": 0, "chart_labels": [], "chart_values": [], "date_range_label": "Current vehicle status", "detail_columns": [], "detail_rows": [], "detail_groups": {}},
+            "selected": {"rows": [], "sum_total": 0, "chart_labels": [], "chart_values": [], "date_range_label": context["date_range_label"], "detail_columns": [], "detail_rows": [], "detail_groups": {}},
         }
         error_message = f"Unable to load executive stats: {exc}"
 

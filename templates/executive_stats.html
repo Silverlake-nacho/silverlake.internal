@@ -944,6 +944,28 @@
       </div>
     </div>
 
+    <div class="modal fade" id="currentStatusDetailsModal" tabindex="-1" aria-labelledby="currentStatusDetailsModalLabel" aria-hidden="true">
+      <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="currentStatusDetailsModalLabel">Vehicle status details</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <div class="vehicle-table-frame">
+              <table id="currentStatusDetailsModalTable" class="table table-striped table-sm align-middle vehicle-details-table">
+                <thead>
+                  <tr class="title-row" id="currentStatusDetailsModalHeader"></tr>
+                  <tr class="filter-row" id="currentStatusDetailsModalFilterRow" data-dt-order="disable"></tr>
+                </thead>
+                <tbody id="currentStatusDetailsModalBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
 
     <div class="modal fade" id="partsBreakdownModal" tabindex="-1" aria-labelledby="partsBreakdownModalLabel" aria-hidden="true">
       <div class="modal-dialog modal-lg modal-dialog-scrollable">
@@ -1001,6 +1023,11 @@
       const currentStatusRangeLabel = document.getElementById('currentStatusRangeLabel');
       const currentStatusNowBtn = document.getElementById('currentStatusNowBtn');
       const currentStatusSelectedBtn = document.getElementById('currentStatusSelectedBtn');
+      const currentStatusDetailsModalElement = document.getElementById('currentStatusDetailsModal');
+      const currentStatusDetailsModalLabel = document.getElementById('currentStatusDetailsModalLabel');
+      const currentStatusDetailsModalHeader = document.getElementById('currentStatusDetailsModalHeader');
+      const currentStatusDetailsModalFilterRow = document.getElementById('currentStatusDetailsModalFilterRow');
+      const currentStatusDetailsModalBody = document.getElementById('currentStatusDetailsModalBody');
       const vehicleSoldTableBody = document.getElementById('vehicleSoldTableBody');
       const vehicleSoldDateRangeLabel = document.getElementById('vehicleSoldDateRangeLabel');
       const vehicleSoldEntityHeader = document.getElementById('vehicleSoldEntityHeader');
@@ -1108,6 +1135,7 @@
       let detailsDataTable = null;
       let vehicleSoldDetailsDataTable = null;
       let uncollectedSoldDetailsDataTable = null;
+      let currentStatusDetailsDataTable = null;
 
       let chartInstance = null;
       let currentChartType = 'bar';
@@ -1291,7 +1319,7 @@
         const data = currentStatusDataset[currentStatusMode] || {};
         if (currentStatusTableBody) {
           currentStatusTableBody.innerHTML = (data.rows || []).map((row) => `
-            <tr><td>${escapeHtml(row[0])}</td><td class="text-end">${Number(row[1] || 0).toLocaleString()}</td></tr>
+            <tr><td>${escapeHtml(row[0])}</td><td class="text-end"><button type="button" class="btn btn-link p-0 fw-semibold current-status-details-trigger" data-status-group="${escapeHtml(row[0])}">${Number(row[1] || 0).toLocaleString()}</button></td></tr>
           `).join('');
         }
         if (currentStatusTotalCell) currentStatusTotalCell.textContent = Number(data.sum_total || 0).toLocaleString();
@@ -1946,6 +1974,55 @@
         initializeUncollectedSoldDetailsTable();
       }
 
+      function showCurrentStatusDetails(groupLabel) {
+        const data = currentStatusDataset[currentStatusMode] || {};
+        const columns = data.detail_columns || [];
+        const rows = (data.detail_groups || {})[groupLabel] || [];
+        if (currentStatusDetailsDataTable) {
+          currentStatusDetailsDataTable.destroy();
+          currentStatusDetailsDataTable = null;
+        }
+        currentStatusDetailsModalLabel.textContent = `${groupLabel} Details (${rows.length.toLocaleString()})`;
+        currentStatusDetailsModalHeader.innerHTML = columns
+          .map((column) => `<th>${escapeHtml(column)}</th>`).join('');
+        currentStatusDetailsModalFilterRow.innerHTML = columns
+          .map((column) => `<th><input type="text" class="form-control form-control-sm vehicle-details-filter" placeholder="Filter ${escapeHtml(column)}"></th>`).join('');
+        currentStatusDetailsModalBody.innerHTML = '';
+        rows.forEach((row) => {
+          const tr = document.createElement('tr');
+          row.forEach((value, index) => {
+            const td = document.createElement('td');
+            if (normalizeColumnName(columns[index]) === 'flag') {
+              renderFlagCell(td, value);
+            } else {
+              td.textContent = formatDateTimeForDisplay(value, columns[index]);
+            }
+            tr.appendChild(td);
+          });
+          currentStatusDetailsModalBody.appendChild(tr);
+        });
+        const $table = jQuery('#currentStatusDetailsModalTable');
+        const $filterInputs = $table.find('thead tr.filter-row th input');
+        currentStatusDetailsDataTable = $table.DataTable({
+          paging: false,
+          info: false,
+          order: [],
+          dom: 't',
+          autoWidth: false,
+          ordering: true,
+          initComplete: function () {
+            const api = this.api();
+            api.columns().every(function (index) {
+              const column = this;
+              jQuery($filterInputs[index]).on('keyup change clear', function () {
+                if (column.search() !== this.value) column.search(this.value).draw();
+              });
+            });
+          },
+        });
+        bootstrap.Modal.getOrCreateInstance(currentStatusDetailsModalElement).show();
+      }
+
 
       function syncDetailsHeaderOffsets() {
         syncTableHeaderOffsets('vehicleDetailsTable');
@@ -2214,6 +2291,10 @@
       currentStatusSelectedBtn?.addEventListener('click', () => {
         currentStatusMode = 'selected';
         renderCurrentStatus();
+      });
+      currentStatusTableBody?.addEventListener('click', (event) => {
+        const trigger = event.target.closest('.current-status-details-trigger');
+        if (trigger) showCurrentStatusDetails(trigger.dataset.statusGroup || 'Vehicle status');
       });
 
       if (vehicleInStatusResetZoomBtn) {
