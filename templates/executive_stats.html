@@ -1127,8 +1127,8 @@
       const vehicleFlagsModalBody = document.getElementById('vehicleFlagsModalBody');
       const vehicleFlagsModalElement = document.getElementById('vehicleFlagsModal');
       let vehicleFlagsModal = null;
-      let vehicleDetailColumns = {{ detail_columns|tojson }};
-      let vehicleDetailRows = {{ detail_rows|tojson }};
+      let vehicleDetailColumns = {{ (detail_columns or [])|tojson }};
+      let vehicleDetailRows = {{ (detail_rows or [])|tojson }};
       let vehicleSoldDetailColumns = {{ vehicle_sold_context.detail_columns|tojson }};
       let vehicleSoldDetailRows = {{ vehicle_sold_context.detail_rows|tojson }};
       const chartTitleBase = {{ chart_title_base|tojson }}
@@ -1169,7 +1169,7 @@
 
       const expandedVehicleInStatusGroups = new Set();
       const currentGroupMode = {{ group_mode|tojson }};
-      let contractCompanyBreakdown = {{ contract_company_breakdown|tojson }};
+      let contractCompanyBreakdown = {{ (contract_company_breakdown or {})|tojson }};
       const collapsedContracts = new Set();
       const collapsedVehicleSoldContracts = new Set();
       const lightGreyContractTypes = new Set(['IAA Purchases']);
@@ -2394,7 +2394,7 @@
         rows: {{ rows|tojson }},
         sum_total: {{ sum_total|tojson }},
         date_range_label: {{ date_range_label|tojson }},
-        contract_company_breakdown: {{ contract_company_breakdown|tojson }},
+        contract_company_breakdown: {{ (contract_company_breakdown or {})|tojson }},
       });
 	 
       rebuildPartsSoldTable({{ (parts_sold_context or {})|tojson }});
