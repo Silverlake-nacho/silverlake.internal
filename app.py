@@ -1514,11 +1514,11 @@ def fetch_atlas_executive_status_details(
                 WHERE (
                     ({status_expression}) = 'Auction'
                     OR (
-                    OR (
                         ({status_expression}) IN ('Notified', 'Recovered')
                         AND sr.DateRecovered IS NOT NULL
                     )
-                    OR ({status_expression}) = 'Cleared'
+                    OR (
+                        ({status_expression}) = 'Cleared'
                         AND sr.DateRecovered IS NOT NULL
                     )
                     OR (
@@ -1548,20 +1548,33 @@ def fetch_atlas_executive_status_details(
     raise last_error if last_error else RuntimeError("No Atlas database names configured.")
 
 
-def build_executive_current_status_context(start_date: date, end_date: date, date_mode: str):
+def build_executive_current_status_context(
+    start_date: date,
+    end_date: date,
+    date_mode: str,
+    include_details: bool = True,
+):
     """Build both views needed by the Current/Date selected client-side toggle."""
 
     database_name, current_rows = fetch_atlas_executive_current_status_counts()
     _, selected_rows = fetch_atlas_executive_current_status_counts(
         start_date, end_date, date_mode
     )
-    _, current_detail_columns, current_detail_rows = (
-        fetch_atlas_executive_status_details()
-    )
-    _, selected_detail_columns, selected_detail_rows = (
-        fetch_atlas_executive_status_details(start_date, end_date, date_mode)
-    )
+    current_detail_columns = []
+    current_detail_rows = []
+    selected_detail_columns = []
+    selected_detail_rows = []
+    if include_details:
+        _, current_detail_columns, current_detail_rows = (
+            fetch_atlas_executive_status_details()
+        )
+        _, selected_detail_columns, selected_detail_rows = (
+            fetch_atlas_executive_status_details(start_date, end_date, date_mode)
+        )
+
     def split_detail_groups(columns, rows):
+        if not columns:
+            return [], {label: [] for label in EXECUTIVE_CURRENT_STATUS_LABELS}
         group_index = columns.index("StatusGroup")
         visible_columns = [column for index, column in enumerate(columns) if index != group_index]
         groups = {label: [] for label in EXECUTIVE_CURRENT_STATUS_LABELS}
@@ -4607,6 +4620,7 @@ def build_vehicle_stats_context(
     exclusion_scope: str = "insurance_company",
     contract_group_filter: Optional[str] = None,
     excluded_contract_company_pairs: Optional[set[tuple[str, str]]] = None,
+    include_details: bool = True,
 ):
     start_date, end_date = parse_date_filter(filter_type, start_date_str, end_date_str)
     date_range_label = describe_date_range(filter_type, start_date, end_date)
@@ -4629,9 +4643,13 @@ def build_vehicle_stats_context(
         database_name, rows = fetch_atlas_vehicle_counts_by_insurance(
             start_date, end_date, resolved_date_mode, contract_group_filter
         )
-    details_db_name, detail_columns, detail_rows = fetch_atlas_vehicle_details_by_insurance(
-        start_date, end_date, resolved_date_mode, contract_group_filter
-    )
+    details_db_name = None
+    detail_columns = []
+    detail_rows = []
+    if include_details:
+        details_db_name, detail_columns, detail_rows = fetch_atlas_vehicle_details_by_insurance(
+            start_date, end_date, resolved_date_mode, contract_group_filter
+        )
     current_user = session.get("username")
     default_exclusions = load_stats_exclusions(current_user, exclusion_scope)
     excluded_companies = exclude_args or default_exclusions
@@ -4735,6 +4753,7 @@ def build_vehicle_sold_context(
     contract_group_filter: Optional[str] = None,
     sold_only: bool = True,
     sold_not_paid: bool = True,
+    include_details: bool = True,
 ):
     """Build the independent DateSold-based vehicle sales summary."""
 
@@ -4748,13 +4767,17 @@ def build_vehicle_sold_context(
         sold_only,
         sold_not_paid,
     )
-    details_db_name, detail_columns, detail_rows = fetch_atlas_vehicle_sold_details(
-        start_date, end_date, contract_group_filter, sold_only, sold_not_paid
-    )
-    company_index = detail_columns.index("InsuranceCompany")
-    detail_rows = [
-        row for row in detail_rows if row[company_index] not in excluded_companies
-    ]
+    details_db_name = None
+    detail_columns = []
+    detail_rows = []
+    if include_details:
+        details_db_name, detail_columns, detail_rows = fetch_atlas_vehicle_sold_details(
+            start_date, end_date, contract_group_filter, sold_only, sold_not_paid
+        )
+        company_index = detail_columns.index("InsuranceCompany")
+        detail_rows = [
+            row for row in detail_rows if row[company_index] not in excluded_companies
+        ]
     totals = {}
     contract_company_breakdown = {}
     for label, company, vehicle_count, sale_price, premium in raw_rows:
@@ -5403,6 +5426,7 @@ def executive_stats():
                 if normalize_vehicle_date_mode(date_mode) == "recovered"
                 else set()
             ),
+            include_details=False,
         )
         if normalize_vehicle_date_mode(date_mode) == "recovered":
             _, grouped_rows, group_status_breakdown = fetch_atlas_vehicle_in_status_groups(
@@ -5428,9 +5452,13 @@ def executive_stats():
             group_mode,
             sold_only=sold_only,
             sold_not_paid=sold_not_paid,
+            include_details=False,
         )
         current_status_context = build_executive_current_status_context(
-            context["start_date"], context["end_date"], context["date_mode"]
+            context["start_date"],
+            context["end_date"],
+            context["date_mode"],
+            include_details=False,
         )
         current_status_context["selected"]["date_range_label"] = context["date_range_label"]
         parts_sold_context = build_stats_context(
@@ -5521,6 +5549,83 @@ def executive_stats():
         live_enabled=live_enabled,
         error_message=error_message,
         active_page="executive_stats",
+    )
+
+
+@app.route("/executive_stats/details", methods=["GET"])
+def executive_stats_details():
+    """Load the large Executive Stats detail datasets on demand."""
+
+    filter_type = request.args.get("filter", "today")
+    start_date_str = request.args.get("start_date")
+    end_date_str = request.args.get("end_date")
+    excluded_args = request.args.getlist("exclude")
+    group_mode = request.args.get("group", "company")
+    date_mode = request.args.get("date_mode", "recovered")
+    section = request.args.get("section", "tables")
+    sold_only = str(request.args.get("sold_only", "1")).lower() not in {
+        "0", "false", "no", "off"
+    }
+    sold_not_paid = str(request.args.get("sold_not_paid", "1")).lower() not in {
+        "0", "false", "no", "off"
+    }
+
+    start_date, end_date = parse_date_filter(
+        filter_type, start_date_str, end_date_str
+    )
+    resolved_date_mode = normalize_vehicle_date_mode(date_mode)
+    current_status_context = build_executive_current_status_context(
+        start_date, end_date, resolved_date_mode
+    )
+    current_status_context["selected"]["date_range_label"] = describe_date_range(
+        filter_type, start_date, end_date
+    )
+
+    if section == "current_status":
+        return jsonify({"current_status": current_status_context})
+
+    vehicle_context = build_vehicle_stats_context(
+        filter_type,
+        start_date_str,
+        end_date_str,
+        excluded_args,
+        group_mode,
+        resolved_date_mode,
+        exclusion_scope="executive_insurance_company",
+        excluded_contract_company_pairs=(
+            EXECUTIVE_VEHICLES_IN_EXCLUDED_CONTRACT_COMPANIES
+            if resolved_date_mode == "recovered"
+            else set()
+        ),
+    )
+    vehicle_sold_context = build_vehicle_sold_context(
+        filter_type,
+        start_date_str,
+        end_date_str,
+        vehicle_context.get("excluded_companies", []),
+        group_mode,
+        sold_only=sold_only,
+        sold_not_paid=sold_not_paid,
+    )
+
+    return jsonify(
+        {
+            "vehicle_details": {
+                "detail_columns": vehicle_context.get("detail_columns", []),
+                "detail_rows": [
+                    [serialize_vehicle_detail_cell(value) for value in row]
+                    for row in vehicle_context.get("detail_rows", [])
+                ],
+            },
+            "vehicle_sold_details": {
+                "detail_columns": vehicle_sold_context.get("detail_columns", []),
+                "detail_rows": [
+                    [serialize_vehicle_detail_cell(value) for value in row]
+                    for row in vehicle_sold_context.get("detail_rows", [])
+                ],
+            },
+            "current_status": current_status_context,
+        }
     )
 
 
@@ -5806,6 +5911,7 @@ def executive_stats_data():
             if resolved_date_mode == "recovered"
             else set()
         ),
+        include_details=False,
     )
 
     vehicle_in_status_context = None
@@ -5834,9 +5940,13 @@ def executive_stats_data():
         group_mode,
         sold_only=sold_only,
         sold_not_paid=sold_not_paid,
+        include_details=False,
     )
     current_status_context = build_executive_current_status_context(
-        context["start_date"], context["end_date"], context["date_mode"]
+        context["start_date"],
+        context["end_date"],
+        context["date_mode"],
+        include_details=False,
     )
     current_status_context["selected"]["date_range_label"] = context["date_range_label"]
         
