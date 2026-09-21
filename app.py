@@ -1,7 +1,8 @@
 from flask import Flask, request, render_template, send_file, redirect, url_for, session, flash, jsonify
 import pandas as pd
 from io import BytesIO
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
+import struct
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from google.oauth2 import service_account
@@ -332,6 +333,7 @@ def inject_current_user():
 
 USERS = {
     'admin': 'Silverlake1!',
+    'wayne': 'Silverlake7!',
     'paul': 'Silverlake1!',
     'morgan': 'Silverlake1!',
     'acox': 'Silverlake7',    
@@ -1125,6 +1127,37 @@ def _get_atlas_db_name_candidates() -> List[str]:
     return explicit_names
 
 
+def _decode_sql_server_datetimeoffset(raw_value: bytes):
+    """Decode SQL Server's datetimeoffset ODBC structure (type -155)."""
+
+    if raw_value is None:
+        return None
+    (
+        year,
+        month,
+        day,
+        hour,
+        minute,
+        second,
+        nanoseconds,
+        offset_hour,
+        offset_minute,
+    ) = struct.unpack("<6hI2h", raw_value)
+    utc_offset = timezone(
+        timedelta(hours=offset_hour, minutes=offset_minute)
+    )
+    return datetime(
+        year,
+        month,
+        day,
+        hour,
+        minute,
+        second,
+        nanoseconds // 1000,
+        tzinfo=utc_offset,
+    )
+    
+    
 def get_atlas_db_connection(database_name: str):
     conn_str = (
         f"DRIVER={{{ATLAS_DB_DRIVER}}};"
@@ -1135,7 +1168,9 @@ def get_atlas_db_connection(database_name: str):
         f"Encrypt={ATLAS_DB_ENCRYPT};"
         f"TrustServerCertificate={ATLAS_DB_TRUST_CERT};"
     )
-    return pyodbc.connect(conn_str, timeout=150)
+    conn = pyodbc.connect(conn_str, timeout=150)
+    conn.add_output_converter(-155, _decode_sql_server_datetimeoffset)
+    return conn
 
 
 def _fetch_table_columns(cursor, full_table_name: str) -> List[Tuple[str, str]]:
@@ -1315,6 +1350,7 @@ EXECUTIVE_CURRENT_STATUS_LABELS = (
     "Auction vehicles waiting to be sold",
     "Auction vehicles sold, not collected",
     "Vehicles waiting to be cleared",
+    "Vehicles still in Cleared status",
 )
 
 
@@ -1343,6 +1379,7 @@ def fetch_atlas_executive_current_status_counts(
                         {status_expression} AS VehicleStatus,
                         v.CollectedDate,
                         v.ActualDeliveryDate,
+                        sr.DateRecovered,
                         latest_sale.DateSold,
                         latest_sale.Username
                     FROM CT_Vehicles v
@@ -1375,7 +1412,11 @@ def fetch_atlas_executive_current_status_counts(
                          AND DateSold < CAST('2027-01-01' AS datetime2)
                         THEN 1 ELSE 0 END), 0),
                     COALESCE(SUM(CASE
-                        WHEN VehicleStatus IN ('Notified', 'Recovered') THEN 1 ELSE 0 END), 0)
+                        WHEN VehicleStatus IN ('Notified', 'Recovered')
+                         AND DateRecovered IS NOT NULL
+                        THEN 1 ELSE 0 END), 0),
+                    COALESCE(SUM(CASE
+                        WHEN VehicleStatus = 'Cleared' THEN 1 ELSE 0 END), 0)
                 FROM CurrentVehicles
             """.format(
                 status_expression=status_expression,
@@ -1420,9 +1461,12 @@ def fetch_atlas_executive_status_details(
                             THEN 'Auction vehicles waiting to be sold'
                         WHEN ({status_expression}) IN ('Sold', 'Sold Not Paid')
                             THEN 'Auction vehicles sold, not collected'
+                        WHEN ({status_expression}) = 'Cleared'
+                            THEN 'Vehicles still in Cleared status'
                         ELSE 'Vehicles waiting to be cleared'
                     END AS StatusGroup,
                     v.Id,
+                    v.ActiveSalvageAuctionId,
                     v.RegNo AS Registration,
                     {status_expression} AS Status,
                     CAST(v.DateEntered AS datetime2) AS DateEntered,
@@ -1469,7 +1513,14 @@ def fetch_atlas_executive_status_details(
                 ) stc
                 WHERE (
                     ({status_expression}) = 'Auction'
-                    OR ({status_expression}) IN ('Notified', 'Recovered')
+                    OR (
+                    OR (
+                        ({status_expression}) IN ('Notified', 'Recovered')
+                        AND sr.DateRecovered IS NOT NULL
+                    )
+                    OR ({status_expression}) = 'Cleared'
+                        AND sr.DateRecovered IS NOT NULL
+                    )
                     OR (
                         ({status_expression}) IN ('Sold', 'Sold Not Paid')
                         AND v.CollectedDate IS NULL
@@ -5231,7 +5282,11 @@ def vehicle_stats():
             "group_mode": group_mode,
             "date_mode": normalize_vehicle_date_mode(date_mode),
             "entity_label": entity_label,
+            "exclusion_label": "Insurance Companies",
             "chart_title_base": f"Vehicles by {entity_label}",
+            "contract_company_breakdown": {},
+            "detail_columns": [],
+            "detail_rows": [],
         }
         error_message = f"Unable to load vehicle stats: {exc}"
 
