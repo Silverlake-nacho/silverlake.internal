@@ -1315,6 +1315,7 @@ EXECUTIVE_CURRENT_STATUS_LABELS = (
     "Auction vehicles waiting to be sold",
     "Auction vehicles sold, not collected",
     "Vehicles waiting to be cleared",
+    "Vehicles still in Cleared status",
 )
 
 
@@ -1343,6 +1344,7 @@ def fetch_atlas_executive_current_status_counts(
                         {status_expression} AS VehicleStatus,
                         v.CollectedDate,
                         v.ActualDeliveryDate,
+                        sr.DateRecovered,
                         latest_sale.DateSold,
                         latest_sale.Username
                     FROM CT_Vehicles v
@@ -1375,7 +1377,11 @@ def fetch_atlas_executive_current_status_counts(
                          AND DateSold < CAST('2027-01-01' AS datetime2)
                         THEN 1 ELSE 0 END), 0),
                     COALESCE(SUM(CASE
-                        WHEN VehicleStatus IN ('Notified', 'Recovered') THEN 1 ELSE 0 END), 0)
+                        WHEN VehicleStatus IN ('Notified', 'Recovered')
+                         AND DateRecovered IS NOT NULL
+                        THEN 1 ELSE 0 END), 0),
+                    COALESCE(SUM(CASE
+                        WHEN VehicleStatus = 'Cleared' THEN 1 ELSE 0 END), 0)
                 FROM CurrentVehicles
             """.format(
                 status_expression=status_expression,
@@ -1420,6 +1426,8 @@ def fetch_atlas_executive_status_details(
                             THEN 'Auction vehicles waiting to be sold'
                         WHEN ({status_expression}) IN ('Sold', 'Sold Not Paid')
                             THEN 'Auction vehicles sold, not collected'
+                        WHEN ({status_expression}) = 'Cleared'
+                            THEN 'Vehicles still in Cleared status'
                         ELSE 'Vehicles waiting to be cleared'
                     END AS StatusGroup,
                     v.Id,
@@ -1469,7 +1477,11 @@ def fetch_atlas_executive_status_details(
                 ) stc
                 WHERE (
                     ({status_expression}) = 'Auction'
-                    OR ({status_expression}) IN ('Notified', 'Recovered')
+                    OR (
+                        ({status_expression}) IN ('Notified', 'Recovered')
+                        AND sr.DateRecovered IS NOT NULL
+                    )
+                    OR ({status_expression}) = 'Cleared'
                     OR (
                         ({status_expression}) IN ('Sold', 'Sold Not Paid')
                         AND v.CollectedDate IS NULL
