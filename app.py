@@ -5563,6 +5563,8 @@ def executive_stats_details():
     group_mode = request.args.get("group", "company")
     date_mode = request.args.get("date_mode", "recovered")
     section = request.args.get("section", "tables")
+    export_excel = request.args.get("export", "").lower() in {"excel", "xlsx"}
+    export_dataset = request.args.get("dataset", "")
     sold_only = str(request.args.get("sold_only", "1")).lower() not in {
         "0", "false", "no", "off"
     }
@@ -5581,8 +5583,33 @@ def executive_stats_details():
         filter_type, start_date, end_date
     )
 
+    if section == "current_status" and export_excel:
+        status_mode = request.args.get("status_mode", "current")
+        if status_mode not in {"current", "selected"}:
+            status_mode = "current"
+        group_label = request.args.get("status_group", EXECUTIVE_CURRENT_STATUS_LABELS[0])
+        status_data = current_status_context[status_mode]
+        rows = status_data.get("detail_groups", {}).get(group_label, [])
+        return send_executive_details_excel(
+            status_data.get("detail_columns", []),
+            rows,
+            group_label,
+        )
+
     if section == "current_status":
         return jsonify({"current_status": current_status_context})
+
+    if export_excel and export_dataset == "uncollected_sold":
+        status_mode = request.args.get("status_mode", "current")
+        if status_mode not in {"current", "selected"}:
+            status_mode = "current"
+        status_data = current_status_context[status_mode]
+        sold_label = EXECUTIVE_CURRENT_STATUS_LABELS[1]
+        return send_executive_details_excel(
+            status_data.get("detail_columns", []),
+            status_data.get("detail_groups", {}).get(sold_label, []),
+            "Sold Not Collected",
+        )
 
     vehicle_context = build_vehicle_stats_context(
         filter_type,
@@ -5608,6 +5635,19 @@ def executive_stats_details():
         sold_not_paid=sold_not_paid,
     )
 
+    if export_excel:
+        if export_dataset == "vehicle_sold":
+            return send_executive_details_excel(
+                vehicle_sold_context.get("detail_columns", []),
+                vehicle_sold_context.get("detail_rows", []),
+                "Vehicle Sold Details",
+            )
+        return send_executive_details_excel(
+            vehicle_context.get("detail_columns", []),
+            vehicle_context.get("detail_rows", []),
+            "Vehicle Details",
+        )
+
     return jsonify(
         {
             "vehicle_details": {
@@ -5626,6 +5666,37 @@ def executive_stats_details():
             },
             "current_status": current_status_context,
         }
+    )
+
+
+def send_executive_details_excel(columns, rows, title):
+    """Return an Executive Stats detail dataset as an Excel workbook."""
+
+    def excel_value(value):
+        if not isinstance(value, dict):
+            return value
+        if value.get("kind") == "multiple":
+            return ", ".join(
+                str(flag.get("text", ""))
+                for flag in value.get("flags", [])
+                if flag.get("text")
+            )
+        return value.get("label", value.get("text", ""))
+
+    export_rows = [[excel_value(value) for value in row] for row in rows]
+    output = BytesIO()
+    sheet_name = re.sub(r"[\\/*?:\[\]]", "", title)[:31] or "Details"
+    with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+        pd.DataFrame(export_rows, columns=columns).to_excel(
+            writer, index=False, sheet_name=sheet_name
+        )
+    output.seek(0)
+    filename = re.sub(r"[^a-z0-9]+", "_", title.lower()).strip("_")
+    return send_file(
+        output,
+        download_name=f"{filename or 'executive_details'}.xlsx",
+        as_attachment=True,
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
 
 

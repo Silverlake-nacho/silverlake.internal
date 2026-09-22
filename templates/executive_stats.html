@@ -841,7 +841,10 @@
               <div class="card-body">
                 <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
                   <h5 class="card-title mb-0">Vehicle Details</h5>
-                  <small class="text-muted">Matches the selected date range for cross-referencing counts.</small>
+                  <div class="d-flex align-items-center gap-2 flex-wrap">
+                    <small class="text-muted">Matches the selected date range for cross-referencing counts.</small>
+                    <a class="btn btn-sm btn-outline-success detail-excel-download" data-detail-dataset="vehicle" href="#"><i class="fas fa-file-excel me-1"></i>Download Excel</a>
+                  </div>
                 </div>
                 <div class="vehicle-table-frame">
                   <table id="vehicleDetailsTable" class="table table-striped table-sm align-middle vehicle-details-table">
@@ -881,7 +884,10 @@
               <div class="card-body">
                 <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
                   <h5 class="card-title mb-0">Vehicle Sold Details</h5>
-                  <small class="text-muted">Matches the DateSold range and exclusions used by the Vehicle Sold figures.</small>
+                  <div class="d-flex align-items-center gap-2 flex-wrap">
+                    <small class="text-muted">Matches the DateSold range and exclusions used by the Vehicle Sold figures.</small>
+                    <a class="btn btn-sm btn-outline-success detail-excel-download" data-detail-dataset="vehicle_sold" href="#"><i class="fas fa-file-excel me-1"></i>Download Excel</a>
+                  </div>
                 </div>
                 <div class="vehicle-table-frame">
                   <table id="vehicleSoldDetailsTable" class="table table-striped table-sm align-middle vehicle-details-table">
@@ -920,7 +926,10 @@
               <div class="card-body">
                 <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
                   <h5 class="card-title mb-0">Auction Vehicles Sold, Not Collected Details</h5>
-                  <small class="text-muted" id="uncollectedSoldDetailsLabel">Showing vehicles sold in 2026 currently in Sold or Sold Not Paid status without a CollectedDate or ActualDeliveryDate.</small>
+                  <div class="d-flex align-items-center gap-2 flex-wrap">
+                    <small class="text-muted" id="uncollectedSoldDetailsLabel">Showing vehicles sold in 2026 currently in Sold or Sold Not Paid status without a CollectedDate or ActualDeliveryDate.</small>
+                    <a class="btn btn-sm btn-outline-success detail-excel-download" data-detail-dataset="uncollected_sold" href="#"><i class="fas fa-file-excel me-1"></i>Download Excel</a>
+                  </div>
                 </div>
                 <div class="vehicle-table-frame">
                   <table id="uncollectedSoldDetailsTable" class="table table-striped table-sm align-middle vehicle-details-table">
@@ -965,6 +974,7 @@
         <div class="modal-content">
           <div class="modal-header">
             <h5 class="modal-title" id="currentStatusDetailsModalLabel">Vehicle status details</h5>
+            <a class="btn btn-sm btn-outline-success ms-auto me-2" id="currentStatusDetailsDownload" href="#"><i class="fas fa-file-excel me-1"></i>Download Excel</a>
             <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
           </div>
           <div class="modal-body">
@@ -1044,6 +1054,7 @@
       const currentStatusDetailsModalHeader = document.getElementById('currentStatusDetailsModalHeader');
       const currentStatusDetailsModalFilterRow = document.getElementById('currentStatusDetailsModalFilterRow');
       const currentStatusDetailsModalBody = document.getElementById('currentStatusDetailsModalBody');
+      const currentStatusDetailsDownload = document.getElementById('currentStatusDetailsDownload');
       const vehicleSoldTableBody = document.getElementById('vehicleSoldTableBody');
       const vehicleSoldDateRangeLabel = document.getElementById('vehicleSoldDateRangeLabel');
       const vehicleSoldEntityHeader = document.getElementById('vehicleSoldEntityHeader');
@@ -1343,6 +1354,12 @@
 
       function renderCurrentStatus() {
         const data = currentStatusDataset[currentStatusMode] || {};
+        const uncollectedDownload = document.querySelector('[data-detail-dataset="uncollected_sold"]');
+        if (uncollectedDownload) {
+          uncollectedDownload.href = buildDetailsExcelUrl('uncollected_sold', {
+            status_mode: currentStatusMode,
+          });
+        }
         if (currentStatusTableBody) {
           currentStatusTableBody.innerHTML = (data.rows || []).map((row) => `
             <tr><td>${escapeHtml(row[0])}</td><td class="text-end"><button type="button" class="btn btn-link p-0 fw-semibold current-status-details-trigger" data-status-group="${escapeHtml(row[0])}">${Number(row[1] || 0).toLocaleString()}</button></td></tr>
@@ -2022,6 +2039,12 @@
       }
 
       async function showCurrentStatusDetails(groupLabel) {
+        if (currentStatusDetailsDownload) {
+          currentStatusDetailsDownload.href = buildDetailsExcelUrl('current_status', {
+            status_mode: currentStatusMode,
+            status_group: groupLabel,
+          });
+        }
         const existingData = currentStatusDataset[currentStatusMode] || {};
         if (!(existingData.detail_columns || []).length) {
           currentStatusDetailsModalLabel.textContent = `${groupLabel} Details`;
@@ -2241,6 +2264,24 @@
         params.forEach((value, key) => url.searchParams.append(key, value));
         return url.toString();
       }
+
+      function buildDetailsExcelUrl(dataset, extraParams = {}) {
+        const section = dataset === 'current_status' ? 'current_status' : 'tables';
+        const url = new URL(buildDetailsUrl(section));
+        url.searchParams.set('export', 'excel');
+        url.searchParams.set('dataset', dataset);
+        Object.entries(extraParams).forEach(([key, value]) => {
+          url.searchParams.set(key, value);
+        });
+        return url.toString();
+      }
+
+      document.querySelectorAll('.detail-excel-download').forEach((link) => {
+        const dataset = link.dataset.detailDataset;
+        if (dataset !== 'uncollected_sold') {
+          link.href = buildDetailsExcelUrl(dataset);
+        }
+      });
 
       async function loadDetailTables() {
         if (detailTablesLoaded) return;
