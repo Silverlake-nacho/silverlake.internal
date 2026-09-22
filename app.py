@@ -5676,7 +5676,7 @@ def send_executive_details_excel(columns, rows, title):
         if not isinstance(value, dict):
             return value
         if value.get("kind") == "multiple":
-            return ", ".join(
+            return " | ".join(
                 str(flag.get("text", ""))
                 for flag in value.get("flags", [])
                 if flag.get("text")

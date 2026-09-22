@@ -361,6 +361,20 @@
         width: max-content;
         min-width: 100%;
       }
+      .vehicle-flag-list {
+        display: flex;
+        align-items: center;
+        flex-wrap: nowrap;
+        gap: 4px;
+      }
+      .vehicle-flag-badge {
+        display: inline-block;
+        flex: 0 0 auto;
+        padding: 2px 7px;
+        border-radius: 4px;
+        font-weight: 600;
+        white-space: nowrap;
+      }
       #vehicleFlagsModal {
         z-index: 1070;
       }
@@ -864,10 +878,8 @@
                       {% for row in detail_rows %}
                         <tr>
                           {% for value in row %}
-                            {% if value is mapping and value.get('kind') == 'single' %}
-                              <td style="background-color: {{ value.get('background_color', '') }}; color: #111; font-weight: 600;">{{ value.get('label', '') }}</td>
-                            {% elif value is mapping and value.get('kind') == 'multiple' %}
-                              <td><button type="button" class="btn btn-sm btn-link p-0">{{ value.get('label', 'More') }}</button></td>
+                            {% if value is mapping and value.get('kind') in ['single', 'multiple'] %}
+                              <td><div class="vehicle-flag-list">{% for flag in value.get('flags', []) %}<span class="vehicle-flag-badge" style="background-color: {{ flag.get('color', '') }};">{{ flag.get('text', '') }}</span>{% endfor %}</div></td>
                             {% else %}
                               <td>{{ value }}</td>
                             {% endif %}
@@ -907,10 +919,8 @@
                       {% for row in vehicle_sold_context.detail_rows %}
                         <tr>
                           {% for value in row %}
-                            {% if value is mapping and value.get('kind') == 'single' %}
-                              <td style="background-color: {{ value.get('background_color', '') }}; color: #111; font-weight: 600;">{{ value.get('label', '') }}</td>
-                            {% elif value is mapping and value.get('kind') == 'multiple' %}
-                              <td><button type="button" class="btn btn-sm btn-link p-0">{{ value.get('label', 'More') }}</button></td>
+                            {% if value is mapping and value.get('kind') in ['single', 'multiple'] %}
+                              <td><div class="vehicle-flag-list">{% for flag in value.get('flags', []) %}<span class="vehicle-flag-badge" style="background-color: {{ flag.get('color', '') }};">{{ flag.get('text', '') }}</span>{% endfor %}</div></td>
                             {% else %}
                               <td>{{ value }}</td>
                             {% endif %}
@@ -1925,27 +1935,24 @@
           return;
         }
 
-        if (value.kind === 'single') {
-          const backgroundColor = value.background_color || '';
-          td.textContent = value.label || '';
-          if (backgroundColor) {
-            td.style.backgroundColor = backgroundColor;
-            td.style.color = getContrastTextColor(backgroundColor);
-          }
-          td.style.fontWeight = '600';
-          return;
-        }
-
-        if (value.kind === 'multiple') {
-          const moreButton = document.createElement('button');
-          moreButton.type = 'button';
-          moreButton.className = 'btn btn-sm btn-link p-0';
-          moreButton.textContent = value.label || 'More';
-          moreButton.addEventListener('click', (event) => {
-            event.preventDefault();
-            showVehicleFlagsModal(value.flags || []);
+        if (value.kind === 'single' || value.kind === 'multiple') {
+          const flags = (value.flags || []).length
+            ? value.flags
+            : [{ text: value.label || '', color: value.background_color || '' }];
+          const flagList = document.createElement('div');
+          flagList.className = 'vehicle-flag-list';
+          flags.forEach((flag) => {
+            const badge = document.createElement('span');
+            const color = flag?.color || '';
+            badge.className = 'vehicle-flag-badge';
+            badge.textContent = flag?.text || '';
+            if (color) {
+              badge.style.backgroundColor = color;
+              badge.style.color = getContrastTextColor(color);
+            }
+            flagList.appendChild(badge);
           });
-          td.appendChild(moreButton);
+          td.appendChild(flagList);
           return;
         }
 
