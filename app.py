@@ -4865,8 +4865,8 @@ def hydrate_vehicle_flags(cursor, columns, rows):
                     continue
                 normalized_color = normalize_flag_hex_color(flag_color) or ""
                 normalized_text = "" if flag_text is None else str(flag_text).strip()
-                if not normalized_text and normalized_color == "#000000":
-                    normalized_text = "Black Flag"
+                if not normalized_text:
+                    normalized_text = "No text Flag"
                 flags_by_vehicle.setdefault(vehicle_id, []).append(
                     {
                         "text": normalized_text,
@@ -5681,11 +5681,10 @@ def send_executive_details_excel(columns, rows, title):
             return value
         if value.get("kind") == "multiple":
             return " | ".join(
-                str(flag.get("text", ""))
+                str(flag.get("text") or "No text Flag")
                 for flag in value.get("flags", [])
-                if flag.get("text")
             )
-        return value.get("label", value.get("text", ""))
+        return value.get("label") or value.get("text") or "No text Flag"
 
     def contrast_text_color(background_color):
         color = (background_color or "").lstrip("#")
@@ -5712,10 +5711,7 @@ def send_executive_details_excel(columns, rows, title):
                 flag_value = row[flag_index]
                 if not isinstance(flag_value, dict):
                     continue
-                flags = [
-                    flag for flag in flag_value.get("flags", [])
-                    if flag.get("text")
-                ]
+                flags = list(flag_value.get("flags", []))
                 if not flags:
                     continue
                 if len(flags) == 1:
@@ -5731,7 +5727,10 @@ def send_executive_details_excel(columns, rows, title):
                         )
                         background_formats[format_key] = cell_format
                     worksheet.write(
-                        row_index, flag_index, flags[0].get("text", ""), cell_format
+                        row_index,
+                        flag_index,
+                        flags[0].get("text") or "No text Flag",
+                        cell_format,
                     )
                     continue
 
@@ -5744,7 +5743,9 @@ def send_executive_details_excel(columns, rows, title):
                     if font_format is None:
                         font_format = workbook.add_format({"font_color": color})
                         font_formats[color] = font_format
-                    rich_parts.extend([font_format, flag.get("text", "")])
+                    rich_parts.extend(
+                        [font_format, flag.get("text") or "No text Flag"]
+                    )
                 worksheet.write_rich_string(row_index, flag_index, *rich_parts)
     output.seek(0)
     filename = re.sub(r"[^a-z0-9]+", "_", title.lower()).strip("_")

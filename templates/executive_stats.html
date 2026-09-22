@@ -322,19 +322,17 @@
       .vehicle-status-breakdown td:last-child {
         font-size: 0.875rem;
       }
-      .vehicle-details-table {
-        --vehicle-title-row-height: 0px;
-      }
-      .vehicle-details-table thead tr.title-row th {
+      .vehicle-details-table thead {
         position: sticky;
         top: 0;
         z-index: 4;
+      }
+      .vehicle-details-table thead tr.title-row th {
+        position: static;
         background: #f8f9fa;
       }
       .vehicle-details-table thead tr.filter-row th {
-        position: sticky;
-        top: var(--vehicle-title-row-height);
-        z-index: 3 !important;
+        position: static;
         background: #fff;
         padding: 6px;
         overflow: hidden;
@@ -879,7 +877,7 @@
                         <tr>
                           {% for value in row %}
                             {% if value is mapping and value.get('kind') in ['single', 'multiple'] %}
-                              <td><div class="vehicle-flag-list">{% for flag in value.get('flags', []) %}<span class="vehicle-flag-badge" style="background-color: {{ flag.get('color', '') }};">{{ flag.get('text', '') }}</span>{% endfor %}</div></td>
+                              <td><div class="vehicle-flag-list">{% for flag in value.get('flags', []) %}<span class="vehicle-flag-badge" style="background-color: {{ flag.get('color', '') }};">{{ flag.get('text') or 'No text Flag' }}</span>{% endfor %}</div></td>
                             {% else %}
                               <td>{{ value }}</td>
                             {% endif %}
@@ -920,7 +918,7 @@
                         <tr>
                           {% for value in row %}
                             {% if value is mapping and value.get('kind') in ['single', 'multiple'] %}
-                              <td><div class="vehicle-flag-list">{% for flag in value.get('flags', []) %}<span class="vehicle-flag-badge" style="background-color: {{ flag.get('color', '') }};">{{ flag.get('text', '') }}</span>{% endfor %}</div></td>
+                              <td><div class="vehicle-flag-list">{% for flag in value.get('flags', []) %}<span class="vehicle-flag-badge" style="background-color: {{ flag.get('color', '') }};">{{ flag.get('text') or 'No text Flag' }}</span>{% endfor %}</div></td>
                             {% else %}
                               <td>{{ value }}</td>
                             {% endif %}
@@ -1949,7 +1947,7 @@
             const badge = document.createElement('span');
             const color = flag?.color || '';
             badge.className = 'vehicle-flag-badge';
-            badge.textContent = flag?.text || '';
+            badge.textContent = flag?.text || 'No text Flag';
             if (color) {
               badge.style.backgroundColor = color;
               badge.style.color = getContrastTextColor(color);
