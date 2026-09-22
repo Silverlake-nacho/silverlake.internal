@@ -4863,10 +4863,14 @@ def hydrate_vehicle_flags(cursor, columns, rows):
             for vehicle_id, flag_text, flag_color in cursor.fetchall():
                 if vehicle_id is None:
                     continue
+                normalized_color = normalize_flag_hex_color(flag_color) or ""
+                normalized_text = "" if flag_text is None else str(flag_text).strip()
+                if not normalized_text and normalized_color == "#000000":
+                    normalized_text = "Black Flag"
                 flags_by_vehicle.setdefault(vehicle_id, []).append(
                     {
-                        "text": "" if flag_text is None else str(flag_text).strip(),
-                        "color": normalize_flag_hex_color(flag_color) or "",
+                        "text": normalized_text,
+                        "color": normalized_color,
                     }
                 )
         except Exception:

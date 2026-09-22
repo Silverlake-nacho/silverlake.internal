@@ -323,7 +323,7 @@
         font-size: 0.875rem;
       }
       .vehicle-details-table {
-        --vehicle-title-row-height: 42px;
+        --vehicle-title-row-height: 0px;
       }
       .vehicle-details-table thead tr.title-row th {
         position: sticky;
@@ -1929,6 +1929,10 @@
         });
       }
 
+      currentStatusDetailsModalElement?.addEventListener('shown.bs.modal', () => {
+        syncTableHeaderOffsets('currentStatusDetailsModalTable');
+      });
+
       function renderFlagCell(td, value) {
         if (!value || typeof value !== 'object') {
           td.textContent = value ?? '';
@@ -2111,6 +2115,7 @@
           autoWidth: false,
           ordering: true,
           initComplete: function () {
+            removeEmptyDetailsHeaderRows($table[0]);
             const api = this.api();
             api.columns().every(function (index) {
               const column = this;
@@ -2118,6 +2123,7 @@
                 if (column.search() !== this.value) column.search(this.value).draw();
               });
             });
+            syncTableHeaderOffsets('currentStatusDetailsModalTable');
           },
         });
         bootstrap.Modal.getOrCreateInstance(currentStatusDetailsModalElement).show();
