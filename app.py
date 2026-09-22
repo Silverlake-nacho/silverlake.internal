@@ -5683,6 +5683,14 @@ def send_executive_details_excel(columns, rows, title):
             )
         return value.get("label", value.get("text", ""))
 
+    def contrast_text_color(background_color):
+        color = (background_color or "").lstrip("#")
+        if not re.fullmatch(r"[0-9a-fA-F]{6}", color):
+            return "#111111"
+        red, green, blue = (int(color[index:index + 2], 16) for index in (0, 2, 4))
+        luminance = (0.299 * red + 0.587 * green + 0.114 * blue) / 255
+        return "#111111" if luminance > 0.6 else "#FFFFFF"
+
     export_rows = [[excel_value(value) for value in row] for row in rows]
     output = BytesIO()
     sheet_name = re.sub(r"[\\/*?:\[\]]", "", title)[:31] or "Details"
@@ -5690,6 +5698,50 @@ def send_executive_details_excel(columns, rows, title):
         pd.DataFrame(export_rows, columns=columns).to_excel(
             writer, index=False, sheet_name=sheet_name
         )
+        if "Flag" in columns:
+            workbook = writer.book
+            worksheet = writer.sheets[sheet_name]
+            flag_index = columns.index("Flag")
+            background_formats = {}
+            font_formats = {}
+            for row_index, row in enumerate(rows, start=1):
+                flag_value = row[flag_index]
+                if not isinstance(flag_value, dict):
+                    continue
+                flags = [
+                    flag for flag in flag_value.get("flags", [])
+                    if flag.get("text")
+                ]
+                if not flags:
+                    continue
+                if len(flags) == 1:
+                    color = normalize_flag_hex_color(flags[0].get("color"))
+                    format_key = color or "#FFFFFF"
+                    cell_format = background_formats.get(format_key)
+                    if cell_format is None:
+                        cell_format = workbook.add_format(
+                            {
+                                "bg_color": format_key,
+                                "font_color": contrast_text_color(color),
+                            }
+                        )
+                        background_formats[format_key] = cell_format
+                    worksheet.write(
+                        row_index, flag_index, flags[0].get("text", ""), cell_format
+                    )
+                    continue
+
+                rich_parts = []
+                for flag_position, flag in enumerate(flags):
+                    if flag_position:
+                        rich_parts.append(" | ")
+                    color = normalize_flag_hex_color(flag.get("color")) or "#111111"
+                    font_format = font_formats.get(color)
+                    if font_format is None:
+                        font_format = workbook.add_format({"font_color": color})
+                        font_formats[color] = font_format
+                    rich_parts.extend([font_format, flag.get("text", "")])
+                worksheet.write_rich_string(row_index, flag_index, *rich_parts)
     output.seek(0)
     filename = re.sub(r"[^a-z0-9]+", "_", title.lower()).strip("_")
     return send_file(
