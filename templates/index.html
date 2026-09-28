@@ -310,6 +310,10 @@
             <i class="fas fa-gauge-high"></i>
             <span class="link-text">Executive Stats</span>
           </a>
+          <a href="{{ url_for('scrapped_cars_upload') }}" class="nav-link{% if active_page == 'scrapped_cars_upload' %} active{% endif %}">
+            <i class="fas fa-file-excel"></i>
+            <span class="link-text">Scrapped Cars Upload</span>
+          </a>
           <a href="{{ url_for('crush_vehicles') }}" class="nav-link{% if active_page == 'crush_vehicles' %} active{% endif %}">
             <i class="fas fa-car-burst"></i>
             <span class="link-text">Crush Vehicles</span>
