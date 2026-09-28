@@ -973,7 +973,7 @@
                 <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
                   <h5 class="card-title mb-0">Auction Vehicles Sold, Not Collected Details</h5>
                   <div class="d-flex align-items-center gap-2 flex-wrap">
-                    <small class="text-muted" id="uncollectedSoldDetailsLabel">Showing vehicles sold in 2026 currently in Sold or Sold Not Paid status without a CollectedDate or ActualDeliveryDate.</small>
+                    <small class="text-muted" id="uncollectedSoldDetailsLabel">Showing vehicles sold in 2026 currently in Sold status without a CollectedDate or ActualDeliveryDate.</small>
                     <a class="btn btn-sm btn-outline-success detail-excel-download" data-detail-dataset="uncollected_sold" href="#"><i class="fas fa-file-excel me-1"></i>Download Excel</a>
                   </div>
                 </div>
@@ -1024,6 +1024,16 @@
             <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
           </div>
           <div class="modal-body">
+            <div class="d-flex flex-wrap gap-4 mb-3 d-none" id="currentStatusDetailOptions">
+              <div class="form-check d-none" id="includeSoldNotPaidWrapper">
+                <input class="form-check-input" type="checkbox" id="includeSoldNotPaidToggle">
+                <label class="form-check-label text-success" for="includeSoldNotPaidToggle">Include Sold Not Paid</label>
+              </div>
+              <div class="form-check d-none" id="includeIaaWrapper">
+                <input class="form-check-input" type="checkbox" id="includeIaaToggle">
+                <label class="form-check-label text-success" for="includeIaaToggle">Include IAA</label>
+              </div>
+            </div>
             <div class="vehicle-table-frame">
               <table id="currentStatusDetailsModalTable" class="table table-striped table-sm align-middle vehicle-details-table">
                 <thead>
@@ -1101,6 +1111,11 @@
       const currentStatusDetailsModalFilterRow = document.getElementById('currentStatusDetailsModalFilterRow');
       const currentStatusDetailsModalBody = document.getElementById('currentStatusDetailsModalBody');
       const currentStatusDetailsDownload = document.getElementById('currentStatusDetailsDownload');
+      const currentStatusDetailOptions = document.getElementById('currentStatusDetailOptions');
+      const includeSoldNotPaidWrapper = document.getElementById('includeSoldNotPaidWrapper');
+      const includeSoldNotPaidToggle = document.getElementById('includeSoldNotPaidToggle');
+      const includeIaaWrapper = document.getElementById('includeIaaWrapper');
+      const includeIaaToggle = document.getElementById('includeIaaToggle');
       const vehicleSoldTableBody = document.getElementById('vehicleSoldTableBody');
       const vehicleSoldDateRangeLabel = document.getElementById('vehicleSoldDateRangeLabel');
       const vehicleSoldEntityHeader = document.getElementById('vehicleSoldEntityHeader');
@@ -1219,6 +1234,7 @@
       let detailTablesLoaded = false;
       let detailTablesRequest = null;
       let currentStatusDetailsRequest = null;
+      let activeCurrentStatusGroup = '';
 
       let chartInstance = null;
       let currentChartType = 'bar';
@@ -2101,17 +2117,27 @@
         });
         if (uncollectedSoldDetailsLabel) {
           uncollectedSoldDetailsLabel.textContent = currentStatusMode === 'current'
-            ? 'Showing vehicles sold in 2026 currently in Sold or Sold Not Paid status without a CollectedDate or ActualDeliveryDate.'
+            ? 'Showing vehicles sold in 2026 currently in Sold status without a CollectedDate or ActualDeliveryDate.'
             : `Showing those vehicles sold in 2026 within ${data.date_range_label || 'the selected date range'}.`;
         }
         initializeUncollectedSoldDetailsTable();
       }
 
       async function showCurrentStatusDetails(groupLabel) {
+        activeCurrentStatusGroup = groupLabel;
+        const soldGroup = groupLabel === 'Auction vehicles sold, not collected';
+        const waitingGroup = groupLabel === 'Vehicles waiting to be cleared';
+        currentStatusDetailOptions?.classList.toggle('d-none', !soldGroup && !waitingGroup);
+        includeSoldNotPaidWrapper?.classList.toggle('d-none', !soldGroup);
+        includeIaaWrapper?.classList.toggle('d-none', !waitingGroup);
+        if (!soldGroup && includeSoldNotPaidToggle) includeSoldNotPaidToggle.checked = false;
+        if (!waitingGroup && includeIaaToggle) includeIaaToggle.checked = false;
         if (currentStatusDetailsDownload) {
           currentStatusDetailsDownload.href = buildDetailsExcelUrl('current_status', {
             status_mode: currentStatusMode,
             status_group: groupLabel,
+            include_sold_not_paid: includeSoldNotPaidToggle?.checked ? '1' : '0',
+            include_iaa: includeIaaToggle?.checked ? '1' : '0',
           });
         }
         const existingData = currentStatusDataset[currentStatusMode] || {};
@@ -2137,9 +2163,35 @@
             return;
           }
         }
+        renderCurrentStatusDetails(groupLabel);
+      }
+
+      function renderCurrentStatusDetails(groupLabel) {
         const data = currentStatusDataset[currentStatusMode] || {};
         const columns = data.detail_columns || [];
-        const rows = (data.detail_groups || {})[groupLabel] || [];
+        const statusIndex = columns.findIndex((column) => normalizeColumnName(column) === 'status');
+        const insuranceIndex = columns.findIndex((column) => normalizeColumnName(column) === 'insurancecompany');
+        const includeSoldNotPaid = Boolean(includeSoldNotPaidToggle?.checked);
+        const includeIaa = Boolean(includeIaaToggle?.checked);
+        const rows = ((data.detail_groups || {})[groupLabel] || []).filter((row) => {
+          if (groupLabel === 'Auction vehicles sold, not collected' && statusIndex >= 0) {
+            const status = String(row[statusIndex] || '').trim().toLowerCase();
+            if (status !== 'sold' && !(includeSoldNotPaid && status === 'sold not paid')) return false;
+          }
+          if (groupLabel === 'Vehicles waiting to be cleared' && insuranceIndex >= 0) {
+            const company = String(row[insuranceIndex] || '').trim().toUpperCase();
+            if (!includeIaa && company === 'IAA') return false;
+          }
+          return true;
+        });
+        if (currentStatusDetailsDownload) {
+          currentStatusDetailsDownload.href = buildDetailsExcelUrl('current_status', {
+            status_mode: currentStatusMode,
+            status_group: groupLabel,
+            include_sold_not_paid: includeSoldNotPaid ? '1' : '0',
+            include_iaa: includeIaa ? '1' : '0',
+          });
+        }
         if (currentStatusDetailsDataTable) {
           currentStatusDetailsDataTable.destroy();
           currentStatusDetailsDataTable = null;
@@ -2186,6 +2238,13 @@
         });
         bootstrap.Modal.getOrCreateInstance(currentStatusDetailsModalElement).show();
       }
+
+      includeSoldNotPaidToggle?.addEventListener('change', () => {
+        if (activeCurrentStatusGroup) renderCurrentStatusDetails(activeCurrentStatusGroup);
+      });
+      includeIaaToggle?.addEventListener('change', () => {
+        if (activeCurrentStatusGroup) renderCurrentStatusDetails(activeCurrentStatusGroup);
+      });
 
 
       function syncDetailsHeaderOffsets() {

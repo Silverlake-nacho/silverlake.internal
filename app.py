@@ -1740,9 +1740,12 @@ def fetch_atlas_executive_current_status_counts(
                         v.ActualDeliveryDate,
                         sr.DateRecovered,
                         latest_sale.DateSold,
-                        latest_sale.Username
+                        latest_sale.Username,
+                        ic.Name AS InsuranceCompany
                     FROM CT_Vehicles v
                     LEFT JOIN SalvageRecoveries sr ON v.SalvageRecoveryId = sr.Id
+                    LEFT JOIN InsuranceBranches ib ON v.InsuranceBranchId = ib.Id
+                    LEFT JOIN InsuranceCompanies ic ON ib.InsuranceCompanyId = ic.Id
                     OUTER APPLY (
                         SELECT TOP (1)
                             sale.DateSold,
@@ -1763,7 +1766,7 @@ def fetch_atlas_executive_current_status_counts(
                 SELECT
                     COALESCE(SUM(CASE WHEN VehicleStatus = 'Auction' THEN 1 ELSE 0 END), 0),
                     COALESCE(SUM(CASE
-                        WHEN VehicleStatus IN ('Sold', 'Sold Not Paid')
+                        WHEN VehicleStatus = 'Sold'
                          AND CollectedDate IS NULL
                          AND ActualDeliveryDate IS NULL
                          AND (Username IS NULL OR Username NOT LIKE '%@silverlake.co.uk%')
@@ -1773,6 +1776,7 @@ def fetch_atlas_executive_current_status_counts(
                     COALESCE(SUM(CASE
                         WHEN VehicleStatus IN ('Notified', 'Recovered')
                          AND DateRecovered IS NOT NULL
+                         AND UPPER(LTRIM(RTRIM(COALESCE(InsuranceCompany, '')))) <> 'IAA'
                         THEN 1 ELSE 0 END), 0),
                     COALESCE(SUM(CASE
                         WHEN VehicleStatus = 'Cleared' THEN 1 ELSE 0 END), 0)
@@ -1951,6 +1955,13 @@ def build_executive_current_status_context(
         selected_detail_columns, selected_detail_rows
     )
     sold_label = EXECUTIVE_CURRENT_STATUS_LABELS[1]
+
+    def sold_only(columns, rows):
+        if "Status" not in columns:
+            return rows
+        status_index = columns.index("Status")
+        return [row for row in rows if row[status_index] == "Sold"]
+
     return {
         "database_name": database_name,
         "current": {
@@ -1960,7 +1971,7 @@ def build_executive_current_status_context(
             "chart_values": [row[1] for row in current_rows],
             "date_range_label": "Current vehicle status",
             "detail_columns": current_detail_columns,
-            "detail_rows": current_detail_groups[sold_label],
+            "detail_rows": sold_only(current_detail_columns, current_detail_groups[sold_label]),
             "detail_groups": current_detail_groups,
         },
         "selected": {
@@ -1969,7 +1980,7 @@ def build_executive_current_status_context(
             "chart_labels": [row[0] for row in selected_rows],
             "chart_values": [row[1] for row in selected_rows],
             "detail_columns": selected_detail_columns,
-            "detail_rows": selected_detail_groups[sold_label],
+            "detail_rows": sold_only(selected_detail_columns, selected_detail_groups[sold_label]),
             "detail_groups": selected_detail_groups,
         },
     }
@@ -6044,8 +6055,21 @@ def executive_stats_details():
         group_label = request.args.get("status_group", EXECUTIVE_CURRENT_STATUS_LABELS[0])
         status_data = current_status_context[status_mode]
         rows = status_data.get("detail_groups", {}).get(group_label, [])
+        columns = status_data.get("detail_columns", [])
+        include_sold_not_paid = request.args.get("include_sold_not_paid") == "1"
+        include_iaa = request.args.get("include_iaa") == "1"
+        if group_label == EXECUTIVE_CURRENT_STATUS_LABELS[1] and "Status" in columns:
+            status_index = columns.index("Status")
+            allowed_statuses = {"Sold", "Sold Not Paid"} if include_sold_not_paid else {"Sold"}
+            rows = [row for row in rows if row[status_index] in allowed_statuses]
+        if group_label == EXECUTIVE_CURRENT_STATUS_LABELS[2] and "InsuranceCompany" in columns and not include_iaa:
+            insurance_index = columns.index("InsuranceCompany")
+            rows = [
+                row for row in rows
+                if str(row[insurance_index] or "").strip().upper() != "IAA"
+            ]
         return send_executive_details_excel(
-            status_data.get("detail_columns", []),
+            columns,
             rows,
             group_label,
         )
@@ -6058,10 +6082,9 @@ def executive_stats_details():
         if status_mode not in {"current", "selected"}:
             status_mode = "current"
         status_data = current_status_context[status_mode]
-        sold_label = EXECUTIVE_CURRENT_STATUS_LABELS[1]
         return send_executive_details_excel(
             status_data.get("detail_columns", []),
-            status_data.get("detail_groups", {}).get(sold_label, []),
+            status_data.get("detail_rows", []),
             "Sold Not Collected",
         )
 
