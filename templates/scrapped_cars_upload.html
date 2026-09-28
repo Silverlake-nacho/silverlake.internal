@@ -29,7 +29,7 @@
         <h2 class="h5 text-success">Upload daily totals</h2>
         <p class="text-muted">
           Upload an <strong>.xlsx</strong> workbook containing exactly two columns. Data is stored in
-          <strong>{{ database_name }}</strong>, not the main Pinnacle database.
+          <strong>{{ database_name }}.{{ schema_name }}</strong>, separate from the <code>public</code> schema.
         </p>
 
         {% with messages = get_flashed_messages(with_categories=true) %}

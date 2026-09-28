@@ -1070,7 +1070,6 @@ SSH_PASSWORD = "Ggbx*DPK8=4X!"  # or leave None if using key
 DB_HOST = "127.0.0.1"
 DB_PORT = 5432
 DB_NAME = "silverlake"
-PROVIEW_DB_NAME = os.getenv("PROVIEW_DB_NAME", "proview2")
 DB_USER = "postgres"
 DB_PASS = ""
 IMAGE_BASE_URL = "http://192.168.10.23/pinproHostedImages/"
@@ -1121,27 +1120,15 @@ def get_db_connection():
     return conn
 
 
-def get_proview_db_connection():
-    """Connect to the Pinnacle PostgreSQL server's reporting database."""
-    init_ssh_tunnel()
-    return psycopg2.connect(
-        host="127.0.0.1",
-        port=tunnel.local_bind_port,
-        database=PROVIEW_DB_NAME,
-        user=DB_USER,
-        password=DB_PASS,
-    )
-
-
 def build_scrapped_cars_context(start_date: date, end_date: date) -> dict:
     """Return daily scrapped-car totals for the half-open selected date range."""
-    conn = get_proview_db_connection()
+    conn = get_db_connection()
     try:
         with conn.cursor() as cur:
             cur.execute(
                 """
                 SELECT date, SUM(scrappedcars)
-                FROM public.scrappedcars
+                FROM proview2.scrappedcars
                 WHERE date >= %s AND date < %s
                 GROUP BY date
                 ORDER BY date
@@ -1210,16 +1197,16 @@ def parse_scrapped_cars_workbook(upload) -> List[Tuple[date, int]]:
 
 
 def save_scrapped_cars(rows: List[Tuple[date, int]]) -> None:
-    """Replace existing values for uploaded dates in the proview2 database."""
-    conn = get_proview_db_connection()
+    """Replace existing values for uploaded dates in the proview2 schema."""
+    conn = get_db_connection()
     try:
         with conn.cursor() as cur:
             cur.execute(
-                "DELETE FROM public.scrappedcars WHERE date = ANY(%s)",
+                "DELETE FROM proview2.scrappedcars WHERE date = ANY(%s)",
                 ([row_date for row_date, _ in rows],),
             )
             cur.executemany(
-                "INSERT INTO public.scrappedcars (date, scrappedcars) VALUES (%s, %s)",
+                "INSERT INTO proview2.scrappedcars (date, scrappedcars) VALUES (%s, %s)",
                 rows,
             )
         conn.commit()
@@ -5679,7 +5666,7 @@ def executive_stats():
 
 @app.route("/scrapped_cars/upload", methods=["GET", "POST"])
 def scrapped_cars_upload():
-    """Upload daily scrapped-car counts into Pinnacle's proview2 database."""
+    """Upload daily scrapped-car counts into Pinnacle's proview2 schema."""
     if request.method == "POST":
         upload = request.files.get("workbook")
         if not upload or not upload.filename:
@@ -5700,7 +5687,8 @@ def scrapped_cars_upload():
     return render_template(
         "scrapped_cars_upload.html",
         active_page="scrapped_cars_upload",
-        database_name=PROVIEW_DB_NAME,
+        database_name=DB_NAME,
+        schema_name="proview2",
     )
 
 
