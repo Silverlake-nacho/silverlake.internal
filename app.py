@@ -1,6 +1,6 @@
 from flask import Flask, request, render_template, send_file, redirect, url_for, session, flash, jsonify
 import pandas as pd
-from io import BytesIO
+from io import BytesIO, StringIO
 from datetime import datetime, date, timedelta, timezone
 import struct
 import gspread
@@ -19,6 +19,10 @@ from calendar import monthrange
 import json
 import os
 import re
+import csv
+import threading
+import zipfile
+from xml.etree import ElementTree
 from urllib.parse import urljoin
 import pyodbc
 
@@ -325,6 +329,9 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DEPARTMENT_ORDER_PATH = os.path.join(BASE_DIR, "department_order.json")
 STATS_EXCLUSIONS_PATH = os.path.join(BASE_DIR, "stats_exclusions.json")
 IMAGE_TIMELINE_VERIFIED_PATH = os.path.join(BASE_DIR, "image_timeline_verified.json")
+PROVIEW_BACKUP_DIR = os.path.join(BASE_DIR, "backups", "proview2")
+PROVIEW_BACKUP_CONFIG_PATH = os.path.join(PROVIEW_BACKUP_DIR, "schedule.json")
+PROVIEW_BACKUP_HISTORY_PATH = os.path.join(PROVIEW_BACKUP_DIR, "history.json")
 AUCTIONS_URL = "https://www.salvagemarket.co.uk/Search?auction[]=&bucketDetails=&bucketId=&damageCategory[]=&distance[]=&editorPickSearch=0&freeSubscriptionOnly=false&fuelType[]=&latitude=0&longitude=0&make[]=&model[]=&orderBy=1&pageNumber=0&pageSize=20&quickSearch=0&searchText=&seller[]=ca35a24f-c044-420d-9c1b-9aa05beb8e96&startDrive[]=&transmissionType[]=&year[]="
 
 @app.context_processor
@@ -1120,6 +1127,358 @@ def get_db_connection():
     return conn
 
 
+def build_scrapped_cars_context(start_date: date, end_date: date) -> dict:
+    """Return daily scrapped-car totals for the half-open selected date range."""
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT date, SUM(scrappedcars)
+                FROM proview2.scrappedcars
+                WHERE date >= %s AND date < %s
+                GROUP BY date
+                ORDER BY date
+                """,
+                (start_date, end_date),
+            )
+            records = cur.fetchall()
+    finally:
+        conn.close()
+
+    rows = [
+        {"date": row_date.strftime("%d/%m/%Y"), "scrappedcars": int(total or 0)}
+        for row_date, total in records
+    ]
+    return {
+        "rows": rows,
+        "sum_total": sum(row["scrappedcars"] for row in rows),
+        "chart_labels": [row["date"] for row in rows],
+        "chart_values": [row["scrappedcars"] for row in rows],
+        "error": None,
+    }
+
+
+def _read_xlsx_rows(upload) -> list[list[object]]:
+    """Read the first worksheet using only Python's standard library."""
+    namespaces = {
+        "main": "http://schemas.openxmlformats.org/spreadsheetml/2006/main",
+        "rel": "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
+        "pkg": "http://schemas.openxmlformats.org/package/2006/relationships",
+    }
+
+    try:
+        workbook = zipfile.ZipFile(upload)
+    except (zipfile.BadZipFile, OSError) as exc:
+        raise ValueError("The selected file is not a valid .xlsx workbook.") from exc
+
+    with workbook:
+        try:
+            workbook_root = ElementTree.fromstring(workbook.read("xl/workbook.xml"))
+            relationships_root = ElementTree.fromstring(
+                workbook.read("xl/_rels/workbook.xml.rels")
+            )
+        except (KeyError, ElementTree.ParseError) as exc:
+            raise ValueError("The selected file is not a valid .xlsx workbook.") from exc
+
+        relationships = {
+            relationship.attrib["Id"]: relationship.attrib["Target"]
+            for relationship in relationships_root.findall("pkg:Relationship", namespaces)
+        }
+        first_sheet = workbook_root.find("main:sheets/main:sheet", namespaces)
+        if first_sheet is None:
+            raise ValueError("The workbook does not contain a worksheet.")
+        relationship_id = first_sheet.attrib.get(f"{{{namespaces['rel']}}}id")
+        sheet_target = relationships.get(relationship_id)
+        if not sheet_target:
+            raise ValueError("The workbook's first worksheet could not be read.")
+        sheet_path = sheet_target.lstrip("/")
+        if not sheet_path.startswith("xl/"):
+            sheet_path = f"xl/{sheet_path}"
+
+        shared_strings = []
+        if "xl/sharedStrings.xml" in workbook.namelist():
+            shared_root = ElementTree.fromstring(workbook.read("xl/sharedStrings.xml"))
+            for item in shared_root.findall("main:si", namespaces):
+                shared_strings.append(
+                    "".join(node.text or "" for node in item.iterfind(".//main:t", namespaces))
+                )
+
+        date_style_indexes = set()
+        if "xl/styles.xml" in workbook.namelist():
+            styles_root = ElementTree.fromstring(workbook.read("xl/styles.xml"))
+            custom_formats = {
+                int(item.attrib["numFmtId"]): item.attrib.get("formatCode", "")
+                for item in styles_root.findall("main:numFmts/main:numFmt", namespaces)
+            }
+            date_format_ids = set(range(14, 23)) | set(range(45, 48))
+            for format_id, format_code in custom_formats.items():
+                cleaned_code = re.sub(r'"[^"]*"|\\.', "", format_code.lower())
+                if re.search(r"[dmyh]|s{1,2}", cleaned_code):
+                    date_format_ids.add(format_id)
+            cell_formats = styles_root.find("main:cellXfs", namespaces)
+            if cell_formats is not None:
+                date_style_indexes = {
+                    index
+                    for index, cell_format in enumerate(cell_formats)
+                    if int(cell_format.attrib.get("numFmtId", 0)) in date_format_ids
+                }
+
+        use_1904_dates = False
+        workbook_properties = workbook_root.find("main:workbookPr", namespaces)
+        if workbook_properties is not None:
+            use_1904_dates = workbook_properties.attrib.get("date1904") in {"1", "true"}
+
+        try:
+            sheet_root = ElementTree.fromstring(workbook.read(sheet_path))
+        except (KeyError, ElementTree.ParseError) as exc:
+            raise ValueError("The workbook's first worksheet could not be read.") from exc
+
+        rows = []
+        for row in sheet_root.findall(".//main:sheetData/main:row", namespaces):
+            values_by_column = {}
+            for cell in row.findall("main:c", namespaces):
+                reference = cell.attrib.get("r", "")
+                column_letters = re.match(r"[A-Z]+", reference)
+                if not column_letters:
+                    continue
+                column_number = 0
+                for letter in column_letters.group(0):
+                    column_number = column_number * 26 + ord(letter) - ord("A") + 1
+                cell_type = cell.attrib.get("t")
+                value_node = cell.find("main:v", namespaces)
+                raw_value = value_node.text if value_node is not None else None
+                if cell_type == "inlineStr":
+                    value = "".join(
+                        node.text or "" for node in cell.iterfind(".//main:t", namespaces)
+                    )
+                elif raw_value is None:
+                    value = None
+                elif cell_type == "s":
+                    try:
+                        value = shared_strings[int(raw_value)]
+                    except (ValueError, IndexError):
+                        value = raw_value
+                elif cell_type in {"str", "d"}:
+                    value = raw_value
+                else:
+                    try:
+                        numeric_value = float(raw_value)
+                        style_index = int(cell.attrib.get("s", 0))
+                        if style_index in date_style_indexes:
+                            epoch = datetime(1904, 1, 1) if use_1904_dates else datetime(1899, 12, 30)
+                            value = epoch + timedelta(days=numeric_value)
+                        else:
+                            value = int(numeric_value) if numeric_value.is_integer() else numeric_value
+                    except ValueError:
+                        value = raw_value
+                values_by_column[column_number] = value
+            if values_by_column:
+                rows.append(
+                    [values_by_column.get(column) for column in range(1, max(values_by_column) + 1)]
+                )
+        return rows
+
+
+def parse_scrapped_cars_workbook(upload) -> List[Tuple[date, int]]:
+    """Validate the two-column scrapped-cars workbook and return normalized rows."""
+    filename = (upload.filename or "").lower()
+    if not filename.endswith(".xlsx"):
+        raise ValueError("Please upload an .xlsx Excel file.")
+
+    rows = _read_xlsx_rows(upload)
+    dataframe = pd.DataFrame(rows, dtype=object)
+    dataframe = dataframe.dropna(how="all").dropna(axis=1, how="all")
+    if dataframe.empty:
+        raise ValueError("The workbook does not contain any data.")
+    if dataframe.shape[1] != 2:
+        raise ValueError("The workbook must contain exactly two columns: date and cars scrapped.")
+
+    # Permit a conventional header row, while also accepting files containing data only.
+    first_date = str(dataframe.iloc[0, 0]).strip().lower()
+    first_count = str(dataframe.iloc[0, 1]).strip().lower().replace("_", " ")
+    if first_date in {"date", "scrapped date"} and first_count in {
+        "scrappedcars", "scrapped cars", "cars scrapped", "number of cars scrapped"
+    }:
+        dataframe = dataframe.iloc[1:]
+    if dataframe.empty:
+        raise ValueError("The workbook has a header but no data rows.")
+
+    normalized = []
+    seen_dates = set()
+    for index, (raw_date, raw_count) in enumerate(dataframe.itertuples(index=False, name=None), start=1):
+        row_number = index + 1
+        parsed_date = pd.to_datetime(raw_date, errors="coerce", dayfirst=True)
+        if pd.isna(parsed_date):
+            raise ValueError(f"Row {row_number} has an invalid date.")
+        try:
+            numeric_count = float(raw_count)
+        except (TypeError, ValueError):
+            raise ValueError(f"Row {row_number} has an invalid cars-scrapped value.")
+        if not numeric_count.is_integer() or numeric_count < 0:
+            raise ValueError(f"Row {row_number} must contain a non-negative whole number.")
+        normalized_date = parsed_date.date()
+        if normalized_date in seen_dates:
+            raise ValueError(f"The date {normalized_date.isoformat()} appears more than once.")
+        seen_dates.add(normalized_date)
+        normalized.append((normalized_date, int(numeric_count)))
+    return normalized
+
+
+def save_scrapped_cars(rows: List[Tuple[date, int]]) -> None:
+    """Replace existing values for uploaded dates in the proview2 schema."""
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "DELETE FROM proview2.scrappedcars WHERE date = ANY(%s)",
+                ([row_date for row_date, _ in rows],),
+            )
+            cur.executemany(
+                "INSERT INTO proview2.scrappedcars (date, scrappedcars) VALUES (%s, %s)",
+                rows,
+            )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+_backup_scheduler_started = False
+_backup_scheduler_lock = threading.Lock()
+
+
+def load_proview_backup_config() -> dict:
+    config = _load_json_file(PROVIEW_BACKUP_CONFIG_PATH, {})
+    return {
+        "frequency": config.get("frequency", "off"),
+        "time": config.get("time", "02:00"),
+        "weekday": int(config.get("weekday", 0)),
+    }
+
+
+def proview_backup_history() -> list[dict]:
+    history = _load_json_file(PROVIEW_BACKUP_HISTORY_PATH, [])
+    cutoff = datetime.now() - timedelta(days=7)
+    return [
+        item for item in history
+        if datetime.fromisoformat(item["started_at"]) >= cutoff
+    ][-50:][::-1]
+
+
+def _record_proview_backup(entry: dict) -> None:
+    os.makedirs(PROVIEW_BACKUP_DIR, exist_ok=True)
+    history = _load_json_file(PROVIEW_BACKUP_HISTORY_PATH, [])
+    history.append(entry)
+    with open(PROVIEW_BACKUP_HISTORY_PATH, "w", encoding="utf-8") as history_file:
+        json.dump(history[-200:], history_file, indent=2)
+
+
+def create_proview_backup(trigger: str = "manual") -> dict:
+    """Create a portable ZIP containing every table and its column metadata."""
+    os.makedirs(PROVIEW_BACKUP_DIR, exist_ok=True)
+    started = datetime.now()
+    filename = f"proview2_{started:%Y%m%d_%H%M%S_%f}.zip"
+    output_path = os.path.join(PROVIEW_BACKUP_DIR, filename)
+    entry = {"started_at": started.isoformat(timespec="seconds"), "trigger": trigger}
+    conn = None
+    lock_path = os.path.join(PROVIEW_BACKUP_DIR, ".backup.lock")
+    lock_fd = None
+    try:
+        lock_fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT table_name FROM information_schema.tables
+                   WHERE table_schema = %s AND table_type = 'BASE TABLE'
+                   ORDER BY table_name""",
+                ("proview2",),
+            )
+            table_names = [row[0] for row in cur.fetchall()]
+            manifest = {"schema": "proview2", "created_at": entry["started_at"], "tables": []}
+            with zipfile.ZipFile(output_path, "w", zipfile.ZIP_DEFLATED) as archive:
+                for table_name in table_names:
+                    cur.execute(
+                        """SELECT column_name, data_type, is_nullable
+                           FROM information_schema.columns
+                           WHERE table_schema = %s AND table_name = %s
+                           ORDER BY ordinal_position""",
+                        ("proview2", table_name),
+                    )
+                    columns = cur.fetchall()
+                    quoted_table = f'"proview2"."{table_name.replace(chr(34), chr(34) * 2)}"'
+                    cur.execute(f"SELECT * FROM {quoted_table}")
+                    buffer = StringIO(newline="")
+                    writer = csv.writer(buffer)
+                    writer.writerow([column[0] for column in columns])
+                    for row in cur.fetchall():
+                        writer.writerow(row)
+                    archive.writestr(f"tables/{table_name}.csv", buffer.getvalue().encode("utf-8"))
+                    manifest["tables"].append({
+                        "name": table_name,
+                        "columns": [
+                            {"name": name, "type": data_type, "nullable": nullable == "YES"}
+                            for name, data_type, nullable in columns
+                        ],
+                    })
+                archive.writestr("manifest.json", json.dumps(manifest, indent=2))
+        entry.update({"success": True, "filename": filename})
+    except FileExistsError:
+        entry.update({"success": False, "error": "A backup is already in progress.", "skipped": True})
+    except Exception as exc:
+        if os.path.exists(output_path):
+            os.remove(output_path)
+        entry.update({"success": False, "error": str(exc)})
+    finally:
+        if conn is not None:
+            conn.close()
+        if lock_fd is not None:
+            os.close(lock_fd)
+            try:
+                os.remove(lock_path)
+            except FileNotFoundError:
+                pass
+    if not entry.get("skipped"):
+        _record_proview_backup(entry)
+    return entry
+
+
+def _scheduled_backup_is_due(config: dict, now: datetime) -> bool:
+    if config["frequency"] == "off" or now.strftime("%H:%M") < config["time"]:
+        return False
+    if config["frequency"] == "weekly" and now.weekday() != config["weekday"]:
+        return False
+    today = now.date().isoformat()
+    return not any(
+        item.get("trigger") == "scheduled" and item.get("started_at", "").startswith(today)
+        for item in _load_json_file(PROVIEW_BACKUP_HISTORY_PATH, [])
+    )
+
+
+def _proview_backup_scheduler() -> None:
+    while True:
+        try:
+            config = load_proview_backup_config()
+            if _scheduled_backup_is_due(config, datetime.now()):
+                create_proview_backup("scheduled")
+        except Exception as exc:
+            print(f"Proview backup scheduler error: {exc}")
+        time.sleep(60)
+
+
+@app.before_request
+def start_proview_backup_scheduler():
+    global _backup_scheduler_started
+    if _backup_scheduler_started:
+        return
+    with _backup_scheduler_lock:
+        if not _backup_scheduler_started:
+            threading.Thread(target=_proview_backup_scheduler, daemon=True).start()
+            _backup_scheduler_started = True
+
+
 def _get_atlas_db_name_candidates() -> List[str]:
     explicit_names = [name.strip() for name in ATLAS_DB_NAMES.split(",") if name.strip()]
     if ATLAS_DB_NAME:
@@ -1381,9 +1740,12 @@ def fetch_atlas_executive_current_status_counts(
                         v.ActualDeliveryDate,
                         sr.DateRecovered,
                         latest_sale.DateSold,
-                        latest_sale.Username
+                        latest_sale.Username,
+                        ic.Name AS InsuranceCompany
                     FROM CT_Vehicles v
                     LEFT JOIN SalvageRecoveries sr ON v.SalvageRecoveryId = sr.Id
+                    LEFT JOIN InsuranceBranches ib ON v.InsuranceBranchId = ib.Id
+                    LEFT JOIN InsuranceCompanies ic ON ib.InsuranceCompanyId = ic.Id
                     OUTER APPLY (
                         SELECT TOP (1)
                             sale.DateSold,
@@ -1404,7 +1766,7 @@ def fetch_atlas_executive_current_status_counts(
                 SELECT
                     COALESCE(SUM(CASE WHEN VehicleStatus = 'Auction' THEN 1 ELSE 0 END), 0),
                     COALESCE(SUM(CASE
-                        WHEN VehicleStatus IN ('Sold', 'Sold Not Paid')
+                        WHEN VehicleStatus = 'Sold'
                          AND CollectedDate IS NULL
                          AND ActualDeliveryDate IS NULL
                          AND (Username IS NULL OR Username NOT LIKE '%@silverlake.co.uk%')
@@ -1414,6 +1776,7 @@ def fetch_atlas_executive_current_status_counts(
                     COALESCE(SUM(CASE
                         WHEN VehicleStatus IN ('Notified', 'Recovered')
                          AND DateRecovered IS NOT NULL
+                         AND UPPER(LTRIM(RTRIM(COALESCE(InsuranceCompany, '')))) <> 'IAA'
                         THEN 1 ELSE 0 END), 0),
                     COALESCE(SUM(CASE
                         WHEN VehicleStatus = 'Cleared' THEN 1 ELSE 0 END), 0)
@@ -1592,6 +1955,13 @@ def build_executive_current_status_context(
         selected_detail_columns, selected_detail_rows
     )
     sold_label = EXECUTIVE_CURRENT_STATUS_LABELS[1]
+
+    def sold_only(columns, rows):
+        if "Status" not in columns:
+            return rows
+        status_index = columns.index("Status")
+        return [row for row in rows if row[status_index] == "Sold"]
+
     return {
         "database_name": database_name,
         "current": {
@@ -1601,7 +1971,7 @@ def build_executive_current_status_context(
             "chart_values": [row[1] for row in current_rows],
             "date_range_label": "Current vehicle status",
             "detail_columns": current_detail_columns,
-            "detail_rows": current_detail_groups[sold_label],
+            "detail_rows": sold_only(current_detail_columns, current_detail_groups[sold_label]),
             "detail_groups": current_detail_groups,
         },
         "selected": {
@@ -1610,7 +1980,7 @@ def build_executive_current_status_context(
             "chart_labels": [row[0] for row in selected_rows],
             "chart_values": [row[1] for row in selected_rows],
             "detail_columns": selected_detail_columns,
-            "detail_rows": selected_detail_groups[sold_label],
+            "detail_rows": sold_only(selected_detail_columns, selected_detail_groups[sold_label]),
             "detail_groups": selected_detail_groups,
         },
     }
@@ -5543,6 +5913,16 @@ def executive_stats():
         }
         error_message = f"Unable to load executive stats: {exc}"
 
+    try:
+        scrapped_cars_context = build_scrapped_cars_context(
+            context["start_date"], context["end_date"]
+        )
+    except Exception as exc:
+        scrapped_cars_context = {
+            "rows": [], "sum_total": 0, "chart_labels": [], "chart_values": [],
+            "error": f"Unable to load scrapped cars: {exc}",
+        }
+
     return render_template(
         "executive_stats.html",
         **context,
@@ -5550,9 +5930,90 @@ def executive_stats():
         current_status_context=current_status_context,
         vehicle_sold_context=vehicle_sold_context,
         parts_sold_context=parts_sold_context,
+        scrapped_cars_context=scrapped_cars_context,
         live_enabled=live_enabled,
         error_message=error_message,
         active_page="executive_stats",
+    )
+
+
+@app.route("/scrapped_cars/upload", methods=["GET", "POST"])
+def scrapped_cars_upload():
+    """Upload daily scrapped-car counts into Pinnacle's proview2 schema."""
+    if request.method == "POST":
+        entry_method = request.form.get("entry_method", "workbook")
+        if entry_method == "backup_now":
+            result = create_proview_backup("manual")
+            if result["success"]:
+                flash(f"Backup completed successfully: {result['filename']}", "success")
+            else:
+                flash(f"Backup failed: {result.get('error', 'Unknown error')}", "danger")
+            return redirect(url_for("scrapped_cars_upload", _anchor="backupManagement"))
+        elif entry_method == "backup_schedule":
+            frequency = request.form.get("backup_frequency", "off")
+            backup_time = request.form.get("backup_time", "02:00")
+            weekday = request.form.get("backup_weekday", "0")
+            try:
+                weekday_number = int(weekday)
+            except ValueError:
+                weekday_number = -1
+            if (
+                frequency not in {"off", "daily", "weekly"}
+                or not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", backup_time)
+                or weekday_number not in range(7)
+            ):
+                flash("Select a valid backup frequency and time.", "danger")
+            else:
+                os.makedirs(PROVIEW_BACKUP_DIR, exist_ok=True)
+                config = {"frequency": frequency, "time": backup_time, "weekday": weekday_number}
+                with open(PROVIEW_BACKUP_CONFIG_PATH, "w", encoding="utf-8") as config_file:
+                    json.dump(config, config_file, indent=2)
+                flash("Automatic backup schedule saved.", "success")
+            return redirect(url_for("scrapped_cars_upload", _anchor="backupManagement"))
+        elif entry_method == "manual":
+            manual_date = request.form.get("scrapped_date", "").strip()
+            manual_count = request.form.get("scrapped_count", "").strip()
+            try:
+                parsed_date = datetime.strptime(manual_date, "%Y-%m-%d").date()
+                numeric_count = float(manual_count)
+                if not numeric_count.is_integer() or numeric_count < 0:
+                    raise ValueError
+                save_scrapped_cars([(parsed_date, int(numeric_count))])
+                flash(
+                    f"Saved {int(numeric_count)} scrapped car(s) for {parsed_date:%d/%m/%Y}.",
+                    "success",
+                )
+                return redirect(url_for("scrapped_cars_upload"))
+            except (TypeError, ValueError):
+                flash("Enter a valid date and a non-negative whole number of cars scrapped.", "danger")
+            except Exception as exc:
+                flash(f"Unable to save the manual entry: {exc}", "danger")
+        else:
+            upload = request.files.get("workbook")
+            if not upload or not upload.filename:
+                flash("Select an Excel workbook to upload.", "danger")
+            else:
+                try:
+                    rows = parse_scrapped_cars_workbook(upload)
+                    save_scrapped_cars(rows)
+                    flash(
+                        f"Imported {len(rows)} daily scrapped-car record(s). Existing values for those dates were replaced.",
+                        "success",
+                    )
+                    return redirect(url_for("scrapped_cars_upload"))
+                except ValueError as exc:
+                    flash(str(exc), "danger")
+                except Exception as exc:
+                    flash(f"Unable to import the workbook: {exc}", "danger")
+    return render_template(
+        "scrapped_cars_upload.html",
+        active_page="scrapped_cars_upload",
+        database_name=DB_NAME,
+        schema_name="proview2",
+        today=date.today().isoformat(),
+        backup_config=load_proview_backup_config(),
+        backup_history=proview_backup_history(),
+        backup_directory=os.path.relpath(PROVIEW_BACKUP_DIR, BASE_DIR),
     )
 
 
@@ -5594,8 +6055,21 @@ def executive_stats_details():
         group_label = request.args.get("status_group", EXECUTIVE_CURRENT_STATUS_LABELS[0])
         status_data = current_status_context[status_mode]
         rows = status_data.get("detail_groups", {}).get(group_label, [])
+        columns = status_data.get("detail_columns", [])
+        include_sold_not_paid = request.args.get("include_sold_not_paid") == "1"
+        include_iaa = request.args.get("include_iaa") == "1"
+        if group_label == EXECUTIVE_CURRENT_STATUS_LABELS[1] and "Status" in columns:
+            status_index = columns.index("Status")
+            allowed_statuses = {"Sold", "Sold Not Paid"} if include_sold_not_paid else {"Sold"}
+            rows = [row for row in rows if row[status_index] in allowed_statuses]
+        if group_label == EXECUTIVE_CURRENT_STATUS_LABELS[2] and "InsuranceCompany" in columns and not include_iaa:
+            insurance_index = columns.index("InsuranceCompany")
+            rows = [
+                row for row in rows
+                if str(row[insurance_index] or "").strip().upper() != "IAA"
+            ]
         return send_executive_details_excel(
-            status_data.get("detail_columns", []),
+            columns,
             rows,
             group_label,
         )
@@ -5608,10 +6082,9 @@ def executive_stats_details():
         if status_mode not in {"current", "selected"}:
             status_mode = "current"
         status_data = current_status_context[status_mode]
-        sold_label = EXECUTIVE_CURRENT_STATUS_LABELS[1]
         return send_executive_details_excel(
             status_data.get("detail_columns", []),
-            status_data.get("detail_groups", {}).get(sold_label, []),
+            status_data.get("detail_rows", []),
             "Sold Not Collected",
         )
 
@@ -6088,6 +6561,16 @@ def executive_stats_data():
         parts_prev_mode,
         use_saved_exclusions=False,
     )
+
+    try:
+        scrapped_cars_context = build_scrapped_cars_context(
+            context["start_date"], context["end_date"]
+        )
+    except Exception as exc:
+        scrapped_cars_context = {
+            "rows": [], "sum_total": 0, "chart_labels": [], "chart_values": [],
+            "error": f"Unable to load scrapped cars: {exc}",
+        }
     
     detail_rows = []
     for row in context.get("detail_rows", []):
@@ -6171,6 +6654,7 @@ def executive_stats_data():
                 "stats_dimension": parts_sold_context["stats_dimension"],
                 "prev_mode": parts_sold_context["prev_mode"],
             },
+            "scrapped_cars": scrapped_cars_context,
         }
 
     if vehicle_in_status_context:

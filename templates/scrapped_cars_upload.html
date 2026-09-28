@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Silverlake Scrapped Cars Import</title>
+    <link rel="icon" href="{{ url_for('static', filename='SLK Logo.png') }}">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+    <style>
+      :root { --sidebar-expanded: 260px; --sidebar-collapsed: 78px; --sidebar-bg: #5c9c13; }
+      body {
+        margin: 0;
+        background: url("{{ url_for('static', filename='background.jpg') }}") no-repeat center center fixed;
+        background-size: cover;
+        font-family: 'Montserrat', sans-serif;
+        color: #111;
+      }
+      h1, h2, label { color: #5c9c13; }
+      .page-wrapper { display: flex; min-height: 100vh; }
+      .sidebar {
+        width: var(--sidebar-collapsed); background: var(--sidebar-bg); color: #fff;
+        position: fixed; inset: 0 auto 0 0; overflow: hidden; transition: width .3s ease;
+        display: flex; flex-direction: column; gap: 12px; padding: 16px 12px; z-index: 1000;
+      }
+      .sidebar:hover { width: var(--sidebar-expanded); }
+      .sidebar .brand { display: flex; align-items: center; gap: 12px; padding: 8px 10px; }
+      .sidebar .logo-collapsed, .sidebar .logo-expanded { height: 34px; transition: opacity .2s ease, transform .2s ease; }
+      .sidebar .logo-expanded { opacity: 0; transform: translateX(-6px); }
+      .sidebar:hover .logo-collapsed { opacity: 0; }
+      .sidebar:hover .logo-expanded { opacity: 1; transform: translateX(0); }
+      .nav-section { display: flex; flex-direction: column; gap: 8px; }
+      .sidebar .nav-link {
+        color: #fff; font-weight: 700; display: flex; align-items: center; gap: 12px;
+        padding: 10px 12px; border-radius: 10px; text-decoration: none; font-size: .95rem;
+      }
+      .sidebar .nav-link i { width: 20px; text-align: center; font-size: 1.15rem; }
+      .sidebar .link-text { white-space: nowrap; opacity: 0; transform: translateX(-6px); transition: .2s ease; }
+      .sidebar:hover .link-text { opacity: 1; transform: translateX(0); }
+      .sidebar .nav-link:hover, .sidebar .nav-link.active { background: rgba(255,255,255,.16); color: #fff; }
+      .sidebar-footer { margin-top: auto; }
+      .content { flex: 1; margin-left: var(--sidebar-collapsed); transition: margin-left .3s ease; }
+      .sidebar:hover ~ .content { margin-left: var(--sidebar-expanded); }
+      .content-inner { padding: 24px 12px; }
+      .portal-container { width: 90%; max-width: 1720px; margin: 0 auto; }
+      .page-logo { display: flex; justify-content: flex-end; margin-bottom: 20px; }
+      .page-logo img { width: 150px; max-width: 50%; height: auto; }
+      .upload-card {
+        max-width: 820px; margin: 2rem auto; background: rgba(255,255,255,.94);
+        border: 0; border-radius: 16px; box-shadow: 0 2px 8px rgba(0,0,0,.12);
+      }
+      .required-columns code { color: #3f7010; }
+      @media (max-width: 767px) {
+        :root { --sidebar-collapsed: 68px; }
+        .portal-container { width: 96%; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page-wrapper">
+      <nav class="sidebar">
+        <div class="brand">
+          <img src="{{ url_for('static', filename='SLK Logo.png') }}" alt="Silverlake Collapsed Logo" class="logo-collapsed">
+          <img src="{{ url_for('static', filename='logo-slg-strip.svg') }}" alt="Silverlake Logo" class="logo-expanded">
+        </div>
+        <div class="nav-section">
+          <a href="{{ url_for('index') }}" class="nav-link{% if active_page == 'index' %} active{% endif %}"><i class="fas fa-magnifying-glass-dollar"></i><span class="link-text">Opportunity Finder</span></a>
+          <a href="{{ url_for('image_lookup') }}" class="nav-link{% if active_page == 'image_lookup' %} active{% endif %}"><i class="fas fa-image"></i><span class="link-text">Image Lookup</span></a>
+          <a href="{{ url_for('image_stats') }}" class="nav-link{% if active_page == 'image_stats' %} active{% endif %}"><i class="fas fa-chart-pie"></i><span class="link-text">Image Stats</span></a>
+          <a href="{{ url_for('image_timeline') }}" class="nav-link{% if active_page == 'image_timeline' %} active{% endif %}"><i class="fas fa-clock"></i><span class="link-text">Image Timeline</span></a>
+          <a href="{{ url_for('stores_timeline') }}" class="nav-link{% if active_page == 'stores_timeline' %} active{% endif %}"><i class="fas fa-warehouse"></i><span class="link-text">Stores Timeline</span></a>
+          <a href="{{ url_for('stats') }}" class="nav-link{% if active_page == 'stats' %} active{% endif %}"><i class="fas fa-chart-column"></i><span class="link-text">Sales Stats</span></a>
+          <a href="{{ url_for('inventory_stats') }}" class="nav-link{% if active_page == 'inventory_stats' %} active{% endif %}"><i class="fas fa-boxes-stacked"></i><span class="link-text">Inventory Stats</span></a>
+          <a href="{{ url_for('vehicle_stats') }}" class="nav-link{% if active_page == 'vehicle_stats' %} active{% endif %}"><i class="fas fa-car-side"></i><span class="link-text">Vehicle Stats</span></a>
+          <a href="{{ url_for('executive_stats') }}" class="nav-link{% if active_page == 'executive_stats' %} active{% endif %}"><i class="fas fa-gauge-high"></i><span class="link-text">Executive Stats</span></a>
+          <a href="{{ url_for('scrapped_cars_upload') }}" class="nav-link active"><i class="fas fa-file-excel"></i><span class="link-text">Scrapped Cars Upload</span></a>
+        </div>
+        <div class="sidebar-footer">
+          <a href="{{ url_for('logout') }}" class="nav-link"><i class="fas fa-arrow-right-from-bracket"></i><span class="link-text">Logout ({{ current_user }})</span></a>
+        </div>
+      </nav>
+
+      <main class="content">
+        <div class="content-inner">
+          <div class="container portal-container">
+            <div class="page-logo"><img src="{{ url_for('static', filename='logo-slg-strip.svg') }}" alt="Silverlake Logo"></div>
+            <div class="card upload-card">
+              <div class="card-body p-4 p-md-5">
+                <div class="d-flex justify-content-between align-items-start flex-wrap gap-3 mb-3">
+                  <div>
+                    <h1 class="h3 mb-1">Scrapped Cars Import</h1>
+                    <p class="text-muted mb-0">Upload daily totals for Executive Stats.</p>
+                  </div>
+                  <a class="btn btn-outline-success btn-sm" href="{{ url_for('executive_stats') }}"><i class="fas fa-arrow-left me-1"></i>Executive Stats</a>
+                </div>
+
+                {% with messages = get_flashed_messages(with_categories=true) %}
+                  {% for category, message in messages %}<div class="alert alert-{{ category }}" role="alert">{{ message }}</div>{% endfor %}
+                {% endwith %}
+
+                <h2 class="h5 mt-4">Manual entry</h2>
+                <p class="text-muted">Enter one day's total. Saving an existing date replaces its previous value.</p>
+                <form method="post" class="row g-3 align-items-end mb-4">
+                  <input type="hidden" name="entry_method" value="manual">
+                  <div class="col-md-5">
+                    <label for="scrappedDate" class="form-label fw-semibold">Date</label>
+                    <input class="form-control" id="scrappedDate" name="scrapped_date" type="date" value="{{ today }}" required>
+                  </div>
+                  <div class="col-md-5">
+                    <label for="scrappedCount" class="form-label fw-semibold">Cars scrapped</label>
+                    <input class="form-control" id="scrappedCount" name="scrapped_count" type="number" min="0" step="1" placeholder="0" required>
+                  </div>
+                  <div class="col-md-2 d-grid">
+                    <button class="btn btn-success" type="submit"><i class="fas fa-floppy-disk me-1"></i>Save</button>
+                  </div>
+                </form>
+
+                <hr class="my-4">
+                <h2 class="h5">Excel upload</h2>
+                <p class="text-muted">Upload an <strong>.xlsx</strong> workbook containing exactly two columns. Data is stored in <strong>{{ database_name }}.{{ schema_name }}</strong>, separate from the <code>public</code> schema.</p>
+                <div class="required-columns bg-light border rounded p-3 mb-4">
+                  <strong>Workbook format</strong>
+                  <ol class="mb-1 mt-2">
+                    <li>First column: <code>date</code></li>
+                    <li>Second column: <code>scrappedcars</code> (a non-negative whole number)</li>
+                  </ol>
+                  <small class="text-muted">A header row is optional. Uploading an existing date replaces its previous value.</small>
+                </div>
+                <form method="post" enctype="multipart/form-data">
+                  <input type="hidden" name="entry_method" value="workbook">
+                  <label for="workbook" class="form-label fw-semibold">Excel workbook</label>
+                  <input class="form-control" id="workbook" name="workbook" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required>
+                  <button class="btn btn-success mt-3" type="submit"><i class="fas fa-upload me-1"></i>Import workbook</button>
+                </form>
+
+                <hr class="my-5">
+                <section id="backupManagement">
+                  <div class="d-flex justify-content-between align-items-start flex-wrap gap-3">
+                    <div>
+                      <h2 class="h5 mb-1">Proview2 backup</h2>
+                      <p class="text-muted mb-0">Backups are stored in <code>{{ backup_directory }}</code> inside the project.</p>
+                    </div>
+                    <form method="post">
+                      <input type="hidden" name="entry_method" value="backup_now">
+                      <button class="btn btn-success" type="submit"><i class="fas fa-database me-1"></i>Back up now</button>
+                    </form>
+                  </div>
+
+                  <div class="border rounded bg-light p-3 my-4">
+                    <h3 class="h6">Automatic backup schedule</h3>
+                    <form method="post" class="row g-3 align-items-end">
+                      <input type="hidden" name="entry_method" value="backup_schedule">
+                      <div class="col-md-4">
+                        <label for="backupFrequency" class="form-label">Frequency</label>
+                        <select class="form-select" id="backupFrequency" name="backup_frequency">
+                          <option value="off" {% if backup_config.frequency == 'off' %}selected{% endif %}>Off</option>
+                          <option value="daily" {% if backup_config.frequency == 'daily' %}selected{% endif %}>Daily</option>
+                          <option value="weekly" {% if backup_config.frequency == 'weekly' %}selected{% endif %}>Weekly</option>
+                        </select>
+                      </div>
+                      <div class="col-md-3">
+                        <label for="backupTime" class="form-label">Time</label>
+                        <input class="form-control" id="backupTime" name="backup_time" type="time" value="{{ backup_config.time }}" required>
+                      </div>
+                      <div class="col-md-3">
+                        <label for="backupWeekday" class="form-label">Weekly day</label>
+                        <select class="form-select" id="backupWeekday" name="backup_weekday">
+                          {% for value, label in [(0, 'Monday'), (1, 'Tuesday'), (2, 'Wednesday'), (3, 'Thursday'), (4, 'Friday'), (5, 'Saturday'), (6, 'Sunday')] %}
+                            <option value="{{ value }}" {% if backup_config.weekday == value %}selected{% endif %}>{{ label }}</option>
+                          {% endfor %}
+                        </select>
+                      </div>
+                      <div class="col-md-2 d-grid"><button class="btn btn-outline-success" type="submit">Save</button></div>
+                    </form>
+                    <small class="text-muted d-block mt-2">Times use the server's local timezone. The weekday is used only for weekly backups.</small>
+                  </div>
+
+                  <h3 class="h6">Backup attempts in the last 7 days</h3>
+                  <div class="table-responsive">
+                    <table class="table table-striped align-middle mb-0">
+                      <thead><tr><th>When</th><th>Type</th><th>Status</th><th>File / error</th></tr></thead>
+                      <tbody>
+                        {% for backup in backup_history %}
+                          <tr>
+                            <td>{{ backup.started_at.replace('T', ' ') }}</td>
+                            <td class="text-capitalize">{{ backup.trigger }}</td>
+                            <td>{% if backup.success %}<span class="badge text-bg-success">Successful</span>{% else %}<span class="badge text-bg-danger">Failed</span>{% endif %}</td>
+                            <td class="text-break">{{ backup.filename if backup.success else backup.error }}</td>
+                          </tr>
+                        {% else %}
+                          <tr><td colspan="4" class="text-muted text-center py-3">No backup attempts in the last 7 days.</td></tr>
+                        {% endfor %}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+  </body>
+</html>
