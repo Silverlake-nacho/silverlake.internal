@@ -1514,11 +1514,11 @@ def fetch_atlas_executive_status_details(
                 WHERE (
                     ({status_expression}) = 'Auction'
                     OR (
-                    OR (
                         ({status_expression}) IN ('Notified', 'Recovered')
                         AND sr.DateRecovered IS NOT NULL
                     )
-                    OR ({status_expression}) = 'Cleared'
+                    OR (
+                        ({status_expression}) = 'Cleared'
                         AND sr.DateRecovered IS NOT NULL
                     )
                     OR (
@@ -1548,20 +1548,33 @@ def fetch_atlas_executive_status_details(
     raise last_error if last_error else RuntimeError("No Atlas database names configured.")
 
 
-def build_executive_current_status_context(start_date: date, end_date: date, date_mode: str):
+def build_executive_current_status_context(
+    start_date: date,
+    end_date: date,
+    date_mode: str,
+    include_details: bool = True,
+):
     """Build both views needed by the Current/Date selected client-side toggle."""
 
     database_name, current_rows = fetch_atlas_executive_current_status_counts()
     _, selected_rows = fetch_atlas_executive_current_status_counts(
         start_date, end_date, date_mode
     )
-    _, current_detail_columns, current_detail_rows = (
-        fetch_atlas_executive_status_details()
-    )
-    _, selected_detail_columns, selected_detail_rows = (
-        fetch_atlas_executive_status_details(start_date, end_date, date_mode)
-    )
+    current_detail_columns = []
+    current_detail_rows = []
+    selected_detail_columns = []
+    selected_detail_rows = []
+    if include_details:
+        _, current_detail_columns, current_detail_rows = (
+            fetch_atlas_executive_status_details()
+        )
+        _, selected_detail_columns, selected_detail_rows = (
+            fetch_atlas_executive_status_details(start_date, end_date, date_mode)
+        )
+
     def split_detail_groups(columns, rows):
+        if not columns:
+            return [], {label: [] for label in EXECUTIVE_CURRENT_STATUS_LABELS}
         group_index = columns.index("StatusGroup")
         visible_columns = [column for index, column in enumerate(columns) if index != group_index]
         groups = {label: [] for label in EXECUTIVE_CURRENT_STATUS_LABELS}
@@ -4607,6 +4620,7 @@ def build_vehicle_stats_context(
     exclusion_scope: str = "insurance_company",
     contract_group_filter: Optional[str] = None,
     excluded_contract_company_pairs: Optional[set[tuple[str, str]]] = None,
+    include_details: bool = True,
 ):
     start_date, end_date = parse_date_filter(filter_type, start_date_str, end_date_str)
     date_range_label = describe_date_range(filter_type, start_date, end_date)
@@ -4629,9 +4643,13 @@ def build_vehicle_stats_context(
         database_name, rows = fetch_atlas_vehicle_counts_by_insurance(
             start_date, end_date, resolved_date_mode, contract_group_filter
         )
-    details_db_name, detail_columns, detail_rows = fetch_atlas_vehicle_details_by_insurance(
-        start_date, end_date, resolved_date_mode, contract_group_filter
-    )
+    details_db_name = None
+    detail_columns = []
+    detail_rows = []
+    if include_details:
+        details_db_name, detail_columns, detail_rows = fetch_atlas_vehicle_details_by_insurance(
+            start_date, end_date, resolved_date_mode, contract_group_filter
+        )
     current_user = session.get("username")
     default_exclusions = load_stats_exclusions(current_user, exclusion_scope)
     excluded_companies = exclude_args or default_exclusions
@@ -4735,6 +4753,7 @@ def build_vehicle_sold_context(
     contract_group_filter: Optional[str] = None,
     sold_only: bool = True,
     sold_not_paid: bool = True,
+    include_details: bool = True,
 ):
     """Build the independent DateSold-based vehicle sales summary."""
 
@@ -4748,13 +4767,17 @@ def build_vehicle_sold_context(
         sold_only,
         sold_not_paid,
     )
-    details_db_name, detail_columns, detail_rows = fetch_atlas_vehicle_sold_details(
-        start_date, end_date, contract_group_filter, sold_only, sold_not_paid
-    )
-    company_index = detail_columns.index("InsuranceCompany")
-    detail_rows = [
-        row for row in detail_rows if row[company_index] not in excluded_companies
-    ]
+    details_db_name = None
+    detail_columns = []
+    detail_rows = []
+    if include_details:
+        details_db_name, detail_columns, detail_rows = fetch_atlas_vehicle_sold_details(
+            start_date, end_date, contract_group_filter, sold_only, sold_not_paid
+        )
+        company_index = detail_columns.index("InsuranceCompany")
+        detail_rows = [
+            row for row in detail_rows if row[company_index] not in excluded_companies
+        ]
     totals = {}
     contract_company_breakdown = {}
     for label, company, vehicle_count, sale_price, premium in raw_rows:
@@ -4840,10 +4863,14 @@ def hydrate_vehicle_flags(cursor, columns, rows):
             for vehicle_id, flag_text, flag_color in cursor.fetchall():
                 if vehicle_id is None:
                     continue
+                normalized_color = normalize_flag_hex_color(flag_color) or ""
+                normalized_text = "" if flag_text is None else str(flag_text).strip()
+                if not normalized_text:
+                    normalized_text = "No text Flag"
                 flags_by_vehicle.setdefault(vehicle_id, []).append(
                     {
-                        "text": "" if flag_text is None else str(flag_text).strip(),
-                        "color": normalize_flag_hex_color(flag_color) or "",
+                        "text": normalized_text,
+                        "color": normalized_color,
                     }
                 )
         except Exception:
@@ -5403,6 +5430,7 @@ def executive_stats():
                 if normalize_vehicle_date_mode(date_mode) == "recovered"
                 else set()
             ),
+            include_details=False,
         )
         if normalize_vehicle_date_mode(date_mode) == "recovered":
             _, grouped_rows, group_status_breakdown = fetch_atlas_vehicle_in_status_groups(
@@ -5428,9 +5456,13 @@ def executive_stats():
             group_mode,
             sold_only=sold_only,
             sold_not_paid=sold_not_paid,
+            include_details=False,
         )
         current_status_context = build_executive_current_status_context(
-            context["start_date"], context["end_date"], context["date_mode"]
+            context["start_date"],
+            context["end_date"],
+            context["date_mode"],
+            include_details=False,
         )
         current_status_context["selected"]["date_range_label"] = context["date_range_label"]
         parts_sold_context = build_stats_context(
@@ -5521,6 +5553,207 @@ def executive_stats():
         live_enabled=live_enabled,
         error_message=error_message,
         active_page="executive_stats",
+    )
+
+
+@app.route("/executive_stats/details", methods=["GET"])
+def executive_stats_details():
+    """Load the large Executive Stats detail datasets on demand."""
+
+    filter_type = request.args.get("filter", "today")
+    start_date_str = request.args.get("start_date")
+    end_date_str = request.args.get("end_date")
+    excluded_args = request.args.getlist("exclude")
+    group_mode = request.args.get("group", "company")
+    date_mode = request.args.get("date_mode", "recovered")
+    section = request.args.get("section", "tables")
+    export_excel = request.args.get("export", "").lower() in {"excel", "xlsx"}
+    export_dataset = request.args.get("dataset", "")
+    sold_only = str(request.args.get("sold_only", "1")).lower() not in {
+        "0", "false", "no", "off"
+    }
+    sold_not_paid = str(request.args.get("sold_not_paid", "1")).lower() not in {
+        "0", "false", "no", "off"
+    }
+
+    start_date, end_date = parse_date_filter(
+        filter_type, start_date_str, end_date_str
+    )
+    resolved_date_mode = normalize_vehicle_date_mode(date_mode)
+    current_status_context = build_executive_current_status_context(
+        start_date, end_date, resolved_date_mode
+    )
+    current_status_context["selected"]["date_range_label"] = describe_date_range(
+        filter_type, start_date, end_date
+    )
+
+    if section == "current_status" and export_excel:
+        status_mode = request.args.get("status_mode", "current")
+        if status_mode not in {"current", "selected"}:
+            status_mode = "current"
+        group_label = request.args.get("status_group", EXECUTIVE_CURRENT_STATUS_LABELS[0])
+        status_data = current_status_context[status_mode]
+        rows = status_data.get("detail_groups", {}).get(group_label, [])
+        return send_executive_details_excel(
+            status_data.get("detail_columns", []),
+            rows,
+            group_label,
+        )
+
+    if section == "current_status":
+        return jsonify({"current_status": current_status_context})
+
+    if export_excel and export_dataset == "uncollected_sold":
+        status_mode = request.args.get("status_mode", "current")
+        if status_mode not in {"current", "selected"}:
+            status_mode = "current"
+        status_data = current_status_context[status_mode]
+        sold_label = EXECUTIVE_CURRENT_STATUS_LABELS[1]
+        return send_executive_details_excel(
+            status_data.get("detail_columns", []),
+            status_data.get("detail_groups", {}).get(sold_label, []),
+            "Sold Not Collected",
+        )
+
+    vehicle_context = build_vehicle_stats_context(
+        filter_type,
+        start_date_str,
+        end_date_str,
+        excluded_args,
+        group_mode,
+        resolved_date_mode,
+        exclusion_scope="executive_insurance_company",
+        excluded_contract_company_pairs=(
+            EXECUTIVE_VEHICLES_IN_EXCLUDED_CONTRACT_COMPANIES
+            if resolved_date_mode == "recovered"
+            else set()
+        ),
+    )
+    vehicle_sold_context = build_vehicle_sold_context(
+        filter_type,
+        start_date_str,
+        end_date_str,
+        vehicle_context.get("excluded_companies", []),
+        group_mode,
+        sold_only=sold_only,
+        sold_not_paid=sold_not_paid,
+    )
+
+    if export_excel:
+        if export_dataset == "vehicle_sold":
+            return send_executive_details_excel(
+                vehicle_sold_context.get("detail_columns", []),
+                vehicle_sold_context.get("detail_rows", []),
+                "Vehicle Sold Details",
+            )
+        return send_executive_details_excel(
+            vehicle_context.get("detail_columns", []),
+            vehicle_context.get("detail_rows", []),
+            "Vehicle Details",
+        )
+
+    return jsonify(
+        {
+            "vehicle_details": {
+                "detail_columns": vehicle_context.get("detail_columns", []),
+                "detail_rows": [
+                    [serialize_vehicle_detail_cell(value) for value in row]
+                    for row in vehicle_context.get("detail_rows", [])
+                ],
+            },
+            "vehicle_sold_details": {
+                "detail_columns": vehicle_sold_context.get("detail_columns", []),
+                "detail_rows": [
+                    [serialize_vehicle_detail_cell(value) for value in row]
+                    for row in vehicle_sold_context.get("detail_rows", [])
+                ],
+            },
+            "current_status": current_status_context,
+        }
+    )
+
+
+def send_executive_details_excel(columns, rows, title):
+    """Return an Executive Stats detail dataset as an Excel workbook."""
+
+    def excel_value(value):
+        if not isinstance(value, dict):
+            return value
+        if value.get("kind") == "multiple":
+            return " | ".join(
+                str(flag.get("text") or "No text Flag")
+                for flag in value.get("flags", [])
+            )
+        return value.get("label") or value.get("text") or "No text Flag"
+
+    def contrast_text_color(background_color):
+        color = (background_color or "").lstrip("#")
+        if not re.fullmatch(r"[0-9a-fA-F]{6}", color):
+            return "#111111"
+        red, green, blue = (int(color[index:index + 2], 16) for index in (0, 2, 4))
+        luminance = (0.299 * red + 0.587 * green + 0.114 * blue) / 255
+        return "#111111" if luminance > 0.6 else "#FFFFFF"
+
+    export_rows = [[excel_value(value) for value in row] for row in rows]
+    output = BytesIO()
+    sheet_name = re.sub(r"[\\/*?:\[\]]", "", title)[:31] or "Details"
+    with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+        pd.DataFrame(export_rows, columns=columns).to_excel(
+            writer, index=False, sheet_name=sheet_name
+        )
+        if "Flag" in columns:
+            workbook = writer.book
+            worksheet = writer.sheets[sheet_name]
+            flag_index = columns.index("Flag")
+            background_formats = {}
+            font_formats = {}
+            for row_index, row in enumerate(rows, start=1):
+                flag_value = row[flag_index]
+                if not isinstance(flag_value, dict):
+                    continue
+                flags = list(flag_value.get("flags", []))
+                if not flags:
+                    continue
+                if len(flags) == 1:
+                    color = normalize_flag_hex_color(flags[0].get("color"))
+                    format_key = color or "#FFFFFF"
+                    cell_format = background_formats.get(format_key)
+                    if cell_format is None:
+                        cell_format = workbook.add_format(
+                            {
+                                "bg_color": format_key,
+                                "font_color": contrast_text_color(color),
+                            }
+                        )
+                        background_formats[format_key] = cell_format
+                    worksheet.write(
+                        row_index,
+                        flag_index,
+                        flags[0].get("text") or "No text Flag",
+                        cell_format,
+                    )
+                    continue
+
+                rich_parts = []
+                for flag_position, flag in enumerate(flags):
+                    if flag_position:
+                        rich_parts.append(" | ")
+                    color = normalize_flag_hex_color(flag.get("color")) or "#111111"
+                    font_format = font_formats.get(color)
+                    if font_format is None:
+                        font_format = workbook.add_format({"font_color": color})
+                        font_formats[color] = font_format
+                    rich_parts.extend(
+                        [font_format, flag.get("text") or "No text Flag"]
+                    )
+                worksheet.write_rich_string(row_index, flag_index, *rich_parts)
+    output.seek(0)
+    filename = re.sub(r"[^a-z0-9]+", "_", title.lower()).strip("_")
+    return send_file(
+        output,
+        download_name=f"{filename or 'executive_details'}.xlsx",
+        as_attachment=True,
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
 
 
@@ -5806,6 +6039,7 @@ def executive_stats_data():
             if resolved_date_mode == "recovered"
             else set()
         ),
+        include_details=False,
     )
 
     vehicle_in_status_context = None
@@ -5834,9 +6068,13 @@ def executive_stats_data():
         group_mode,
         sold_only=sold_only,
         sold_not_paid=sold_not_paid,
+        include_details=False,
     )
     current_status_context = build_executive_current_status_context(
-        context["start_date"], context["end_date"], context["date_mode"]
+        context["start_date"],
+        context["end_date"],
+        context["date_mode"],
+        include_details=False,
     )
     current_status_context["selected"]["date_range_label"] = context["date_range_label"]
         
