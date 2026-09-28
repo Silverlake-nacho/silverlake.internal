@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Upload Scrapped Cars</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  <style>
+    body { background: #f5f7f2; }
+    .page-header { background: #5c9c13; color: white; }
+    .upload-card { max-width: 760px; margin: 3rem auto; }
+    .required-columns code { color: #3f7010; }
+  </style>
+</head>
+<body>
+  <header class="page-header py-3">
+    <div class="container d-flex align-items-center justify-content-between gap-3">
+      <h1 class="h4 mb-0"><i class="fas fa-car-burst me-2"></i>Scrapped Cars Import</h1>
+      <a class="btn btn-light btn-sm" href="{{ url_for('executive_stats') }}">
+        <i class="fas fa-arrow-left me-1"></i>Executive Stats
+      </a>
+    </div>
+  </header>
+
+  <main class="container">
+    <div class="card shadow-sm upload-card">
+      <div class="card-body p-4">
+        <h2 class="h5 text-success">Upload daily totals</h2>
+        <p class="text-muted">
+          Upload an <strong>.xlsx</strong> workbook containing exactly two columns. Data is stored in
+          <strong>{{ database_name }}</strong>, not the main Pinnacle database.
+        </p>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+          {% for category, message in messages %}
+            <div class="alert alert-{{ category }}" role="alert">{{ message }}</div>
+          {% endfor %}
+        {% endwith %}
+
+        <div class="required-columns bg-light border rounded p-3 mb-4">
+          <strong>Workbook format</strong>
+          <ol class="mb-0 mt-2">
+            <li>First column: <code>date</code></li>
+            <li>Second column: <code>scrappedcars</code> (a non-negative whole number)</li>
+          </ol>
+          <small class="text-muted">A header row is optional. Uploading an existing date replaces its previous value.</small>
+        </div>
+
+        <form method="post" enctype="multipart/form-data">
+          <label for="workbook" class="form-label fw-semibold">Excel workbook</label>
+          <input class="form-control" id="workbook" name="workbook" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required>
+          <button class="btn btn-success mt-3" type="submit">
+            <i class="fas fa-upload me-1"></i>Import workbook
+          </button>
+        </form>
+      </div>
+    </div>
+  </main>
+</body>
+</html>

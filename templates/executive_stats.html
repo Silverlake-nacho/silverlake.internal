@@ -840,6 +840,40 @@
               </div>
             </div>
 
+            <div class="row g-4 mb-4" id="scrappedCarsSection">
+              <div class="col-12 d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <div>
+                  <h5 class="text-success mb-0">Cars Scrapped</h5>
+                  <small class="text-muted">Showing: {{ date_range_label }}</small>
+                </div>
+                <a class="btn btn-sm btn-outline-success" href="{{ url_for('scrapped_cars_upload') }}">
+                  <i class="fas fa-file-excel me-1"></i>Upload scrapped cars
+                </a>
+              </div>
+              {% if scrapped_cars_context.error %}
+                <div class="col-12"><div class="alert alert-warning mb-0" id="scrappedCarsError">{{ scrapped_cars_context.error }}</div></div>
+              {% endif %}
+              <div class="col-lg-6">
+                <div class="table-responsive">
+                  <table class="table table-striped">
+                    <thead><tr><th>Date</th><th class="text-end">Cars Scrapped</th></tr></thead>
+                    <tbody id="scrappedCarsTableBody">
+                      {% for row in scrapped_cars_context.rows %}
+                        <tr><td>{{ row.date }}</td><td class="text-end">{{ '{:,.0f}'.format(row.scrappedcars) }}</td></tr>
+                      {% endfor %}
+                    </tbody>
+                    <tfoot><tr class="fw-bold"><td>Total</td><td class="text-end" id="scrappedCarsTotalCell">{{ '{:,.0f}'.format(scrapped_cars_context.sum_total) }}</td></tr></tfoot>
+                  </table>
+                </div>
+              </div>
+              <div class="col-lg-6">
+                <div class="card shadow-sm"><div class="card-body">
+                  <h5 class="card-title">Cars Scrapped by Day</h5>
+                  <canvas id="scrappedCarsChart" height="200"></canvas>
+                </div></div>
+              </div>
+            </div>
+
             <div class="summary-card">
               <div class="form-check">
                 <input class="form-check-input" type="checkbox" id="loadDetailTablesToggle">
@@ -1211,6 +1245,28 @@
       let partsSoldLabels = (partsSoldDataset.chart_labels || []).slice();
       let partsSoldValues = (partsSoldDataset.chart_values || []).slice();
       let partsSoldEntityLabel = partsSoldDataset.entity_label || 'Department';
+
+      const scrappedCarsDataset = {{ (scrapped_cars_context or {})|tojson }};
+      let scrappedCarsChartInstance = null;
+
+      function updateScrappedCars(data) {
+        if (!data) return;
+        const body = document.getElementById('scrappedCarsTableBody');
+        if (body) {
+          body.innerHTML = (data.rows || []).map((row) =>
+            `<tr><td>${escapeHtml(row.date)}</td><td class="text-end">${Number(row.scrappedcars || 0).toLocaleString()}</td></tr>`
+          ).join('');
+        }
+        const total = document.getElementById('scrappedCarsTotalCell');
+        if (total) total.textContent = Number(data.sum_total || 0).toLocaleString();
+        const canvas = document.getElementById('scrappedCarsChart');
+        if (canvas) {
+          if (scrappedCarsChartInstance) scrappedCarsChartInstance.destroy();
+          const config = buildChartConfig('bar', data.chart_labels || [], data.chart_values || []);
+          config.data.datasets[0].label = 'Cars Scrapped';
+          scrappedCarsChartInstance = new Chart(canvas, config);
+        }
+      }
 
       const expandedVehicleInStatusGroups = new Set();
       const currentGroupMode = {{ group_mode|tojson }};
@@ -2361,6 +2417,9 @@
           if (data.parts_sold) {
             rebuildPartsSoldTable(data.parts_sold);
           }
+          if (data.scrapped_cars) {
+            updateScrappedCars(data.scrapped_cars);
+          }
         } catch (err) {
           console.error('Live vehicle stats refresh failed', err);
         }
@@ -2575,6 +2634,7 @@
 	 
       rebuildPartsSoldTable({{ (parts_sold_context or {})|tojson }});
       renderPartsSoldChart(partsSoldCurrentChartType);
+      updateScrappedCars(scrappedCarsDataset);
 
       // Detail tables are fetched and initialized only when requested.
       window.addEventListener('resize', () => {
