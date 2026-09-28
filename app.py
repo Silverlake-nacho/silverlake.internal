@@ -1142,7 +1142,7 @@ def build_scrapped_cars_context(start_date: date, end_date: date) -> dict:
         conn.close()
 
     rows = [
-        {"date": row_date.isoformat(), "scrappedcars": int(total or 0)}
+        {"date": row_date.strftime("%d/%m/%Y"), "scrappedcars": int(total or 0)}
         for row_date, total in records
     ]
     return {
@@ -5792,27 +5792,48 @@ def executive_stats():
 def scrapped_cars_upload():
     """Upload daily scrapped-car counts into Pinnacle's proview2 schema."""
     if request.method == "POST":
-        upload = request.files.get("workbook")
-        if not upload or not upload.filename:
-            flash("Select an Excel workbook to upload.", "danger")
-        else:
+        entry_method = request.form.get("entry_method", "workbook")
+        if entry_method == "manual":
+            manual_date = request.form.get("scrapped_date", "").strip()
+            manual_count = request.form.get("scrapped_count", "").strip()
             try:
-                rows = parse_scrapped_cars_workbook(upload)
-                save_scrapped_cars(rows)
+                parsed_date = datetime.strptime(manual_date, "%Y-%m-%d").date()
+                numeric_count = float(manual_count)
+                if not numeric_count.is_integer() or numeric_count < 0:
+                    raise ValueError
+                save_scrapped_cars([(parsed_date, int(numeric_count))])
                 flash(
-                    f"Imported {len(rows)} daily scrapped-car record(s). Existing values for those dates were replaced.",
+                    f"Saved {int(numeric_count)} scrapped car(s) for {parsed_date:%d/%m/%Y}.",
                     "success",
                 )
                 return redirect(url_for("scrapped_cars_upload"))
-            except ValueError as exc:
-                flash(str(exc), "danger")
+            except (TypeError, ValueError):
+                flash("Enter a valid date and a non-negative whole number of cars scrapped.", "danger")
             except Exception as exc:
-                flash(f"Unable to import the workbook: {exc}", "danger")
+                flash(f"Unable to save the manual entry: {exc}", "danger")
+        else:
+            upload = request.files.get("workbook")
+            if not upload or not upload.filename:
+                flash("Select an Excel workbook to upload.", "danger")
+            else:
+                try:
+                    rows = parse_scrapped_cars_workbook(upload)
+                    save_scrapped_cars(rows)
+                    flash(
+                        f"Imported {len(rows)} daily scrapped-car record(s). Existing values for those dates were replaced.",
+                        "success",
+                    )
+                    return redirect(url_for("scrapped_cars_upload"))
+                except ValueError as exc:
+                    flash(str(exc), "danger")
+                except Exception as exc:
+                    flash(f"Unable to import the workbook: {exc}", "danger")
     return render_template(
         "scrapped_cars_upload.html",
         active_page="scrapped_cars_upload",
         database_name=DB_NAME,
         schema_name="proview2",
+        today=date.today().isoformat(),
     )
 
 

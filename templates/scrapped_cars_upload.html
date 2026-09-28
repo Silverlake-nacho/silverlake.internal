@@ -99,6 +99,25 @@
                   {% for category, message in messages %}<div class="alert alert-{{ category }}" role="alert">{{ message }}</div>{% endfor %}
                 {% endwith %}
 
+                <h2 class="h5 mt-4">Manual entry</h2>
+                <p class="text-muted">Enter one day's total. Saving an existing date replaces its previous value.</p>
+                <form method="post" class="row g-3 align-items-end mb-4">
+                  <input type="hidden" name="entry_method" value="manual">
+                  <div class="col-md-5">
+                    <label for="scrappedDate" class="form-label fw-semibold">Date</label>
+                    <input class="form-control" id="scrappedDate" name="scrapped_date" type="date" value="{{ today }}" required>
+                  </div>
+                  <div class="col-md-5">
+                    <label for="scrappedCount" class="form-label fw-semibold">Cars scrapped</label>
+                    <input class="form-control" id="scrappedCount" name="scrapped_count" type="number" min="0" step="1" placeholder="0" required>
+                  </div>
+                  <div class="col-md-2 d-grid">
+                    <button class="btn btn-success" type="submit"><i class="fas fa-floppy-disk me-1"></i>Save</button>
+                  </div>
+                </form>
+
+                <hr class="my-4">
+                <h2 class="h5">Excel upload</h2>
                 <p class="text-muted">Upload an <strong>.xlsx</strong> workbook containing exactly two columns. Data is stored in <strong>{{ database_name }}.{{ schema_name }}</strong>, separate from the <code>public</code> schema.</p>
                 <div class="required-columns bg-light border rounded p-3 mb-4">
                   <strong>Workbook format</strong>
@@ -109,6 +128,7 @@
                   <small class="text-muted">A header row is optional. Uploading an existing date replaces its previous value.</small>
                 </div>
                 <form method="post" enctype="multipart/form-data">
+                  <input type="hidden" name="entry_method" value="workbook">
                   <label for="workbook" class="form-label fw-semibold">Excel workbook</label>
                   <input class="form-control" id="workbook" name="workbook" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required>
                   <button class="btn btn-success mt-3" type="submit"><i class="fas fa-upload me-1"></i>Import workbook</button>
