@@ -19,6 +19,8 @@ from calendar import monthrange
 import json
 import os
 import re
+import zipfile
+from xml.etree import ElementTree
 from urllib.parse import urljoin
 import pyodbc
 
@@ -1152,13 +1154,135 @@ def build_scrapped_cars_context(start_date: date, end_date: date) -> dict:
     }
 
 
+def _read_xlsx_rows(upload) -> list[list[object]]:
+    """Read the first worksheet using only Python's standard library."""
+    namespaces = {
+        "main": "http://schemas.openxmlformats.org/spreadsheetml/2006/main",
+        "rel": "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
+        "pkg": "http://schemas.openxmlformats.org/package/2006/relationships",
+    }
+
+    try:
+        workbook = zipfile.ZipFile(upload)
+    except (zipfile.BadZipFile, OSError) as exc:
+        raise ValueError("The selected file is not a valid .xlsx workbook.") from exc
+
+    with workbook:
+        try:
+            workbook_root = ElementTree.fromstring(workbook.read("xl/workbook.xml"))
+            relationships_root = ElementTree.fromstring(
+                workbook.read("xl/_rels/workbook.xml.rels")
+            )
+        except (KeyError, ElementTree.ParseError) as exc:
+            raise ValueError("The selected file is not a valid .xlsx workbook.") from exc
+
+        relationships = {
+            relationship.attrib["Id"]: relationship.attrib["Target"]
+            for relationship in relationships_root.findall("pkg:Relationship", namespaces)
+        }
+        first_sheet = workbook_root.find("main:sheets/main:sheet", namespaces)
+        if first_sheet is None:
+            raise ValueError("The workbook does not contain a worksheet.")
+        relationship_id = first_sheet.attrib.get(f"{{{namespaces['rel']}}}id")
+        sheet_target = relationships.get(relationship_id)
+        if not sheet_target:
+            raise ValueError("The workbook's first worksheet could not be read.")
+        sheet_path = sheet_target.lstrip("/")
+        if not sheet_path.startswith("xl/"):
+            sheet_path = f"xl/{sheet_path}"
+
+        shared_strings = []
+        if "xl/sharedStrings.xml" in workbook.namelist():
+            shared_root = ElementTree.fromstring(workbook.read("xl/sharedStrings.xml"))
+            for item in shared_root.findall("main:si", namespaces):
+                shared_strings.append(
+                    "".join(node.text or "" for node in item.iterfind(".//main:t", namespaces))
+                )
+
+        date_style_indexes = set()
+        if "xl/styles.xml" in workbook.namelist():
+            styles_root = ElementTree.fromstring(workbook.read("xl/styles.xml"))
+            custom_formats = {
+                int(item.attrib["numFmtId"]): item.attrib.get("formatCode", "")
+                for item in styles_root.findall("main:numFmts/main:numFmt", namespaces)
+            }
+            date_format_ids = set(range(14, 23)) | set(range(45, 48))
+            for format_id, format_code in custom_formats.items():
+                cleaned_code = re.sub(r'"[^"]*"|\\.', "", format_code.lower())
+                if re.search(r"[dmyh]|s{1,2}", cleaned_code):
+                    date_format_ids.add(format_id)
+            cell_formats = styles_root.find("main:cellXfs", namespaces)
+            if cell_formats is not None:
+                date_style_indexes = {
+                    index
+                    for index, cell_format in enumerate(cell_formats)
+                    if int(cell_format.attrib.get("numFmtId", 0)) in date_format_ids
+                }
+
+        use_1904_dates = False
+        workbook_properties = workbook_root.find("main:workbookPr", namespaces)
+        if workbook_properties is not None:
+            use_1904_dates = workbook_properties.attrib.get("date1904") in {"1", "true"}
+
+        try:
+            sheet_root = ElementTree.fromstring(workbook.read(sheet_path))
+        except (KeyError, ElementTree.ParseError) as exc:
+            raise ValueError("The workbook's first worksheet could not be read.") from exc
+
+        rows = []
+        for row in sheet_root.findall(".//main:sheetData/main:row", namespaces):
+            values_by_column = {}
+            for cell in row.findall("main:c", namespaces):
+                reference = cell.attrib.get("r", "")
+                column_letters = re.match(r"[A-Z]+", reference)
+                if not column_letters:
+                    continue
+                column_number = 0
+                for letter in column_letters.group(0):
+                    column_number = column_number * 26 + ord(letter) - ord("A") + 1
+                cell_type = cell.attrib.get("t")
+                value_node = cell.find("main:v", namespaces)
+                raw_value = value_node.text if value_node is not None else None
+                if cell_type == "inlineStr":
+                    value = "".join(
+                        node.text or "" for node in cell.iterfind(".//main:t", namespaces)
+                    )
+                elif raw_value is None:
+                    value = None
+                elif cell_type == "s":
+                    try:
+                        value = shared_strings[int(raw_value)]
+                    except (ValueError, IndexError):
+                        value = raw_value
+                elif cell_type in {"str", "d"}:
+                    value = raw_value
+                else:
+                    try:
+                        numeric_value = float(raw_value)
+                        style_index = int(cell.attrib.get("s", 0))
+                        if style_index in date_style_indexes:
+                            epoch = datetime(1904, 1, 1) if use_1904_dates else datetime(1899, 12, 30)
+                            value = epoch + timedelta(days=numeric_value)
+                        else:
+                            value = int(numeric_value) if numeric_value.is_integer() else numeric_value
+                    except ValueError:
+                        value = raw_value
+                values_by_column[column_number] = value
+            if values_by_column:
+                rows.append(
+                    [values_by_column.get(column) for column in range(1, max(values_by_column) + 1)]
+                )
+        return rows
+
+
 def parse_scrapped_cars_workbook(upload) -> List[Tuple[date, int]]:
     """Validate the two-column scrapped-cars workbook and return normalized rows."""
     filename = (upload.filename or "").lower()
     if not filename.endswith(".xlsx"):
         raise ValueError("Please upload an .xlsx Excel file.")
 
-    dataframe = pd.read_excel(upload, header=None, dtype=object)
+    rows = _read_xlsx_rows(upload)
+    dataframe = pd.DataFrame(rows, dtype=object)
     dataframe = dataframe.dropna(how="all").dropna(axis=1, how="all")
     if dataframe.empty:
         raise ValueError("The workbook does not contain any data.")
