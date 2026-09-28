@@ -1,6 +1,6 @@
 from flask import Flask, request, render_template, send_file, redirect, url_for, session, flash, jsonify
 import pandas as pd
-from io import BytesIO
+from io import BytesIO, StringIO
 from datetime import datetime, date, timedelta, timezone
 import struct
 import gspread
@@ -19,6 +19,8 @@ from calendar import monthrange
 import json
 import os
 import re
+import csv
+import threading
 import zipfile
 from xml.etree import ElementTree
 from urllib.parse import urljoin
@@ -327,6 +329,9 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DEPARTMENT_ORDER_PATH = os.path.join(BASE_DIR, "department_order.json")
 STATS_EXCLUSIONS_PATH = os.path.join(BASE_DIR, "stats_exclusions.json")
 IMAGE_TIMELINE_VERIFIED_PATH = os.path.join(BASE_DIR, "image_timeline_verified.json")
+PROVIEW_BACKUP_DIR = os.path.join(BASE_DIR, "backups", "proview2")
+PROVIEW_BACKUP_CONFIG_PATH = os.path.join(PROVIEW_BACKUP_DIR, "schedule.json")
+PROVIEW_BACKUP_HISTORY_PATH = os.path.join(PROVIEW_BACKUP_DIR, "history.json")
 AUCTIONS_URL = "https://www.salvagemarket.co.uk/Search?auction[]=&bucketDetails=&bucketId=&damageCategory[]=&distance[]=&editorPickSearch=0&freeSubscriptionOnly=false&fuelType[]=&latitude=0&longitude=0&make[]=&model[]=&orderBy=1&pageNumber=0&pageSize=20&quickSearch=0&searchText=&seller[]=ca35a24f-c044-420d-9c1b-9aa05beb8e96&startDrive[]=&transmissionType[]=&year[]="
 
 @app.context_processor
@@ -1339,6 +1344,139 @@ def save_scrapped_cars(rows: List[Tuple[date, int]]) -> None:
         raise
     finally:
         conn.close()
+
+
+_backup_scheduler_started = False
+_backup_scheduler_lock = threading.Lock()
+
+
+def load_proview_backup_config() -> dict:
+    config = _load_json_file(PROVIEW_BACKUP_CONFIG_PATH, {})
+    return {
+        "frequency": config.get("frequency", "off"),
+        "time": config.get("time", "02:00"),
+        "weekday": int(config.get("weekday", 0)),
+    }
+
+
+def proview_backup_history() -> list[dict]:
+    history = _load_json_file(PROVIEW_BACKUP_HISTORY_PATH, [])
+    cutoff = datetime.now() - timedelta(days=7)
+    return [
+        item for item in history
+        if datetime.fromisoformat(item["started_at"]) >= cutoff
+    ][-50:][::-1]
+
+
+def _record_proview_backup(entry: dict) -> None:
+    os.makedirs(PROVIEW_BACKUP_DIR, exist_ok=True)
+    history = _load_json_file(PROVIEW_BACKUP_HISTORY_PATH, [])
+    history.append(entry)
+    with open(PROVIEW_BACKUP_HISTORY_PATH, "w", encoding="utf-8") as history_file:
+        json.dump(history[-200:], history_file, indent=2)
+
+
+def create_proview_backup(trigger: str = "manual") -> dict:
+    """Create a portable ZIP containing every table and its column metadata."""
+    os.makedirs(PROVIEW_BACKUP_DIR, exist_ok=True)
+    started = datetime.now()
+    filename = f"proview2_{started:%Y%m%d_%H%M%S_%f}.zip"
+    output_path = os.path.join(PROVIEW_BACKUP_DIR, filename)
+    entry = {"started_at": started.isoformat(timespec="seconds"), "trigger": trigger}
+    conn = None
+    lock_path = os.path.join(PROVIEW_BACKUP_DIR, ".backup.lock")
+    lock_fd = None
+    try:
+        lock_fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT table_name FROM information_schema.tables
+                   WHERE table_schema = %s AND table_type = 'BASE TABLE'
+                   ORDER BY table_name""",
+                ("proview2",),
+            )
+            table_names = [row[0] for row in cur.fetchall()]
+            manifest = {"schema": "proview2", "created_at": entry["started_at"], "tables": []}
+            with zipfile.ZipFile(output_path, "w", zipfile.ZIP_DEFLATED) as archive:
+                for table_name in table_names:
+                    cur.execute(
+                        """SELECT column_name, data_type, is_nullable
+                           FROM information_schema.columns
+                           WHERE table_schema = %s AND table_name = %s
+                           ORDER BY ordinal_position""",
+                        ("proview2", table_name),
+                    )
+                    columns = cur.fetchall()
+                    quoted_table = f'"proview2"."{table_name.replace(chr(34), chr(34) * 2)}"'
+                    cur.execute(f"SELECT * FROM {quoted_table}")
+                    buffer = StringIO(newline="")
+                    writer = csv.writer(buffer)
+                    writer.writerow([column[0] for column in columns])
+                    for row in cur.fetchall():
+                        writer.writerow(row)
+                    archive.writestr(f"tables/{table_name}.csv", buffer.getvalue().encode("utf-8"))
+                    manifest["tables"].append({
+                        "name": table_name,
+                        "columns": [
+                            {"name": name, "type": data_type, "nullable": nullable == "YES"}
+                            for name, data_type, nullable in columns
+                        ],
+                    })
+                archive.writestr("manifest.json", json.dumps(manifest, indent=2))
+        entry.update({"success": True, "filename": filename})
+    except FileExistsError:
+        entry.update({"success": False, "error": "A backup is already in progress.", "skipped": True})
+    except Exception as exc:
+        if os.path.exists(output_path):
+            os.remove(output_path)
+        entry.update({"success": False, "error": str(exc)})
+    finally:
+        if conn is not None:
+            conn.close()
+        if lock_fd is not None:
+            os.close(lock_fd)
+            try:
+                os.remove(lock_path)
+            except FileNotFoundError:
+                pass
+    if not entry.get("skipped"):
+        _record_proview_backup(entry)
+    return entry
+
+
+def _scheduled_backup_is_due(config: dict, now: datetime) -> bool:
+    if config["frequency"] == "off" or now.strftime("%H:%M") < config["time"]:
+        return False
+    if config["frequency"] == "weekly" and now.weekday() != config["weekday"]:
+        return False
+    today = now.date().isoformat()
+    return not any(
+        item.get("trigger") == "scheduled" and item.get("started_at", "").startswith(today)
+        for item in _load_json_file(PROVIEW_BACKUP_HISTORY_PATH, [])
+    )
+
+
+def _proview_backup_scheduler() -> None:
+    while True:
+        try:
+            config = load_proview_backup_config()
+            if _scheduled_backup_is_due(config, datetime.now()):
+                create_proview_backup("scheduled")
+        except Exception as exc:
+            print(f"Proview backup scheduler error: {exc}")
+        time.sleep(60)
+
+
+@app.before_request
+def start_proview_backup_scheduler():
+    global _backup_scheduler_started
+    if _backup_scheduler_started:
+        return
+    with _backup_scheduler_lock:
+        if not _backup_scheduler_started:
+            threading.Thread(target=_proview_backup_scheduler, daemon=True).start()
+            _backup_scheduler_started = True
 
 
 def _get_atlas_db_name_candidates() -> List[str]:
@@ -5793,7 +5931,35 @@ def scrapped_cars_upload():
     """Upload daily scrapped-car counts into Pinnacle's proview2 schema."""
     if request.method == "POST":
         entry_method = request.form.get("entry_method", "workbook")
-        if entry_method == "manual":
+        if entry_method == "backup_now":
+            result = create_proview_backup("manual")
+            if result["success"]:
+                flash(f"Backup completed successfully: {result['filename']}", "success")
+            else:
+                flash(f"Backup failed: {result.get('error', 'Unknown error')}", "danger")
+            return redirect(url_for("scrapped_cars_upload", _anchor="backupManagement"))
+        elif entry_method == "backup_schedule":
+            frequency = request.form.get("backup_frequency", "off")
+            backup_time = request.form.get("backup_time", "02:00")
+            weekday = request.form.get("backup_weekday", "0")
+            try:
+                weekday_number = int(weekday)
+            except ValueError:
+                weekday_number = -1
+            if (
+                frequency not in {"off", "daily", "weekly"}
+                or not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", backup_time)
+                or weekday_number not in range(7)
+            ):
+                flash("Select a valid backup frequency and time.", "danger")
+            else:
+                os.makedirs(PROVIEW_BACKUP_DIR, exist_ok=True)
+                config = {"frequency": frequency, "time": backup_time, "weekday": weekday_number}
+                with open(PROVIEW_BACKUP_CONFIG_PATH, "w", encoding="utf-8") as config_file:
+                    json.dump(config, config_file, indent=2)
+                flash("Automatic backup schedule saved.", "success")
+            return redirect(url_for("scrapped_cars_upload", _anchor="backupManagement"))
+        elif entry_method == "manual":
             manual_date = request.form.get("scrapped_date", "").strip()
             manual_count = request.form.get("scrapped_count", "").strip()
             try:
@@ -5834,6 +6000,9 @@ def scrapped_cars_upload():
         database_name=DB_NAME,
         schema_name="proview2",
         today=date.today().isoformat(),
+        backup_config=load_proview_backup_config(),
+        backup_history=proview_backup_history(),
+        backup_directory=os.path.relpath(PROVIEW_BACKUP_DIR, BASE_DIR),
     )
 
 
