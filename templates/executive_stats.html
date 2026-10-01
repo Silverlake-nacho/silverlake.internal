@@ -2168,7 +2168,7 @@
 
       function renderCurrentStatusDetails(groupLabel) {
         const data = currentStatusDataset[currentStatusMode] || {};
-        const columns = data.detail_columns || [];
+        const columns = (data.detail_columns_by_group || {})[groupLabel] || data.detail_columns || [];
         const statusIndex = columns.findIndex((column) => normalizeColumnName(column) === 'status');
         const insuranceIndex = columns.findIndex((column) => normalizeColumnName(column) === 'insurancecompany');
         const includeSoldNotPaid = Boolean(includeSoldNotPaidToggle?.checked);

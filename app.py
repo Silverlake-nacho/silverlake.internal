@@ -1711,7 +1711,49 @@ EXECUTIVE_CURRENT_STATUS_LABELS = (
     "Auction vehicles sold, not collected",
     "Vehicles waiting to be cleared",
     "Vehicles still in Cleared status",
+    "Cleared vehicles waiting to be inventoried",
 )
+
+PINNACLE_WAITING_INVENTORY_LABEL = EXECUTIVE_CURRENT_STATUS_LABELS[-1]
+
+
+def fetch_pinnacle_cleared_waiting_inventory(include_details: bool = True):
+    """Return Pinnacle vehicles that are cleared but not yet inventoried."""
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            SELECT
+                veh.regnumber AS "Registration",
+                st.vstockno AS "Stock Number",
+                md.modelname AS "Model",
+                veh.cleared AS "Cleared",
+                vehe.crushed AS "Crushed",
+                vehe.inventoried AS "Inventoried",
+                vehe.todismantling AS "To Dismantling",
+                vehe.dismantled AS "Dismantled"
+            FROM vehicle veh
+            LEFT JOIN model md ON md.model_id = veh.model_id
+            LEFT JOIN vehicleevent vehe ON vehe.stocknumber_id = veh.stocknumber_id
+            LEFT JOIN stocknumber st ON st.stocknumber_id = veh.stocknumber_id
+            WHERE veh.classify_id = 189
+              AND veh.cleared IS NOT NULL
+              AND vehe.inventoried IS NULL
+              AND vehe.dismantled IS NULL
+              AND veh.regnumber IS NOT NULL
+              AND vehe.crushed IS NULL
+              AND veh.location_id NOT IN (11045)
+            ORDER BY veh.stocknumber_id DESC
+            """
+        )
+        rows = cur.fetchall()
+        columns = [description[0] for description in cur.description]
+        return columns, rows if include_details else [], len(rows)
+    finally:
+        cur.close()
+        conn.close()
 
 
 def fetch_atlas_executive_current_status_counts(
@@ -1936,6 +1978,13 @@ def build_executive_current_status_context(
             fetch_atlas_executive_status_details(start_date, end_date, date_mode)
         )
 
+    pinnacle_columns, pinnacle_rows, pinnacle_count = (
+        fetch_pinnacle_cleared_waiting_inventory(include_details)
+    )
+    pinnacle_summary = (PINNACLE_WAITING_INVENTORY_LABEL, pinnacle_count)
+    current_rows.append(pinnacle_summary)
+    selected_rows.append(pinnacle_summary)
+
     def split_detail_groups(columns, rows):
         if not columns:
             return [], {label: [] for label in EXECUTIVE_CURRENT_STATUS_LABELS}
@@ -1947,6 +1996,7 @@ def build_executive_current_status_context(
             groups.setdefault(group, []).append(
                 [value for index, value in enumerate(row) if index != group_index]
             )
+        groups[PINNACLE_WAITING_INVENTORY_LABEL] = pinnacle_rows
         return visible_columns, groups
 
     current_detail_columns, current_detail_groups = split_detail_groups(
@@ -1955,6 +2005,9 @@ def build_executive_current_status_context(
     selected_detail_columns, selected_detail_groups = split_detail_groups(
         selected_detail_columns, selected_detail_rows
     )
+    detail_columns_by_group = {
+        PINNACLE_WAITING_INVENTORY_LABEL: pinnacle_columns,
+    }
     sold_label = EXECUTIVE_CURRENT_STATUS_LABELS[1]
 
     def sold_only(columns, rows):
@@ -1974,6 +2027,7 @@ def build_executive_current_status_context(
             "detail_columns": current_detail_columns,
             "detail_rows": sold_only(current_detail_columns, current_detail_groups[sold_label]),
             "detail_groups": current_detail_groups,
+            "detail_columns_by_group": detail_columns_by_group,
         },
         "selected": {
             "rows": selected_rows,
@@ -1983,6 +2037,7 @@ def build_executive_current_status_context(
             "detail_columns": selected_detail_columns,
             "detail_rows": sold_only(selected_detail_columns, selected_detail_groups[sold_label]),
             "detail_groups": selected_detail_groups,
+            "detail_columns_by_group": detail_columns_by_group,
         },
     }
 
@@ -6056,7 +6111,9 @@ def executive_stats_details():
         group_label = request.args.get("status_group", EXECUTIVE_CURRENT_STATUS_LABELS[0])
         status_data = current_status_context[status_mode]
         rows = status_data.get("detail_groups", {}).get(group_label, [])
-        columns = status_data.get("detail_columns", [])
+        columns = status_data.get("detail_columns_by_group", {}).get(
+            group_label, status_data.get("detail_columns", [])
+        )
         include_sold_not_paid = request.args.get("include_sold_not_paid") == "1"
         include_iaa = request.args.get("include_iaa") == "1"
         if group_label == EXECUTIVE_CURRENT_STATUS_LABELS[1] and "Status" in columns:
