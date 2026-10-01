@@ -6189,16 +6189,23 @@ def executive_stats_details():
         )
         include_sold_not_paid = request.args.get("include_sold_not_paid") == "1"
         include_iaa = request.args.get("include_iaa") == "1"
-        if group_label == EXECUTIVE_CURRENT_STATUS_LABELS[1] and "Status" in columns:
+        iaa_only = request.args.get("iaa_only") == "1"
+        if export_excel and group_label == EXECUTIVE_CURRENT_STATUS_LABELS[1] and "Status" in columns:
             status_index = columns.index("Status")
             allowed_statuses = {"Sold", "Sold Not Paid"} if include_sold_not_paid else {"Sold"}
             rows = [row for row in rows if row[status_index] in allowed_statuses]
-        if group_label == EXECUTIVE_CURRENT_STATUS_LABELS[2] and "InsuranceCompany" in columns and not include_iaa:
+        if export_excel and group_label == EXECUTIVE_CURRENT_STATUS_LABELS[2] and "InsuranceCompany" in columns:
             insurance_index = columns.index("InsuranceCompany")
-            rows = [
-                row for row in rows
-                if str(row[insurance_index] or "").strip().upper() != "IAA"
-            ]
+            if iaa_only:
+                rows = [
+                    row for row in rows
+                    if str(row[insurance_index] or "").strip().upper() == "IAA"
+                ]
+            elif not include_iaa:
+                rows = [
+                    row for row in rows
+                    if str(row[insurance_index] or "").strip().upper() != "IAA"
+                ]
         if export_excel:
             return send_executive_details_excel(columns, rows, group_label)
         return jsonify(
