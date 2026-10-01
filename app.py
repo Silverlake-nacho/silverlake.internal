@@ -1712,14 +1712,24 @@ EXECUTIVE_CURRENT_STATUS_LABELS = (
     "Vehicles waiting to be cleared",
     "Vehicles still in Cleared status",
     "Cleared vehicles waiting to be inventoried",
+    "Vehicles waiting to come into Workshop",
 )
 
-PINNACLE_WAITING_INVENTORY_LABEL = EXECUTIVE_CURRENT_STATUS_LABELS[-1]
+PINNACLE_WAITING_INVENTORY_LABEL = EXECUTIVE_CURRENT_STATUS_LABELS[-2]
+PINNACLE_WAITING_WORKSHOP_LABEL = EXECUTIVE_CURRENT_STATUS_LABELS[-1]
 
 
-def fetch_pinnacle_cleared_waiting_inventory(include_details: bool = True):
-    """Return Pinnacle vehicles that are cleared but not yet inventoried."""
+def _fetch_pinnacle_vehicle_event_status(
+    event_condition: str, include_details: bool = True
+):
+    """Run a Current Vehicle Status query using a trusted event condition."""
 
+    allowed_conditions = {
+        "vehe.inventoried IS NULL",
+        "vehe.todismantling IS NOT NULL",
+    }
+    if event_condition not in allowed_conditions:
+        raise ValueError("Unsupported Pinnacle vehicle event condition")
     conn = get_db_connection()
     cur = conn.cursor()
     try:
@@ -1748,7 +1758,7 @@ def fetch_pinnacle_cleared_waiting_inventory(include_details: bool = True):
             LEFT JOIN stocknumber st ON st.stocknumber_id = veh.stocknumber_id
             WHERE veh.classify_id = 189
               AND veh.cleared IS NOT NULL
-              AND vehe.inventoried IS NULL
+              AND {event_condition}
               AND vehe.dismantled IS NULL
               AND veh.regnumber IS NOT NULL
               AND vehe.crushed IS NULL
@@ -1764,6 +1774,22 @@ def fetch_pinnacle_cleared_waiting_inventory(include_details: bool = True):
     finally:
         cur.close()
         conn.close()
+
+
+def fetch_pinnacle_cleared_waiting_inventory(include_details: bool = True):
+    """Return Pinnacle vehicles that are cleared but not yet inventoried."""
+
+    return _fetch_pinnacle_vehicle_event_status(
+        "vehe.inventoried IS NULL", include_details
+    )
+
+
+def fetch_pinnacle_waiting_workshop(include_details: bool = True):
+    """Return Pinnacle vehicles waiting to come into the workshop."""
+
+    return _fetch_pinnacle_vehicle_event_status(
+        "vehe.todismantling IS NOT NULL", include_details
+    )
 
 
 def fetch_atlas_executive_current_status_counts(
@@ -1994,6 +2020,12 @@ def build_executive_current_status_context(
     pinnacle_summary = (PINNACLE_WAITING_INVENTORY_LABEL, pinnacle_count)
     current_rows.append(pinnacle_summary)
     selected_rows.append(pinnacle_summary)
+    workshop_columns, workshop_rows, workshop_count = fetch_pinnacle_waiting_workshop(
+        include_details
+    )
+    workshop_summary = (PINNACLE_WAITING_WORKSHOP_LABEL, workshop_count)
+    current_rows.append(workshop_summary)
+    selected_rows.append(workshop_summary)
 
     def split_detail_groups(columns, rows):
         if not columns:
@@ -2007,6 +2039,7 @@ def build_executive_current_status_context(
                 [value for index, value in enumerate(row) if index != group_index]
             )
         groups[PINNACLE_WAITING_INVENTORY_LABEL] = pinnacle_rows
+        groups[PINNACLE_WAITING_WORKSHOP_LABEL] = workshop_rows
         return visible_columns, groups
 
     current_detail_columns, current_detail_groups = split_detail_groups(
@@ -2017,6 +2050,7 @@ def build_executive_current_status_context(
     )
     detail_columns_by_group = {
         PINNACLE_WAITING_INVENTORY_LABEL: pinnacle_columns,
+        PINNACLE_WAITING_WORKSHOP_LABEL: workshop_columns,
     }
     sold_label = EXECUTIVE_CURRENT_STATUS_LABELS[1]
 
@@ -2063,6 +2097,10 @@ def fetch_executive_current_status_group_details(
 
     if group_label == PINNACLE_WAITING_INVENTORY_LABEL:
         columns, rows, _ = fetch_pinnacle_cleared_waiting_inventory()
+        return columns, rows
+
+    if group_label == PINNACLE_WAITING_WORKSHOP_LABEL:
+        columns, rows, _ = fetch_pinnacle_waiting_workshop()
         return columns, rows
 
     if group_label not in EXECUTIVE_CURRENT_STATUS_LABELS:
