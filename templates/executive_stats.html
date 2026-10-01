@@ -1033,6 +1033,10 @@
                 <input class="form-check-input" type="checkbox" id="includeIaaToggle">
                 <label class="form-check-label text-success" for="includeIaaToggle">Include IAA</label>
               </div>
+              <div class="form-check d-none" id="iaaOnlyWrapper">
+                <input class="form-check-input" type="checkbox" id="iaaOnlyToggle">
+                <label class="form-check-label text-success" for="iaaOnlyToggle">IAA only</label>
+              </div>
             </div>
             <div class="vehicle-table-frame">
               <table id="currentStatusDetailsModalTable" class="table table-striped table-sm align-middle vehicle-details-table">
@@ -1116,6 +1120,8 @@
       const includeSoldNotPaidToggle = document.getElementById('includeSoldNotPaidToggle');
       const includeIaaWrapper = document.getElementById('includeIaaWrapper');
       const includeIaaToggle = document.getElementById('includeIaaToggle');
+      const iaaOnlyWrapper = document.getElementById('iaaOnlyWrapper');
+      const iaaOnlyToggle = document.getElementById('iaaOnlyToggle');
       const vehicleSoldTableBody = document.getElementById('vehicleSoldTableBody');
       const vehicleSoldDateRangeLabel = document.getElementById('vehicleSoldDateRangeLabel');
       const vehicleSoldEntityHeader = document.getElementById('vehicleSoldEntityHeader');
@@ -2130,18 +2136,25 @@
         currentStatusDetailOptions?.classList.toggle('d-none', !soldGroup && !waitingGroup);
         includeSoldNotPaidWrapper?.classList.toggle('d-none', !soldGroup);
         includeIaaWrapper?.classList.toggle('d-none', !waitingGroup);
+        iaaOnlyWrapper?.classList.toggle('d-none', !waitingGroup);
         if (!soldGroup && includeSoldNotPaidToggle) includeSoldNotPaidToggle.checked = false;
         if (!waitingGroup && includeIaaToggle) includeIaaToggle.checked = false;
+        if (!waitingGroup && iaaOnlyToggle) iaaOnlyToggle.checked = false;
         if (currentStatusDetailsDownload) {
           currentStatusDetailsDownload.href = buildDetailsExcelUrl('current_status', {
             status_mode: currentStatusMode,
             status_group: groupLabel,
             include_sold_not_paid: includeSoldNotPaidToggle?.checked ? '1' : '0',
             include_iaa: includeIaaToggle?.checked ? '1' : '0',
+            iaa_only: iaaOnlyToggle?.checked ? '1' : '0',
           });
         }
         const existingData = currentStatusDataset[currentStatusMode] || {};
-        if (!(existingData.detail_columns || []).length) {
+        const groupColumns = (existingData.detail_columns_by_group || {})[groupLabel];
+        const hasLoadedGroup = Array.isArray(groupColumns)
+          ? groupColumns.length > 0
+          : (existingData.detail_columns || []).length > 0;
+        if (!hasLoadedGroup) {
           currentStatusDetailsModalLabel.textContent = `${groupLabel} Details`;
           currentStatusDetailsModalHeader.innerHTML = '';
           currentStatusDetailsModalFilterRow.innerHTML = '';
@@ -2149,7 +2162,10 @@
           bootstrap.Modal.getOrCreateInstance(currentStatusDetailsModalElement).show();
           try {
             if (!currentStatusDetailsRequest) {
-              currentStatusDetailsRequest = fetch(buildDetailsUrl('current_status'), { cache: 'no-store' })
+              const detailsUrl = new URL(buildDetailsUrl('current_status'));
+              detailsUrl.searchParams.set('status_mode', currentStatusMode);
+              detailsUrl.searchParams.set('status_group', groupLabel);
+              currentStatusDetailsRequest = fetch(detailsUrl, { cache: 'no-store' })
                 .then((response) => {
                   if (!response.ok) throw new Error('Unable to load vehicle status details');
                   return response.json();
@@ -2157,7 +2173,11 @@
                 .finally(() => { currentStatusDetailsRequest = null; });
             }
             const payload = await currentStatusDetailsRequest;
-            currentStatusDataset = payload.current_status || currentStatusDataset;
+            const modeData = currentStatusDataset[payload.status_mode] || {};
+            modeData.detail_columns_by_group = modeData.detail_columns_by_group || {};
+            modeData.detail_groups = modeData.detail_groups || {};
+            modeData.detail_columns_by_group[payload.status_group] = payload.detail_columns || [];
+            modeData.detail_groups[payload.status_group] = payload.detail_rows || [];
           } catch (error) {
             currentStatusDetailsModalBody.innerHTML = `<tr><td class="text-danger text-center py-4">${escapeHtml(error.message)}</td></tr>`;
             return;
@@ -2168,11 +2188,12 @@
 
       function renderCurrentStatusDetails(groupLabel) {
         const data = currentStatusDataset[currentStatusMode] || {};
-        const columns = data.detail_columns || [];
+        const columns = (data.detail_columns_by_group || {})[groupLabel] || data.detail_columns || [];
         const statusIndex = columns.findIndex((column) => normalizeColumnName(column) === 'status');
         const insuranceIndex = columns.findIndex((column) => normalizeColumnName(column) === 'insurancecompany');
         const includeSoldNotPaid = Boolean(includeSoldNotPaidToggle?.checked);
         const includeIaa = Boolean(includeIaaToggle?.checked);
+        const iaaOnly = Boolean(iaaOnlyToggle?.checked);
         const rows = ((data.detail_groups || {})[groupLabel] || []).filter((row) => {
           if (groupLabel === 'Auction vehicles sold, not collected' && statusIndex >= 0) {
             const status = String(row[statusIndex] || '').trim().toLowerCase();
@@ -2180,7 +2201,8 @@
           }
           if (groupLabel === 'Vehicles waiting to be cleared' && insuranceIndex >= 0) {
             const company = String(row[insuranceIndex] || '').trim().toUpperCase();
-            if (!includeIaa && company === 'IAA') return false;
+            if (iaaOnly && company !== 'IAA') return false;
+            if (!iaaOnly && !includeIaa && company === 'IAA') return false;
           }
           return true;
         });
@@ -2190,6 +2212,7 @@
             status_group: groupLabel,
             include_sold_not_paid: includeSoldNotPaid ? '1' : '0',
             include_iaa: includeIaa ? '1' : '0',
+            iaa_only: iaaOnly ? '1' : '0',
           });
         }
         if (currentStatusDetailsDataTable) {
@@ -2243,6 +2266,11 @@
         if (activeCurrentStatusGroup) renderCurrentStatusDetails(activeCurrentStatusGroup);
       });
       includeIaaToggle?.addEventListener('change', () => {
+        if (includeIaaToggle.checked && iaaOnlyToggle) iaaOnlyToggle.checked = false;
+        if (activeCurrentStatusGroup) renderCurrentStatusDetails(activeCurrentStatusGroup);
+      });
+      iaaOnlyToggle?.addEventListener('change', () => {
+        if (iaaOnlyToggle.checked && includeIaaToggle) includeIaaToggle.checked = false;
         if (activeCurrentStatusGroup) renderCurrentStatusDetails(activeCurrentStatusGroup);
       });
 

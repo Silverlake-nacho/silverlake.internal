@@ -1711,7 +1711,85 @@ EXECUTIVE_CURRENT_STATUS_LABELS = (
     "Auction vehicles sold, not collected",
     "Vehicles waiting to be cleared",
     "Vehicles still in Cleared status",
+    "Cleared vehicles waiting to be inventoried",
+    "Vehicles waiting to come into Workshop",
 )
+
+PINNACLE_WAITING_INVENTORY_LABEL = EXECUTIVE_CURRENT_STATUS_LABELS[-2]
+PINNACLE_WAITING_WORKSHOP_LABEL = EXECUTIVE_CURRENT_STATUS_LABELS[-1]
+
+
+def _fetch_pinnacle_vehicle_event_status(
+    event_condition: str, include_details: bool = True
+):
+    """Run a Current Vehicle Status query using a trusted event condition."""
+
+    allowed_conditions = {
+        "vehe.inventoried IS NULL",
+        "vehe.todismantling IS NOT NULL",
+    }
+    if event_condition not in allowed_conditions:
+        raise ValueError("Unsupported Pinnacle vehicle event condition")
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        select_clause = (
+            """
+                veh.regnumber AS "Registration",
+                st.vstockno AS "Stock Number",
+                md.modelname AS "Model",
+                veh.cleared AS "Cleared",
+                vehe.crushed AS "Crushed",
+                vehe.inventoried AS "Inventoried",
+                vehe.todismantling AS "To Dismantling",
+                vehe.dismantled AS "Dismantled"
+            """
+            if include_details
+            else "COUNT(*) AS vehicle_count"
+        )
+        order_clause = "ORDER BY veh.stocknumber_id DESC" if include_details else ""
+        cur.execute(
+            f"""
+            SELECT
+                {select_clause}
+            FROM vehicle veh
+            LEFT JOIN model md ON md.model_id = veh.model_id
+            LEFT JOIN vehicleevent vehe ON vehe.stocknumber_id = veh.stocknumber_id
+            LEFT JOIN stocknumber st ON st.stocknumber_id = veh.stocknumber_id
+            WHERE veh.classify_id = 189
+              AND veh.cleared IS NOT NULL
+              AND {event_condition}
+              AND vehe.dismantled IS NULL
+              AND veh.regnumber IS NOT NULL
+              AND vehe.crushed IS NULL
+              AND veh.location_id NOT IN (11045)
+            {order_clause}
+            """
+        )
+        rows = cur.fetchall()
+        if not include_details:
+            return [], [], int(rows[0][0] or 0)
+        columns = [description[0] for description in cur.description]
+        return columns, rows, len(rows)
+    finally:
+        cur.close()
+        conn.close()
+
+
+def fetch_pinnacle_cleared_waiting_inventory(include_details: bool = True):
+    """Return Pinnacle vehicles that are cleared but not yet inventoried."""
+
+    return _fetch_pinnacle_vehicle_event_status(
+        "vehe.inventoried IS NULL", include_details
+    )
+
+
+def fetch_pinnacle_waiting_workshop(include_details: bool = True):
+    """Return Pinnacle vehicles waiting to come into the workshop."""
+
+    return _fetch_pinnacle_vehicle_event_status(
+        "vehe.todismantling IS NOT NULL", include_details
+    )
 
 
 def fetch_atlas_executive_current_status_counts(
@@ -1936,6 +2014,19 @@ def build_executive_current_status_context(
             fetch_atlas_executive_status_details(start_date, end_date, date_mode)
         )
 
+    pinnacle_columns, pinnacle_rows, pinnacle_count = (
+        fetch_pinnacle_cleared_waiting_inventory(include_details)
+    )
+    pinnacle_summary = (PINNACLE_WAITING_INVENTORY_LABEL, pinnacle_count)
+    current_rows.append(pinnacle_summary)
+    selected_rows.append(pinnacle_summary)
+    workshop_columns, workshop_rows, workshop_count = fetch_pinnacle_waiting_workshop(
+        include_details
+    )
+    workshop_summary = (PINNACLE_WAITING_WORKSHOP_LABEL, workshop_count)
+    current_rows.append(workshop_summary)
+    selected_rows.append(workshop_summary)
+
     def split_detail_groups(columns, rows):
         if not columns:
             return [], {label: [] for label in EXECUTIVE_CURRENT_STATUS_LABELS}
@@ -1947,6 +2038,8 @@ def build_executive_current_status_context(
             groups.setdefault(group, []).append(
                 [value for index, value in enumerate(row) if index != group_index]
             )
+        groups[PINNACLE_WAITING_INVENTORY_LABEL] = pinnacle_rows
+        groups[PINNACLE_WAITING_WORKSHOP_LABEL] = workshop_rows
         return visible_columns, groups
 
     current_detail_columns, current_detail_groups = split_detail_groups(
@@ -1955,6 +2048,10 @@ def build_executive_current_status_context(
     selected_detail_columns, selected_detail_groups = split_detail_groups(
         selected_detail_columns, selected_detail_rows
     )
+    detail_columns_by_group = {
+        PINNACLE_WAITING_INVENTORY_LABEL: pinnacle_columns,
+        PINNACLE_WAITING_WORKSHOP_LABEL: workshop_columns,
+    }
     sold_label = EXECUTIVE_CURRENT_STATUS_LABELS[1]
 
     def sold_only(columns, rows):
@@ -1974,6 +2071,7 @@ def build_executive_current_status_context(
             "detail_columns": current_detail_columns,
             "detail_rows": sold_only(current_detail_columns, current_detail_groups[sold_label]),
             "detail_groups": current_detail_groups,
+            "detail_columns_by_group": detail_columns_by_group,
         },
         "selected": {
             "rows": selected_rows,
@@ -1983,8 +2081,43 @@ def build_executive_current_status_context(
             "detail_columns": selected_detail_columns,
             "detail_rows": sold_only(selected_detail_columns, selected_detail_groups[sold_label]),
             "detail_groups": selected_detail_groups,
+            "detail_columns_by_group": detail_columns_by_group,
         },
     }
+
+
+def fetch_executive_current_status_group_details(
+    group_label: str,
+    start_date: date,
+    end_date: date,
+    date_mode: str,
+    status_mode: str,
+):
+    """Fetch only the detail rows requested by the Current Vehicle Status modal."""
+
+    if group_label == PINNACLE_WAITING_INVENTORY_LABEL:
+        columns, rows, _ = fetch_pinnacle_cleared_waiting_inventory()
+        return columns, rows
+
+    if group_label == PINNACLE_WAITING_WORKSHOP_LABEL:
+        columns, rows, _ = fetch_pinnacle_waiting_workshop()
+        return columns, rows
+
+    if group_label not in EXECUTIVE_CURRENT_STATUS_LABELS:
+        return [], []
+
+    detail_args = () if status_mode == "current" else (start_date, end_date, date_mode)
+    _, columns, rows = fetch_atlas_executive_status_details(*detail_args)
+    group_index = columns.index("StatusGroup")
+    visible_columns = [
+        column for index, column in enumerate(columns) if index != group_index
+    ]
+    detail_rows = [
+        [value for index, value in enumerate(row) if index != group_index]
+        for row in rows
+        if row[group_index] == group_label
+    ]
+    return visible_columns, detail_rows
 
 
 def normalize_vehicle_group_mode(group_mode: str) -> str:
@@ -6042,41 +6175,57 @@ def executive_stats_details():
         filter_type, start_date_str, end_date_str
     )
     resolved_date_mode = normalize_vehicle_date_mode(date_mode)
+    if section == "current_status":
+        status_mode = request.args.get("status_mode", "current")
+        if status_mode not in {"current", "selected"}:
+            status_mode = "current"
+        group_label = request.args.get("status_group", EXECUTIVE_CURRENT_STATUS_LABELS[0])
+        columns, rows = fetch_executive_current_status_group_details(
+            group_label,
+            start_date,
+            end_date,
+            resolved_date_mode,
+            status_mode,
+        )
+        include_sold_not_paid = request.args.get("include_sold_not_paid") == "1"
+        include_iaa = request.args.get("include_iaa") == "1"
+        iaa_only = request.args.get("iaa_only") == "1"
+        if export_excel and group_label == EXECUTIVE_CURRENT_STATUS_LABELS[1] and "Status" in columns:
+            status_index = columns.index("Status")
+            allowed_statuses = {"Sold", "Sold Not Paid"} if include_sold_not_paid else {"Sold"}
+            rows = [row for row in rows if row[status_index] in allowed_statuses]
+        if export_excel and group_label == EXECUTIVE_CURRENT_STATUS_LABELS[2] and "InsuranceCompany" in columns:
+            insurance_index = columns.index("InsuranceCompany")
+            if iaa_only:
+                rows = [
+                    row for row in rows
+                    if str(row[insurance_index] or "").strip().upper() == "IAA"
+                ]
+            elif not include_iaa:
+                rows = [
+                    row for row in rows
+                    if str(row[insurance_index] or "").strip().upper() != "IAA"
+                ]
+        if export_excel:
+            return send_executive_details_excel(columns, rows, group_label)
+        return jsonify(
+            {
+                "status_mode": status_mode,
+                "status_group": group_label,
+                "detail_columns": columns,
+                "detail_rows": [
+                    [serialize_vehicle_detail_cell(value) for value in row]
+                    for row in rows
+                ],
+            }
+        )
+
     current_status_context = build_executive_current_status_context(
         start_date, end_date, resolved_date_mode
     )
     current_status_context["selected"]["date_range_label"] = describe_date_range(
         filter_type, start_date, end_date
     )
-
-    if section == "current_status" and export_excel:
-        status_mode = request.args.get("status_mode", "current")
-        if status_mode not in {"current", "selected"}:
-            status_mode = "current"
-        group_label = request.args.get("status_group", EXECUTIVE_CURRENT_STATUS_LABELS[0])
-        status_data = current_status_context[status_mode]
-        rows = status_data.get("detail_groups", {}).get(group_label, [])
-        columns = status_data.get("detail_columns", [])
-        include_sold_not_paid = request.args.get("include_sold_not_paid") == "1"
-        include_iaa = request.args.get("include_iaa") == "1"
-        if group_label == EXECUTIVE_CURRENT_STATUS_LABELS[1] and "Status" in columns:
-            status_index = columns.index("Status")
-            allowed_statuses = {"Sold", "Sold Not Paid"} if include_sold_not_paid else {"Sold"}
-            rows = [row for row in rows if row[status_index] in allowed_statuses]
-        if group_label == EXECUTIVE_CURRENT_STATUS_LABELS[2] and "InsuranceCompany" in columns and not include_iaa:
-            insurance_index = columns.index("InsuranceCompany")
-            rows = [
-                row for row in rows
-                if str(row[insurance_index] or "").strip().upper() != "IAA"
-            ]
-        return send_executive_details_excel(
-            columns,
-            rows,
-            group_label,
-        )
-
-    if section == "current_status":
-        return jsonify({"current_status": current_status_context})
 
     if export_excel and export_dataset == "uncollected_sold":
         status_mode = request.args.get("status_mode", "current")
