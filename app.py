@@ -1723,9 +1723,8 @@ def fetch_pinnacle_cleared_waiting_inventory(include_details: bool = True):
     conn = get_db_connection()
     cur = conn.cursor()
     try:
-        cur.execute(
+        select_clause = (
             """
-            SELECT
                 veh.regnumber AS "Registration",
                 st.vstockno AS "Stock Number",
                 md.modelname AS "Model",
@@ -1734,6 +1733,15 @@ def fetch_pinnacle_cleared_waiting_inventory(include_details: bool = True):
                 vehe.inventoried AS "Inventoried",
                 vehe.todismantling AS "To Dismantling",
                 vehe.dismantled AS "Dismantled"
+            """
+            if include_details
+            else "COUNT(*) AS vehicle_count"
+        )
+        order_clause = "ORDER BY veh.stocknumber_id DESC" if include_details else ""
+        cur.execute(
+            f"""
+            SELECT
+                {select_clause}
             FROM vehicle veh
             LEFT JOIN model md ON md.model_id = veh.model_id
             LEFT JOIN vehicleevent vehe ON vehe.stocknumber_id = veh.stocknumber_id
@@ -1745,12 +1753,14 @@ def fetch_pinnacle_cleared_waiting_inventory(include_details: bool = True):
               AND veh.regnumber IS NOT NULL
               AND vehe.crushed IS NULL
               AND veh.location_id NOT IN (11045)
-            ORDER BY veh.stocknumber_id DESC
+            {order_clause}
             """
         )
         rows = cur.fetchall()
+        if not include_details:
+            return [], [], int(rows[0][0] or 0)
         columns = [description[0] for description in cur.description]
-        return columns, rows if include_details else [], len(rows)
+        return columns, rows, len(rows)
     finally:
         cur.close()
         conn.close()
@@ -2040,6 +2050,36 @@ def build_executive_current_status_context(
             "detail_columns_by_group": detail_columns_by_group,
         },
     }
+
+
+def fetch_executive_current_status_group_details(
+    group_label: str,
+    start_date: date,
+    end_date: date,
+    date_mode: str,
+    status_mode: str,
+):
+    """Fetch only the detail rows requested by the Current Vehicle Status modal."""
+
+    if group_label == PINNACLE_WAITING_INVENTORY_LABEL:
+        columns, rows, _ = fetch_pinnacle_cleared_waiting_inventory()
+        return columns, rows
+
+    if group_label not in EXECUTIVE_CURRENT_STATUS_LABELS:
+        return [], []
+
+    detail_args = () if status_mode == "current" else (start_date, end_date, date_mode)
+    _, columns, rows = fetch_atlas_executive_status_details(*detail_args)
+    group_index = columns.index("StatusGroup")
+    visible_columns = [
+        column for index, column in enumerate(columns) if index != group_index
+    ]
+    detail_rows = [
+        [value for index, value in enumerate(row) if index != group_index]
+        for row in rows
+        if row[group_index] == group_label
+    ]
+    return visible_columns, detail_rows
 
 
 def normalize_vehicle_group_mode(group_mode: str) -> str:
@@ -6097,22 +6137,17 @@ def executive_stats_details():
         filter_type, start_date_str, end_date_str
     )
     resolved_date_mode = normalize_vehicle_date_mode(date_mode)
-    current_status_context = build_executive_current_status_context(
-        start_date, end_date, resolved_date_mode
-    )
-    current_status_context["selected"]["date_range_label"] = describe_date_range(
-        filter_type, start_date, end_date
-    )
-
-    if section == "current_status" and export_excel:
+    if section == "current_status":
         status_mode = request.args.get("status_mode", "current")
         if status_mode not in {"current", "selected"}:
             status_mode = "current"
         group_label = request.args.get("status_group", EXECUTIVE_CURRENT_STATUS_LABELS[0])
-        status_data = current_status_context[status_mode]
-        rows = status_data.get("detail_groups", {}).get(group_label, [])
-        columns = status_data.get("detail_columns_by_group", {}).get(
-            group_label, status_data.get("detail_columns", [])
+        columns, rows = fetch_executive_current_status_group_details(
+            group_label,
+            start_date,
+            end_date,
+            resolved_date_mode,
+            status_mode,
         )
         include_sold_not_paid = request.args.get("include_sold_not_paid") == "1"
         include_iaa = request.args.get("include_iaa") == "1"
@@ -6126,14 +6161,26 @@ def executive_stats_details():
                 row for row in rows
                 if str(row[insurance_index] or "").strip().upper() != "IAA"
             ]
-        return send_executive_details_excel(
-            columns,
-            rows,
-            group_label,
+        if export_excel:
+            return send_executive_details_excel(columns, rows, group_label)
+        return jsonify(
+            {
+                "status_mode": status_mode,
+                "status_group": group_label,
+                "detail_columns": columns,
+                "detail_rows": [
+                    [serialize_vehicle_detail_cell(value) for value in row]
+                    for row in rows
+                ],
+            }
         )
 
-    if section == "current_status":
-        return jsonify({"current_status": current_status_context})
+    current_status_context = build_executive_current_status_context(
+        start_date, end_date, resolved_date_mode
+    )
+    current_status_context["selected"]["date_range_label"] = describe_date_range(
+        filter_type, start_date, end_date
+    )
 
     if export_excel and export_dataset == "uncollected_sold":
         status_mode = request.args.get("status_mode", "current")

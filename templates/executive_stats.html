@@ -2141,7 +2141,11 @@
           });
         }
         const existingData = currentStatusDataset[currentStatusMode] || {};
-        if (!(existingData.detail_columns || []).length) {
+        const groupColumns = (existingData.detail_columns_by_group || {})[groupLabel];
+        const hasLoadedGroup = Array.isArray(groupColumns)
+          ? groupColumns.length > 0
+          : (existingData.detail_columns || []).length > 0;
+        if (!hasLoadedGroup) {
           currentStatusDetailsModalLabel.textContent = `${groupLabel} Details`;
           currentStatusDetailsModalHeader.innerHTML = '';
           currentStatusDetailsModalFilterRow.innerHTML = '';
@@ -2149,7 +2153,10 @@
           bootstrap.Modal.getOrCreateInstance(currentStatusDetailsModalElement).show();
           try {
             if (!currentStatusDetailsRequest) {
-              currentStatusDetailsRequest = fetch(buildDetailsUrl('current_status'), { cache: 'no-store' })
+              const detailsUrl = new URL(buildDetailsUrl('current_status'));
+              detailsUrl.searchParams.set('status_mode', currentStatusMode);
+              detailsUrl.searchParams.set('status_group', groupLabel);
+              currentStatusDetailsRequest = fetch(detailsUrl, { cache: 'no-store' })
                 .then((response) => {
                   if (!response.ok) throw new Error('Unable to load vehicle status details');
                   return response.json();
@@ -2157,7 +2164,11 @@
                 .finally(() => { currentStatusDetailsRequest = null; });
             }
             const payload = await currentStatusDetailsRequest;
-            currentStatusDataset = payload.current_status || currentStatusDataset;
+            const modeData = currentStatusDataset[payload.status_mode] || {};
+            modeData.detail_columns_by_group = modeData.detail_columns_by_group || {};
+            modeData.detail_groups = modeData.detail_groups || {};
+            modeData.detail_columns_by_group[payload.status_group] = payload.detail_columns || [];
+            modeData.detail_groups[payload.status_group] = payload.detail_rows || [];
           } catch (error) {
             currentStatusDetailsModalBody.innerHTML = `<tr><td class="text-danger text-center py-4">${escapeHtml(error.message)}</td></tr>`;
             return;
