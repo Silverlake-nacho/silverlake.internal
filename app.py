@@ -3583,7 +3583,20 @@ def fetch_image_timeline(start_date: date, end_date: date) -> List[dict]:
     cur = conn.cursor()
     cur.execute(
         """
-        SELECT DISTINCT ON (invl.invnumber)
+        WITH timeline_logs AS MATERIALIZED (
+            SELECT DISTINCT ON (invl.invnumber)
+                invl.invnumber,
+                invl.user_id,
+                invl.created
+            FROM inventorylog invl
+            WHERE invl.type_id = '902'
+              AND invl.created >= %s
+              AND invl.created < %s
+              AND invl.created::time >= TIME '06:00'
+              AND invl.created::time <= TIME '18:00'
+            ORDER BY invl.invnumber, invl.created
+        )
+        SELECT
             COALESCE(us.shortname, 'Unknown') AS shortname,
             invl.invnumber,
             invl.created,
@@ -3623,7 +3636,7 @@ def fetch_image_timeline(start_date: date, end_date: date) -> List[dict]:
                 ) THEN 'inventory'
                 ELSE 'inventory'
             END AS status
-        FROM inventorylog invl
+        FROM timeline_logs invl
         LEFT JOIN pinuser us ON us.user_id = invl.user_id
         LEFT JOIN inventory inv ON inv.invnumber = invl.invnumber
         LEFT JOIN sold ON sold.invnumber = invl.invnumber
@@ -3645,11 +3658,6 @@ def fetch_image_timeline(start_date: date, end_date: date) -> List[dict]:
             WHERE invnumber = invl.invnumber
               AND COALESCE(thumbnail, false) = false
         ) fullimg ON true
-        WHERE invl.type_id = '902'
-          AND invl.created >= %s
-          AND invl.created < %s
-          AND invl.created::time >= TIME '06:00'
-          AND invl.created::time <= TIME '18:00'
         ORDER BY invl.invnumber, invl.created
         """,
         (start_date, end_date),
@@ -3705,6 +3713,38 @@ def fetch_image_timeline(start_date: date, end_date: date) -> List[dict]:
             }
         )
     return timeline
+
+
+def fetch_image_timeline_stats(
+    start_date: date, end_date: date
+) -> Tuple[dict, dict, List[str]]:
+    """Fetch all timeline counters and user names with one inventory-log scan."""
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            SELECT COALESCE(us.shortname, 'Unknown') AS shortname,
+                   COUNT(*) AS image_count,
+                   COUNT(DISTINCT invl.invnumber) AS part_count
+            FROM inventorylog invl
+            LEFT JOIN pinuser us ON us.user_id = invl.user_id
+            WHERE invl.type_id = '902'
+              AND invl.created >= %s
+              AND invl.created < %s
+            GROUP BY COALESCE(us.shortname, 'Unknown')
+            ORDER BY shortname
+            """,
+            (start_date, end_date),
+        )
+        rows = cur.fetchall()
+    finally:
+        cur.close()
+        conn.close()
+
+    image_counts = {row[0]: int(row[1]) for row in rows}
+    part_counts = {row[0]: int(row[2]) for row in rows}
+    return image_counts, part_counts, [row[0] for row in rows]
 
 
 def fetch_stores_timeline(start_date: date, end_date: date) -> List[dict]:
@@ -5559,13 +5599,12 @@ def build_image_timeline_context(
     default_exclusions = load_stats_exclusions(current_user, "user")
     excluded_users = exclude_args or default_exclusions
     
-    stats_image_counts = dict(fetch_user_images(start_date, end_date))
-    stats_part_counts = dict(fetch_user_parts_imaged(start_date, end_date))
+    stats_image_counts, stats_part_counts, all_users = fetch_image_timeline_stats(
+        start_date, end_date
+    )
     
     raw_items = [item for item in raw_items if item["user"] not in excluded_users]
     raw_items = sorted(raw_items, key=lambda item: (item["user"], item["created"]))
-    all_users = fetch_timeline_users(start_date, end_date)
-
     grouped = defaultdict(lambda: defaultdict(list))
     for item in raw_items:
         day_key = item["created"].date()
