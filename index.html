@@ -1,0 +1,983 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Silverlake {{ mode_label }} Stats</title>
+	<link rel="icon" href="{{ url_for('static', filename='SLK Logo.png') }}">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+    <link rel="stylesheet" href="https://cdn.datatables.net/1.13.8/css/jquery.dataTables.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="https://cdn.datatables.net/1.13.8/js/jquery.dataTables.min.js"></script>
+    <style>
+      :root {
+        --sidebar-expanded: 260px;
+        --sidebar-collapsed: calc(var(--sidebar-expanded) * 0.3);
+        --sidebar-bg: #5c9c13;
+      }
+      body {
+        margin: 0;
+        background: url("{{ url_for('static', filename='background.jpg') }}") no-repeat center center fixed;
+        background-size: cover;
+        font-family: 'Montserrat', sans-serif;
+        color: black;
+      }
+      h1, h2, label {
+        color: #5c9c13;
+      }
+      .page-wrapper {
+        display: flex;
+        min-height: 100vh;
+      }
+      .sidebar {
+        width: var(--sidebar-collapsed);
+        background-color: var(--sidebar-bg);
+        color: #fff;
+        position: fixed;
+        inset: 0 auto 0 0;
+        overflow: hidden;
+        transition: width 0.3s ease;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        padding: 16px 12px;
+        z-index: 1000;
+      }
+      .sidebar:hover {
+        width: var(--sidebar-expanded);
+      }
+      .sidebar .brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 8px 10px;
+      }
+      .sidebar .logo-collapsed {
+        height: 34px;
+        opacity: 1;
+        transition: opacity 0.2s ease;
+      }
+      .sidebar .logo-expanded {
+        height: 34px;
+        opacity: 0;
+        transform: translateX(-6px);
+        transition: opacity 0.2s ease, transform 0.2s ease;
+      }
+      .sidebar:hover .logo-collapsed {
+        opacity: 0;
+      }
+      .sidebar:hover .logo-expanded {
+        opacity: 1;
+        transform: translateX(0);
+      }
+      .sidebar .brand-text {
+        font-weight: 700;
+        font-size: 1.05rem;
+        white-space: nowrap;
+        opacity: 0;
+        transition: opacity 0.2s ease;
+      }
+      .sidebar:hover .brand-text {
+        opacity: 1;
+      }
+      .sidebar .nav-section {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .sidebar .nav-link {
+        color: #fff;
+        font-weight: 700;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 10px 12px;
+        border-radius: 10px;
+        text-decoration: none;
+        transition: background-color 0.2s ease, color 0.2s ease;
+        font-size: 0.95rem;
+      }
+      .sidebar .nav-link i {
+        width: 20px;
+        text-align: center;
+        font-size: 1.15rem;
+      }
+      .sidebar .nav-link .link-text {
+        white-space: nowrap;
+        opacity: 0;
+        transform: translateX(-6px);
+        transition: opacity 0.2s ease, transform 0.2s ease;
+      }
+      .sidebar:hover .nav-link .link-text {
+        opacity: 1;
+        transform: translateX(0);
+      }
+      .sidebar .nav-link:hover,
+      .sidebar .nav-link.active {
+        background-color: rgba(255, 255, 255, 0.16);
+        color: #fff;
+      }
+      .sidebar-footer {
+        margin-top: auto;
+      }
+      .content {
+        flex: 1;
+        margin-left: var(--sidebar-collapsed);
+        transition: margin-left 0.3s ease;
+      }
+      .sidebar:hover ~ .content {
+        margin-left: var(--sidebar-expanded);
+      }
+      .content-inner {
+        padding: 24px;
+      }
+      .toggle-wrapper {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 1.5rem;
+      }
+      .toggle-label {
+        font-weight: 600;
+        color: #5c9c13;
+      }
+      .toggle {
+        position: relative;
+        width: 270px;
+        height: 48px;
+        background: #cde7b1;
+        border-radius: 999px;
+        box-shadow: inset 0 2px 4px rgba(0,0,0,0.15);
+        cursor: pointer;
+        border: 2px solid #5c9c13;
+        overflow: hidden;
+      }
+      .toggle input {
+        opacity: 0;
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        position: absolute;
+        inset: 0;
+        cursor: pointer;
+        z-index: 3;
+      }
+      .toggle-track {
+        position: absolute;
+        top: 4px;
+        left: 4px;
+        width: calc(50% - 8px);
+        height: calc(100% - 8px);
+        background: #5c9c13;
+        border-radius: 999px;
+        transition: transform 0.25s ease;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+        z-index: 1;
+      }
+      .toggle input:checked + .toggle-track {
+        transform: translateX(100%);
+      }
+      .toggle-labels {
+        position: relative;
+        z-index: 2;
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        height: 100%;
+        align-items: center;
+        text-align: center;
+        font-weight: 700;
+        color: #1f3b08;
+        pointer-events: none;
+      }
+      .toggle-labels span {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: color 0.2s ease;
+      }
+      .toggle input:checked ~ .toggle-labels span:first-child {
+        color: #2f2f2f;
+      }
+      .toggle input:not(:checked) ~ .toggle-labels span:last-child {
+        color: #2f2f2f;
+      }
+      .btn-primary, .btn-success {
+        background-color: #5c9c13;
+        border: none;
+      }
+      .btn-primary:hover, .btn-success:hover {
+        background-color: #4a8010;
+      }
+      .form-control {
+        background-color: #d6f5c1;
+        color: #333;
+        border: 1px solid #333;
+      }
+      .form-control:focus {
+        border-color: #5c9c13;
+        box-shadow: 0 0 5px #5c9c13;
+      }
+      table {
+        color: #f0f0f0;
+        background-color: #111;
+      }
+      th, td {
+        border-bottom: 1px solid #5c9c13;
+      }
+      .exclusion-card .exclusion-body {
+        display: none;
+      }
+      .exclusion-card:hover .exclusion-body,
+      .exclusion-card:focus-within .exclusion-body {
+        display: block;
+      }
+      .logo {
+        display: flex;
+        justify-content: flex-end;
+        margin-bottom: 20px;
+      }
+      .logo img {
+        width: 150px;
+        max-width: 50%;
+        height: auto;
+      }
+      .toggle-stack {
+        display: flex !important;
+        flex-direction: row;
+        gap: 0.75rem;
+        margin-bottom: 1.5rem;
+      }
+      .parts-breakdown-trigger {
+        cursor: pointer;
+        text-decoration: underline;
+        text-decoration-style: dotted;
+        text-decoration-thickness: 2px;
+        text-decoration-color: #5c9c13;
+      }
+      @media (max-width: 768px) {
+        :root {
+          --sidebar-expanded: 220px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page-wrapper">
+      <nav class="sidebar">
+        <div class="brand">
+          <img src="{{ url_for('static', filename='SLK Logo.png') }}" alt="Silverlake Collapsed Logo" class="logo-collapsed">
+          <img src="{{ url_for('static', filename='logo-slg-strip.svg') }}" alt="Silverlake Logo" class="logo-expanded">
+        </div>
+                <div class="nav-section">
+          <a href="{{ url_for('index') }}" class="nav-link{% if active_page == 'index' %} active{% endif %}">
+            <i class="fas fa-magnifying-glass-dollar"></i>
+            <span class="link-text">Opportunity Finder</span>
+          </a>
+          <a href="{{ url_for('image_lookup') }}" class="nav-link{% if active_page == 'image_lookup' %} active{% endif %}">
+            <i class="fas fa-image"></i>
+            <span class="link-text">Image Lookup</span>
+          </a>
+          <a href="{{ url_for('image_stats') }}" class="nav-link{% if active_page == 'image_stats' %} active{% endif %}">
+            <i class="fas fa-chart-pie"></i>
+            <span class="link-text">Image Stats</span>
+          </a>
+          <a href="{{ url_for('image_timeline') }}" class="nav-link{% if active_page == 'image_timeline' %} active{% endif %}">
+            <i class="fas fa-clock"></i>
+            <span class="link-text">Image Timeline</span>
+          </a>
+          <a href="{{ url_for('stores_timeline') }}" class="nav-link{% if active_page == 'stores_timeline' %} active{% endif %}">
+            <i class="fas fa-warehouse"></i>
+            <span class="link-text">Stores Timeline</span>
+          </a>
+          <a href="{{ url_for('stats') }}" class="nav-link{% if active_page == 'stats' %} active{% endif %}">
+            <i class="fas fa-chart-column"></i>
+            <span class="link-text">Sales Stats</span>
+          </a>
+          <a href="{{ url_for('inventory_stats') }}" class="nav-link{% if active_page == 'inventory_stats' %} active{% endif %}">
+            <i class="fas fa-boxes-stacked"></i>
+            <span class="link-text">Inventory Stats</span>
+          </a>
+          <a href="{{ url_for('vehicle_stats') }}" class="nav-link{% if active_page == 'vehicle_stats' %} active{% endif %}">
+            <i class="fas fa-car-side"></i>
+            <span class="link-text">Vehicle Stats</span>
+          </a>
+          <a href="{{ url_for('executive_stats') }}" class="nav-link{% if active_page == 'executive_stats' %} active{% endif %}">
+            <i class="fas fa-gauge-high"></i>
+            <span class="link-text">Executive Stats</span>
+          </a>
+          <a href="{{ url_for('crush_vehicles') }}" class="nav-link{% if active_page == 'crush_vehicles' %} active{% endif %}">
+            <i class="fas fa-car-burst"></i>
+            <span class="link-text">Crush Vehicles</span>
+          </a>
+          <a href="{{ url_for('logs') }}" class="nav-link{% if active_page == 'logs' %} active{% endif %}">
+            <i class="fas fa-clipboard-list"></i>
+            <span class="link-text">Logs</span>
+          </a>
+        </div>
+        <div class="sidebar-footer">
+          <a href="{{ url_for('logout') }}" class="nav-link">
+            <i class="fas fa-arrow-right-from-bracket"></i>
+            <span class="link-text">Logout ({{ current_user }})</span>
+          </a>
+        </div>
+      </nav>
+      <div class="content">
+        <div class="content-inner">
+          <div class="container">
+            <div class="logo">
+              <img src="{{ url_for('static', filename='logo-slg-strip.svg') }}" alt="Silverlake Logo">
+            </div>
+
+      <h1 class="mb-4 text-center">Silverlake Part Sales Opportunity Finder</h1>
+
+      <form method="get">
+        <div class="row">
+          <div class="col-md-4 mb-3 position-relative">
+            <label class="form-label">Stock Number</label>
+            <input type="text" name="stock_number" class="form-control" value="{{ form_defaults.stock_number }}">
+            <ul id="stock-suggestions" class="list-group" style="display: none; position: absolute; z-index: 1000; max-height: 150px; overflow-y: auto; width: 100%;"></ul>
+          </div>
+          <div class="col-md-4 mb-3">
+            <label class="form-label">Reg</label>
+            <input type="text" name="reg" class="form-control" value="{{ form_defaults.reg }}">
+          </div>
+          <div class="col-md-4 mb-3 d-flex align-items-end justify-content-end">
+            <button type="button" class="btn btn-outline-secondary" id="reset-search-fields">Reset</button>
+          </div>
+        </div>
+        <div class="row">
+          <div class="col-md-6 mb-3">
+            <label class="form-label">Model</label>
+            <input type="text" name="model" class="form-control" value="{{ form_defaults.model }}" required>
+            <ul id="model-suggestions" class="list-group" style="display: none; position: absolute; z-index: 1000; max-height: 150px; overflow-y: auto;"></ul>
+          </div>
+          <div class="col-md-2 mb-3">
+            <label class="form-label">Year</label>
+            <input type="number" name="year" class="form-control" value="{{ form_defaults.year }}" required>
+          </div>
+          <div class="col-md-4 mb-3">
+            <label class="form-label">Engine Code (Optional)</label>
+            <input type="text" name="engine_code" class="form-control" value="{{ form_defaults.engine_code }}">
+          </div>
+        </div>
+        <div class="row">
+          <div class="col-md-6 mb-3">
+            <label class="form-label">Minimum Price (£)</label>
+            <input type="number" name="min_price" class="form-control" step="0.01" value="{{ form_defaults.min_price }}">
+          </div>
+          <div class="col-md-6 mb-3">
+            <label class="form-label">Minimum Opportunity Score (£)</label>
+            <input type="number" name="min_opportunity" class="form-control" step="0.01" value="{{ form_defaults.min_opportunity }}">
+          </div>	
+        </div>
+        <button type="submit" class="btn btn-primary">Search</button>
+        {% if parts %}
+          <a href="/download" class="btn btn-success ms-2">Download Excel</a>
+        {% endif %}
+	
+<button type="submit" class="btn btn-primary" name="action" value="search_excluding">Search (Export)</button>
+
+      
+<button type="button" class="btn btn-warning ms-2" id="ebayButtonS">eBay Small Parts</button>
+<button type="button" class="btn btn-warning ms-2" id="ebayButtonM">eBay Medium Parts</button>
+<button type="button" class="btn btn-warning ms-2" id="ebayButtonL">eBay Large Parts</button>
+
+</form>
+
+      {% if search_details %}
+      <h2 class="mt-5">Top Parts for {{ search_details.model }} (Year {{ search_details.year }}) {% if search_details.engine_code %} Engine: {{ search_details.engine_code }} {% endif %}</h2>
+      {% endif %}
+
+      {% if parts %}
+      <table id="parts-table" class="table table-striped mt-3">
+        <thead><tr>
+          <th>Part</th><th>Start Year</th><th>End Year</th><th>Description</th><th>IC</th><th>Price</th><th>Parts in Stock</th><th>Backorders</th><th>Parts Sold</th><th>Not Found 180 days</th><th>Potential Profit</th><th>Sales Speed</th><th>Opportunity Score</th>
+        </tr></thead>
+        <tbody>
+        {% for row in parts %}
+          <tr>
+            <td {% if row['Backorders'] > 0 %} style="color: #5c9c13;" {% endif %}>{{ row['Part'] }}</td>
+            <td {% if row['Backorders'] > 0 %} style="color: #5c9c13;" {% endif %}>{{ row['IC Start Year'] }}</td>
+            <td {% if row['Backorders'] > 0 %} style="color: #5c9c13;" {% endif %}>{{ row['IC End Year'] }}</td>
+            <td {% if row['Backorders'] > 0 %} style="color: #5c9c13;" {% endif %}>
+              <a
+                href="#"
+                class="ic-description-link"
+                data-ic-number="{{ row['IC Number'] }}"
+                data-part-name="{{ row['Part'] }}"
+                style="text-decoration: underline;"
+              >{{ row['IC Description'] }}</a>
+            </td>
+			<td {% if row['Backorders'] > 0 %} style="color: #5c9c13;" {% endif %}>{{ row['IC Number'] }}</td>
+            <td {% if row['Backorders'] > 0 %} style="color: #5c9c13;" {% endif %}>£{{ "{:.2f}".format(row['B Price']) }}</td>
+            <td {% if row['Backorders'] > 0 %} style="color: #5c9c13;" {% endif %}>{{ row['Parts in Stock'] }}</td>
+            <td {% if row['Backorders'] > 0 %} style="color: #5c9c13;" {% endif %}>{{ row['Backorders'] }}</td>
+            <td {% if row['Backorders'] > 0 %} style="color: #5c9c13;" {% endif %}>{{ row['Parts Sold All'] }}</td>
+            <td {% if row['Backorders'] > 0 %} style="color: #5c9c13;" {% endif %}>{{ row['Not Found 180 days'] }}</td>
+            <td {% if row['Backorders'] > 0 %} style="color: #5c9c13;" {% endif %}>£{{ "{:.2f}".format(row['Potential_Profit']) }}</td>
+            <td {% if row['Backorders'] > 0 %} style="color: #5c9c13;" {% endif %}>{{ "{:.2f}".format(row['Sales_Speed']) }}</td>
+            <td {% if row['Backorders'] > 0 %} style="color: #5c9c13;" {% endif %}>£{{ "{:.2f}".format(row['Opportunity_Score']) }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+	      
+      </table>
+      {% endif %}
+      {% if google_sheet_matches %}
+<h2 class="mt-5">Google Sheet Matches for Engine Code</h2>
+<table class="table table-striped mt-3">
+   {% set excluded_keys = [] %}
+  <thead>
+    <tr>
+      {% for key in google_sheet_matches[0].keys() %}
+        {% if key not in excluded_keys %}
+         <th>{{ key }}</th>
+        {% endif %}
+      {% endfor %}
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in google_sheet_matches %}
+    <tr>
+      {% for cell in row.values() %}
+       {% if key not in excluded_keys %}
+         <td style="background-color: {{ cell.bg }}">{{ cell.value }}</td>
+       {% endif %}
+      {% endfor %}
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+	    
+
+    </div>
+
+    <script>
+      $(document).ready(function() {
+        function fillVehicleFields(vehicle) {
+          if (!vehicle) return;
+          if (vehicle.stock_number) $('input[name="stock_number"]').val(vehicle.stock_number);
+          if (vehicle.reg) $('input[name="reg"]').val(vehicle.reg);
+          if (vehicle.model) $('input[name="model"]').val(vehicle.model);
+          if (vehicle.year) $('input[name="year"]').val(vehicle.year);
+          if (vehicle.engine_code) $('input[name="engine_code"]').val(vehicle.engine_code);
+        }
+
+        function lookupVehicle(payload, showStockSuggestions) {
+          $.ajax({
+            url: '/vehicle_lookup',
+            method: 'GET',
+            data: payload,
+            success: function(response) {
+              if (response.found) {
+                fillVehicleFields(response.vehicle);
+                $('#stock-suggestions').hide();
+                return;
+              }
+
+              if (showStockSuggestions) {
+                var suggestions = response.stock_suggestions || [];
+                var suggestionList = $('#stock-suggestions');
+                suggestionList.empty();
+                suggestions.forEach(function(stockNo) {
+                  suggestionList.append('<li class="list-group-item">' + stockNo + '</li>');
+                });
+                if (suggestions.length > 0) {
+                  suggestionList.show();
+                } else {
+                  suggestionList.hide();
+                }
+              }
+            }
+          });
+        }
+
+        $('input[name="stock_number"]').on('blur', function() {
+          var stockNumber = $(this).val().trim();
+          if (!stockNumber) {
+            $('#stock-suggestions').hide();
+            return;
+          }
+          lookupVehicle({ stock_number: stockNumber }, true);
+        });
+
+        $('input[name="reg"]').on('blur', function() {
+          var reg = $(this).val().trim();
+          if (!reg) {
+            return;
+          }
+          lookupVehicle({ reg: reg }, false);
+        });
+
+        $('#stock-suggestions').on('click', 'li', function() {
+          var selected = $(this).text().trim();
+          $('input[name="stock_number"]').val(selected);
+          $('#stock-suggestions').hide();
+          if (selected) {
+            lookupVehicle({ stock_number: selected }, false);
+          }
+        });
+
+        $('#reset-search-fields').on('click', function() {
+          $('input[name="stock_number"]').val('');
+          $('input[name="reg"]').val('');
+          $('input[name="model"]').val('');
+          $('input[name="year"]').val('');
+          $('input[name="engine_code"]').val('');
+          $('input[name="min_price"]').val('');
+          $('input[name="min_opportunity"]').val('');
+          $('#stock-suggestions').hide();
+          $('#model-suggestions').hide();
+        });
+
+        $('input[name="model"]').on('input', function() {
+          var query = $(this).val().trim();
+          if (query.length > 0) {
+            $.ajax({
+              url: '/autocomplete_model',
+              method: 'GET',
+              data: { 'query': query },
+              success: function(response) {
+                var suggestions = response.models;
+                var suggestionList = $('#model-suggestions');
+                suggestionList.empty();
+                suggestions.forEach(function(model) {
+                  suggestionList.append('<li class="list-group-item">' + model + '</li>');
+                });
+                suggestionList.show();
+              }
+            });
+          } else {
+            $('#model-suggestions').hide();
+          }
+        });
+
+        $('#model-suggestions').on('click', 'li', function() {
+          $('input[name="model"]').val($(this).text());
+          $('#model-suggestions').hide();
+        });
+
+        $(document).click(function(event) {
+          if (!$(event.target).closest('#model-suggestions').length && !$(event.target).closest('input[name="model"]').length) {
+            $('#model-suggestions').hide();
+          }
+          if (!$(event.target).closest('#stock-suggestions').length && !$(event.target).closest('input[name="stock_number"]').length) {
+            $('#stock-suggestions').hide();
+          }
+        });
+
+        // Initialize DataTables with per-column search without replacing headers
+        var table = $('#parts-table').DataTable({
+          pageLength: 25,
+          order: [],
+          initComplete: function () {
+            var api = this.api();
+            api.columns().every(function () {
+              var column = this;
+              var header = $(column.header());
+              var title = header.text();
+              header.html('<div>' + title + '<br><input type="text" class="form-control form-control-sm" placeholder="Search" style="margin-top:5px;"/></div>');
+              $('input', header).on('click mousedown mouseup touchstart pointerdown', function (event) {
+                event.stopPropagation();
+              });
+              $('input', header).on('keyup change clear', function () {
+                if (column.search() !== this.value) {
+                  column.search(this.value).draw();
+                }
+              });
+            });
+
+            var initialDescriptionFilter = {{ description_filter|tojson }};
+            if (!initialDescriptionFilter) {
+              var params = new URLSearchParams(window.location.search);
+              initialDescriptionFilter = params.get('description_filter') || '';
+            }
+
+            if (initialDescriptionFilter) {
+              var descriptionColumnIndex = 3; // Description column
+              var descriptionColumn = api.column(descriptionColumnIndex);
+              var descriptionInput = $(descriptionColumn.header()).find('input');
+              descriptionInput.val(initialDescriptionFilter);
+              descriptionColumn.search(initialDescriptionFilter).draw();
+            }
+          }
+        });
+      });
+    </script>
+
+  
+<!-- Modal eBay Small Parts-->
+<div class="modal fade" id="ebayModalS" tabindex="-1" aria-labelledby="ebayModalLabelS" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="ebayModalLabelS">eBay Small Parts Lookup below £50</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body" id="ebayModalBodyS">
+        <p>Loading...</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  $(document).ready(function() {
+    function openEbayResults(minPrice, maxPrice) {
+      const model = $('input[name="model"]').val().trim();
+      const year = $('input[name="year"]').val().trim();
+      if (!model || !year) {
+        alert("Please enter both model and year first.");
+        return;
+      }
+
+      const query = encodeURIComponent(model + ' ' + year);
+      let ebayUrl = 'https://www.ebay.co.uk/sch/131090/i.html?_nkw=' + query + '&LH_Complete=1&LH_Sold=1';
+      if (minPrice !== null && minPrice !== undefined) {
+        ebayUrl += '&_udlo=' + encodeURIComponent(minPrice);
+      }
+      if (maxPrice !== null && maxPrice !== undefined) {
+        ebayUrl += '&_udhi=' + encodeURIComponent(maxPrice);
+      }
+      window.open(ebayUrl, '_blank', 'noopener');
+    }
+
+    $('#ebayButtonS').on('click', function() {
+      openEbayResults(0, 50);
+    });
+  });
+</script>
+
+<!-- Modal IC Image Preview -->
+<div class="modal fade" id="icImagesModal" tabindex="-1" aria-labelledby="icImagesModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="icImagesModalLabel">IC Image Preview</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body" id="icImagesModalBody">
+        <p>Loading...</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="icSlideshowModal" tabindex="-1" aria-labelledby="icSlideshowModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="icSlideshowModalLabel">Part Image Slideshow</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body text-center">
+        <div id="icSlideshowCarousel" class="carousel slide" data-bs-ride="false">
+          <div class="carousel-inner" id="icSlideshowCarouselInner"></div>
+          <button class="carousel-control-prev" type="button" data-bs-target="#icSlideshowCarousel" data-bs-slide="prev">
+            <span class="carousel-control-prev-icon" aria-hidden="true"></span>
+            <span class="visually-hidden">Previous</span>
+          </button>
+          <button class="carousel-control-next" type="button" data-bs-target="#icSlideshowCarousel" data-bs-slide="next">
+            <span class="carousel-control-next-icon" aria-hidden="true"></span>
+            <span class="visually-hidden">Next</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+  .ic-preview-image {
+    cursor: pointer;
+    max-height: 260px;
+    object-fit: cover;
+  }
+
+  .ic-preview-thumbs {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 6px;
+    margin-top: 10px;
+  }
+
+  .ic-preview-thumbs img {
+    width: 100%;
+    height: 60px;
+    object-fit: cover;
+    border-radius: 4px;
+    border: 1px solid #dee2e6;
+    cursor: pointer;
+  }
+</style>
+
+<script>
+  $(document).ready(function() {
+    let icImagesData = [];
+    let icCarouselInstance = null;
+    let icCurrentPage = 1;
+    const icPartsPerPage = 3;
+    let icSelectedDescription = '';
+
+    function escapeHtml(text) {
+      return $('<div>').text(text || '').html();
+    }
+
+    function showModalById(modalId) {
+      const modalEl = document.getElementById(modalId);
+      if (!modalEl) {
+        return;
+      }
+
+      if (typeof bootstrap !== 'undefined' && bootstrap.Modal) {
+        bootstrap.Modal.getOrCreateInstance(modalEl).show();
+        return;
+      }
+
+      if (typeof $ !== 'undefined' && $.fn && $.fn.modal) {
+        $('#' + modalId).modal('show');
+      }
+    }
+
+    function renderIcImagePage() {
+      const modalBody = $('#icImagesModalBody');
+      if (!icImagesData.length) {
+        modalBody.html('<p>No images available</p>');
+        return;
+      }
+
+      const totalPages = Math.max(1, Math.ceil(icImagesData.length / icPartsPerPage));
+      if (icCurrentPage > totalPages) {
+        icCurrentPage = totalPages;
+      }
+      if (icCurrentPage < 1) {
+        icCurrentPage = 1;
+      }
+
+      const startIndex = (icCurrentPage - 1) * icPartsPerPage;
+      const pageItems = icImagesData.slice(startIndex, startIndex + icPartsPerPage);
+
+      let html = '';
+      if (icSelectedDescription) {
+        html += '<p class="mb-3"><strong>IC Description:</strong> ' + escapeHtml(icSelectedDescription) + '</p>';
+      }
+      html += '<div class="row g-3">';
+      pageItems.forEach(function(image, pageIndex) {
+        const dataIndex = startIndex + pageIndex;
+        const otherImages = (image.all_urls || []).slice(1, 5);
+
+        html += '<div class="col-12">';
+        html += '<div class="card h-100">';
+        html += '<div class="row g-0">';
+        html += '<div class="col-md-5">';
+        html += '<img src="' + image.url + '" class="card-img-top ic-preview-image" data-image-index="' + dataIndex + '" alt="' + escapeHtml(image.label) + ' image">';
+        html += '</div>';
+        html += '<div class="col-md-7">';
+        html += '<div class="card-body">';
+        html += '<h6 class="card-title mb-1">' + escapeHtml(image.label) + ' match</h6>';
+        html += '<p class="card-text mb-2"><small>Tag: ' + escapeHtml(image.tag) + ' · Images: ' + image.image_count + '</small></p>';
+
+        if (otherImages.length) {
+          html += '<div class="ic-preview-thumbs">';
+          otherImages.forEach(function(url) {
+            html += '<img src="' + url + '" class="ic-preview-image" data-image-index="' + dataIndex + '" alt="Preview thumbnail">';
+          });
+          html += '</div>';
+        } else {
+          html += '<p class="text-muted small mb-0">No additional images for preview.</p>';
+        }
+
+        html += '</div></div></div></div></div>';
+      });
+      html += '</div>';
+
+      html += '<nav class="mt-3" aria-label="IC image pagination">';
+      html += '<ul class="pagination justify-content-center mb-0">';
+      html += '<li class="page-item' + (icCurrentPage === 1 ? ' disabled' : '') + '">';
+      html += '<button type="button" class="page-link ic-page-btn" data-page="' + (icCurrentPage - 1) + '">Previous</button>';
+      html += '</li>';
+      for (let page = 1; page <= totalPages; page += 1) {
+        html += '<li class="page-item' + (page === icCurrentPage ? ' active' : '') + '">';
+        html += '<button type="button" class="page-link ic-page-btn" data-page="' + page + '">' + page + '</button>';
+        html += '</li>';
+      }
+      html += '<li class="page-item' + (icCurrentPage === totalPages ? ' disabled' : '') + '">';
+      html += '<button type="button" class="page-link ic-page-btn" data-page="' + (icCurrentPage + 1) + '">Next</button>';
+      html += '</li>';
+      html += '</ul></nav>';
+
+      modalBody.html(html);
+    }
+
+    $(document).on('click', '.ic-description-link', function(event) {
+      event.preventDefault();
+      const icNumber = ($(this).data('ic-number') || '').toString().trim();
+      const partName = ($(this).data('part-name') || '').toString().trim();
+      icSelectedDescription = ($(this).text() || '').toString().trim();
+      if (!icNumber || !partName) {
+        return;
+      }
+
+      const modalBody = $('#icImagesModalBody');
+      const modalTitle = $('#icImagesModalLabel');
+      modalTitle.text(icSelectedDescription ? 'IC Image Preview · ' + icSelectedDescription : 'IC Image Preview');
+      modalBody.html('<p>Loading...</p>');
+      showModalById('icImagesModal');
+
+      $.ajax({
+        url: '/ic_part_images',
+        method: 'GET',
+        data: {
+          ic_number: icNumber,
+          part_name: partName
+        },
+        success: function(response) {
+          if (!response || !response.images || !response.images.length) {
+            modalBody.html('<p>No images available</p>');
+            return;
+          }
+
+          icImagesData = response.images;
+          icCurrentPage = 1;
+          renderIcImagePage();
+        },
+        error: function() {
+          modalBody.html('<p>No images available</p>');
+        }
+      });
+    });
+
+    $(document).on('click', '.ic-page-btn', function() {
+      const nextPage = Number($(this).data('page'));
+      const totalPages = Math.max(1, Math.ceil(icImagesData.length / icPartsPerPage));
+      if (Number.isNaN(nextPage) || nextPage < 1 || nextPage > totalPages) {
+        return;
+      }
+      icCurrentPage = nextPage;
+      renderIcImagePage();
+    });
+
+    $(document).on('click', '.ic-preview-image', function() {
+      const index = Number($(this).data('image-index'));
+      const selected = icImagesData[index];
+      const allUrls = selected && selected.all_urls ? selected.all_urls : [];
+      if (!allUrls.length) {
+        return;
+      }
+
+
+      const carouselInner = $('#icSlideshowCarouselInner');
+      const titleEl = $('#icSlideshowModalLabel');
+      titleEl.text('Tag ' + (selected.tag || '-') + ' Image Slideshow');
+
+      let carouselHtml = '';
+      allUrls.forEach(function(url, idx) {
+        carouselHtml += '<div class="carousel-item' + (idx === 0 ? ' active' : '') + '">';
+        carouselHtml += '<img src="' + url + '" class="d-block w-100 rounded" alt="Part image ' + (idx + 1) + '">';
+        carouselHtml += '</div>';
+      });
+      carouselInner.html(carouselHtml);
+
+      if (icCarouselInstance) {
+        icCarouselInstance.dispose();
+      }
+      if (typeof bootstrap !== 'undefined' && bootstrap.Carousel) {
+        icCarouselInstance = new bootstrap.Carousel(document.getElementById('icSlideshowCarousel'));
+      }
+      showModalById('icSlideshowModal');
+    });
+  });
+</script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+	
+<!-- Modal eBay Medium Parts-->
+<div class="modal fade" id="ebayModalM" tabindex="-1" aria-labelledby="ebayModalLabelM" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="ebayModalLabelM">eBay Medium Parts Lookup between £50 to £500</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body" id="ebayModalBodyM">
+        <p>Loading...</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  $(document).ready(function() {
+     function openEbayResults(minPrice, maxPrice) {
+      const model = $('input[name="model"]').val().trim();
+      const year = $('input[name="year"]').val().trim();
+      if (!model || !year) {
+        alert("Please enter both model and year first.");
+        return;
+      }
+
+      const query = encodeURIComponent(model + ' ' + year);
+      let ebayUrl = 'https://www.ebay.co.uk/sch/131090/i.html?_nkw=' + query + '&LH_Complete=1&LH_Sold=1';
+      if (minPrice !== null && minPrice !== undefined) {
+        ebayUrl += '&_udlo=' + encodeURIComponent(minPrice);
+      }
+      if (maxPrice !== null && maxPrice !== undefined) {
+        ebayUrl += '&_udhi=' + encodeURIComponent(maxPrice);
+      }
+      window.open(ebayUrl, '_blank', 'noopener');
+    }
+
+    $('#ebayButtonM').on('click', function() {
+      openEbayResults(50, 500);
+    });
+  });
+</script>
+
+<!-- Modal eBay Large Parts-->
+<div class="modal fade" id="ebayModalL" tabindex="-1" aria-labelledby="ebayModalLabelL" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="ebayModalLabelL">eBay Large Parts Lookup Over £500</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body" id="ebayModalBodyL">
+        <p>Loading...</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  $(document).ready(function() {
+    function openEbayResults(minPrice, maxPrice) {
+      const model = $('input[name="model"]').val().trim();
+      const year = $('input[name="year"]').val().trim();
+      if (!model || !year) {
+        alert("Please enter both model and year first.");
+        return;
+      }
+
+      const query = encodeURIComponent(model + ' ' + year);
+      let ebayUrl = 'https://www.ebay.co.uk/sch/131090/i.html?_nkw=' + query + '&LH_Complete=1&LH_Sold=1';
+      if (minPrice !== null && minPrice !== undefined) {
+        ebayUrl += '&_udlo=' + encodeURIComponent(minPrice);
+      }
+      if (maxPrice !== null && maxPrice !== undefined) {
+        ebayUrl += '&_udhi=' + encodeURIComponent(maxPrice);
+      }
+      window.open(ebayUrl, '_blank', 'noopener');
+    }
+
+    $('#ebayButtonL').on('click', function() {
+      openEbayResults(500, null);
+    });
+  });
+</script>
+</body>
+</html>

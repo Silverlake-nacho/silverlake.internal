@@ -1,0 +1,384 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Silverlake Crush Checker</title>
+    <link rel="icon" href="{{ url_for('static', filename='SLK Logo.png') }}">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+    <link rel="stylesheet" href="https://cdn.datatables.net/1.13.8/css/jquery.dataTables.min.css">
+    <style>
+      :root {
+        --sidebar-expanded: 260px;
+        --sidebar-collapsed: calc(var(--sidebar-expanded) * 0.3);
+        --sidebar-bg: #5c9c13;
+      }
+      body {
+        margin: 0;
+        background: url("{{ url_for('static', filename='background.jpg') }}") no-repeat center center fixed;
+        background-size: cover;
+        font-family: 'Montserrat', sans-serif;
+        color: #1f2933;
+      }
+      h1, h2, h3, label {
+        color: #5c9c13;
+      }
+      .page-wrapper {
+        display: flex;
+        min-height: 100vh;
+      }
+      .sidebar {
+        width: var(--sidebar-collapsed);
+        background-color: var(--sidebar-bg);
+        color: #fff;
+        position: fixed;
+        inset: 0 auto 0 0;
+        overflow: hidden;
+        transition: width 0.3s ease;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        padding: 16px 12px;
+        z-index: 1000;
+      }
+      .sidebar:hover {
+        width: var(--sidebar-expanded);
+      }
+      .sidebar .brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 8px 10px;
+      }
+      .sidebar .logo-collapsed {
+        height: 34px;
+        opacity: 1;
+        transition: opacity 0.2s ease;
+      }
+      .sidebar .logo-expanded {
+        height: 34px;
+        opacity: 0;
+        transform: translateX(-6px);
+        transition: opacity 0.2s ease, transform 0.2s ease;
+      }
+      .sidebar:hover .logo-collapsed {
+        opacity: 0;
+      }
+      .sidebar:hover .logo-expanded {
+        opacity: 1;
+        transform: translateX(0);
+      }
+      .sidebar .brand-text {
+        font-weight: 700;
+        font-size: 1.05rem;
+        white-space: nowrap;
+        opacity: 0;
+        transition: opacity 0.2s ease;
+      }
+      .sidebar:hover .brand-text {
+        opacity: 1;
+      }
+      .sidebar .nav-section {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .sidebar .nav-link {
+        color: #fff;
+        font-weight: 700;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 10px 12px;
+        border-radius: 10px;
+        text-decoration: none;
+        transition: background-color 0.2s ease, color 0.2s ease;
+        font-size: 0.95rem;
+      }
+      .sidebar .nav-link i {
+        width: 20px;
+        text-align: center;
+        font-size: 1.15rem;
+      }
+      .sidebar .nav-link .link-text {
+        white-space: nowrap;
+        opacity: 0;
+        transform: translateX(-6px);
+        transition: opacity 0.2s ease, transform 0.2s ease;
+      }
+      .sidebar:hover .nav-link .link-text {
+        opacity: 1;
+        transform: translateX(0);
+      }
+      .sidebar .nav-link:hover,
+      .sidebar .nav-link.active {
+        background-color: rgba(255, 255, 255, 0.16);
+        color: #fff;
+      }
+      .sidebar-footer {
+        margin-top: auto;
+      }
+      .content {
+        flex: 1;
+        margin-left: var(--sidebar-collapsed);
+        transition: margin-left 0.3s ease;
+      }
+      .sidebar:hover ~ .content {
+        margin-left: var(--sidebar-expanded);
+      }
+      .content-inner {
+        padding: 24px;
+      }
+      .content-card {
+        background: rgba(255, 255, 255, 0.96);
+        border: 1px solid rgba(92, 156, 19, 0.22);
+        border-radius: 18px;
+        box-shadow: 0 12px 30px rgba(0, 0, 0, 0.12);
+      }
+      .metric-card {
+        border-left: 6px solid #5c9c13;
+        border-radius: 14px;
+        background: #f5fbf0;
+      }
+      .metric-value {
+        font-size: 2rem;
+        font-weight: 700;
+        color: #325a09;
+      }
+      .table thead th {
+        background: #5c9c13;
+        color: #fff;
+        white-space: nowrap;
+      }
+      .badge-issue {
+        background: #fff3cd;
+        color: #7a5a00;
+        border: 1px solid #ffe08a;
+      }
+      .small-muted {
+        color: #607080;
+        font-size: 0.92rem;
+      }
+      .logo {
+        text-align: center;
+        margin-bottom: 20px;
+      }
+      .logo img {
+        width: 300px;
+        max-width: 100%;
+        height: auto;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page-wrapper">
+      <nav class="sidebar">
+        <div class="brand">
+          <img src="{{ url_for('static', filename='SLK Logo.png') }}" alt="Silverlake Collapsed Logo" class="logo-collapsed">
+          <img src="{{ url_for('static', filename='logo-slg-strip.svg') }}" alt="Silverlake Logo" class="logo-expanded">
+        </div>
+        <div class="nav-section">
+          <a href="{{ url_for('index') }}" class="nav-link{% if active_page == 'index' %} active{% endif %}">
+            <i class="fas fa-magnifying-glass-dollar"></i>
+            <span class="link-text">Opportunity Finder</span>
+          </a>
+          <a href="{{ url_for('image_stats') }}" class="nav-link{% if active_page == 'image_stats' %} active{% endif %}">
+            <i class="fas fa-chart-pie"></i>
+            <span class="link-text">Image Stats</span>
+          </a>
+          <a href="{{ url_for('image_timeline') }}" class="nav-link{% if active_page == 'image_timeline' %} active{% endif %}">
+            <i class="fas fa-clock"></i>
+            <span class="link-text">Image Timeline</span>
+          </a>
+          <a href="{{ url_for('stores_timeline') }}" class="nav-link{% if active_page == 'stores_timeline' %} active{% endif %}">
+            <i class="fas fa-warehouse"></i>
+            <span class="link-text">Stores Timeline</span>
+          </a>
+          <a href="{{ url_for('stats') }}" class="nav-link{% if active_page == 'stats' %} active{% endif %}">
+            <i class="fas fa-chart-column"></i>
+            <span class="link-text">Sales Stats</span>
+          </a>
+          <a href="{{ url_for('vehicle_stats') }}" class="nav-link{% if active_page == 'vehicle_stats' %} active{% endif %}">
+            <i class="fas fa-car-side"></i>
+            <span class="link-text">Vehicle Stats</span>
+          </a>
+          <a href="{{ url_for('crush_vehicles') }}" class="nav-link{% if active_page == 'crush_vehicles' %} active{% endif %}">
+            <i class="fas fa-car-burst"></i>
+            <span class="link-text">Crush Vehicles</span>
+          </a>
+          <a href="{{ url_for('crush_checker') }}" class="nav-link{% if active_page == 'crush_checker' %} active{% endif %}">
+            <i class="fa-solid fa-clipboard-check"></i><span class="link-text">Crush Checker</span>
+          </a>
+          <a href="{{ url_for('logs') }}" class="nav-link{% if active_page == 'logs' %} active{% endif %}">
+            <i class="fas fa-clipboard-list"></i>
+            <span class="link-text">Logs</span>
+          </a>
+        </div>
+        <div class="sidebar-footer">
+          <a href="{{ url_for('logout') }}" class="nav-link">
+            <i class="fas fa-arrow-right-from-bracket"></i>
+            <span class="link-text">Logout ({{ current_user }})</span>
+          </a>
+        </div>
+      </nav>
+      <div class="content">
+        <div class="content-inner">
+          <div class="content-card p-4">
+            <div class="logo">
+              <img src="{{ url_for('static', filename='logo-slg-strip.svg') }}" alt="Silverlake Logo">
+            </div>
+
+            <div class="d-flex flex-column flex-lg-row justify-content-between gap-3 mb-4">
+              <div>
+                <h1 class="mb-2">Crush Checker</h1>
+                <p class="small-muted mb-0">
+                  Compares vehicles marked as <strong>Scrapped</strong> or <strong>Scrapped - Invent</strong> in Atlas against matching Pinnacle crush data by registration number.
+                </p>
+              </div>
+            </div>
+
+            <div class="card border-0 shadow-sm mb-4">
+              <div class="card-body">
+                <div class="d-flex flex-wrap gap-2 mb-3">
+                  <a href="{{ url_for('crush_checker', filter='today') }}" class="btn btn-sm {{ 'btn-success' if filter_type == 'today' else 'btn-outline-success' }}">Today</a>
+                  <a href="{{ url_for('crush_checker', filter='yesterday') }}" class="btn btn-sm {{ 'btn-success' if filter_type == 'yesterday' else 'btn-outline-success' }}">Yesterday</a>
+                  <a href="{{ url_for('crush_checker', filter='this_week') }}" class="btn btn-sm {{ 'btn-success' if filter_type == 'this_week' else 'btn-outline-success' }}">This Week</a>
+                  <a href="{{ url_for('crush_checker', filter='last_week') }}" class="btn btn-sm {{ 'btn-success' if filter_type == 'last_week' else 'btn-outline-success' }}">Last Week</a>
+                  <a href="{{ url_for('crush_checker', filter='this_month') }}" class="btn btn-sm {{ 'btn-success' if filter_type == 'this_month' else 'btn-outline-success' }}">This Month</a>
+                  <a href="{{ url_for('crush_checker', filter='last_month') }}" class="btn btn-sm {{ 'btn-success' if filter_type == 'last_month' else 'btn-outline-success' }}">Last Month</a>
+                </div>
+                <form class="row g-3 align-items-end" method="get" action="{{ url_for('crush_checker') }}">
+                  <input type="hidden" name="filter" value="custom">
+                  <div class="col-md-4">
+                    <label for="start_date" class="form-label mb-1">Atlas Scrapped Date From</label>
+                    <input id="start_date" class="form-control" type="date" name="start_date" value="{{ start_date.isoformat() if start_date else '' }}">
+                  </div>
+                  <div class="col-md-4">
+                    <label for="end_date" class="form-label mb-1">Atlas Scrapped Date To</label>
+                    <input id="end_date" class="form-control" type="date" name="end_date" value="{{ end_date_display.isoformat() if end_date_display else '' }}">
+                  </div>
+                  <div class="col-md-4">
+                    <button type="submit" class="btn btn-success w-100"><i class="fa-solid fa-filter me-1"></i> Apply Date Range</button>
+                  </div>
+                </form>
+                <div class="small-muted mt-3">Current Atlas Scrapped Date range: <strong>{{ date_range_label }}</strong></div>
+              </div>
+            </div>
+
+            {% if error_message %}
+              <div class="alert alert-danger">{{ error_message }}</div>
+            {% endif %}
+
+            {% with messages = get_flashed_messages(with_categories=true) %}
+              {% if messages %}
+                {% for category, message in messages %}
+                  <div class="alert alert-{{ 'success' if category == 'success' else 'warning' }}">{{ message }}</div>
+                {% endfor %}
+              {% endif %}
+            {% endwith %}
+
+            <div class="row g-3 mb-4">
+              <div class="col-md-4">
+                <div class="metric-card p-3 h-100">
+                  <div class="small-muted">Atlas database</div>
+                  <div class="fw-bold">{{ atlas_database_name or 'Unavailable' }}</div>
+                </div>
+              </div>
+              <div class="col-md-4">
+                <div class="metric-card p-3 h-100">
+                  <div class="small-muted">Atlas scrapped vehicles checked</div>
+                  <div class="metric-value">{{ total_atlas_scrapped }}</div>
+                </div>
+              </div>
+              <div class="col-md-4">
+                <div class="metric-card p-3 h-100">
+                  <div class="small-muted">Pinnacle vehicles needing review</div>
+                  <div class="metric-value">{{ rows|length }}</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="alert alert-info">
+              A vehicle appears here only when it exists in Pinnacle, <code>vehicleevent.crushed</code> is blank, and its location is not <strong>TOBECRUSHED**</strong>. Vehicles with a crushed date are treated as crushed and are not shown.
+            </div>
+
+            <form method="post" action="{{ url_for('crush_checker_crush_selected') }}" id="crushCheckerForm">
+              <input type="hidden" name="filter" value="{{ filter_type }}">
+              <input type="hidden" name="start_date" value="{{ start_date.isoformat() if start_date else '' }}">
+              <input type="hidden" name="end_date" value="{{ end_date_display.isoformat() if end_date_display else '' }}">
+              <div class="d-flex justify-content-start gap-2 mb-2">
+                <a href="{{ url_for('download_crush_checker', filter=filter_type, start_date=start_date.isoformat() if start_date else None, end_date=end_date_display.isoformat() if end_date_display else None) }}" class="btn btn-sm btn-success">
+                  <i class="fa-solid fa-file-excel me-1"></i> Download Excel
+                </a>
+                <button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('Update the selected vehicles to TOBECRUSHED**?');">
+                  <i class="fa-solid fa-car-burst me-1"></i> Crush Vehicle
+                </button>
+              </div>
+              <div class="table-responsive">
+                <table id="crushCheckerTable" class="table table-striped table-bordered align-middle w-100">
+                <thead>
+                  <tr>
+                    <th><input type="checkbox" id="selectAllVehicles" aria-label="Select all vehicles"></th>
+                    <th>Issue</th>
+                    <th>Registration</th>
+                    <th>Atlas Status</th>
+                    <th>Manufacturer</th>
+                    <th>Model</th>
+                    <th>Atlas ID</th>
+                    <th>Atlas Scrapped Date</th>
+                    <th>Stock Number</th>
+                    <th>Pinnacle Location</th>
+                    <th>Crushed Date</th>
+                    <th>Atlas Date Entered</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for row in rows %}
+                    <tr>
+                      <td><input type="checkbox" class="vehicle-checkbox" name="vehicle_ids" value="{{ row.stocknumber_id }}" aria-label="Select {{ row.registration or 'vehicle' }}"></td>
+                      <td><span class="badge badge-issue">{{ row.issue }}</span></td>
+                      <td class="fw-bold">{{ row.registration or '' }}</td>
+                      <td>{{ row.status or '' }}</td>
+                      <td>{{ row.manufacturer or '' }}</td>
+                      <td>{{ row.model or '' }}</td>
+                      <td>{{ row.atlas_id or '' }}</td>
+                      <td>{{ row.date_scrapped or '' }}</td>
+                      <td>{{ row.stock_number or '' }}</td>
+                      <td>{{ row.pinnacle_location or '' }}</td>
+                      <td>{{ row.crushed or '' }}</td>
+                      <td>{{ row.date_entered or '' }}</td>
+                    </tr>
+                  {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="https://cdn.datatables.net/1.13.8/js/jquery.dataTables.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+      $(function () {
+        const table = $('#crushCheckerTable').DataTable({
+          pageLength: 25,
+          order: [[2, 'asc']],
+          scrollX: true,
+          columnDefs: [
+            { targets: 0, orderable: false, searchable: false }
+          ]
+        });
+
+        $('#selectAllVehicles').on('change', function () {
+          const checked = this.checked;
+          table.$('input.vehicle-checkbox').prop('checked', checked);
+        });
+      });
+    </script>
+  </body>
+</html>

@@ -160,6 +160,100 @@
       .exclusion-card {
         background: rgba(255, 255, 255, 0.92);
       }
+      .toggle-stack {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-bottom: 20px;
+      }
+      .toggle-wrapper {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .toggle-label {
+        margin: 0;
+        font-weight: 600;
+      }
+      .toggle {
+        position: relative;
+        display: inline-flex;
+        align-items: center;
+        width: 270px;
+        height: 40px;
+        border-radius: 999px;
+        background: rgba(92, 156, 19, 0.15);
+        cursor: pointer;
+        padding: 4px;
+      }
+      .toggle input {
+        position: absolute;
+        inset: 0;
+        margin: 0;
+        opacity: 0;
+        cursor: pointer;
+      }
+      .toggle-track {
+        position: absolute;
+        top: 4px;
+        left: 4px;
+        width: calc(50% - 4px);
+        height: calc(100% - 8px);
+        border-radius: 999px;
+        background: #5c9c13;
+        transition: transform 0.2s ease;
+      }
+      .toggle input:checked + .toggle-track {
+        transform: translateX(100%);
+      }
+      .toggle-labels {
+        position: relative;
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        width: 100%;
+        font-size: 0.78rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.02em;
+        z-index: 1;
+      }
+      .toggle-labels span {
+        text-align: center;
+        color: rgba(31, 59, 8, 0.7);
+        transition: color 0.2s ease;
+        user-select: none;
+      }
+      .toggle-links {
+        position: relative;
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        width: 100%;
+        font-size: 0.78rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.02em;
+        z-index: 1;
+      }
+      .toggle-links a {
+        text-align: center;
+        text-decoration: none;
+        color: rgba(31, 59, 8, 0.7);
+        line-height: 32px;
+      }
+      .toggle-three .toggle-track {
+        width: calc(33.333% - 3px);
+      }
+      .toggle-three.group-company .toggle-track {
+        transform: translateX(100%);
+      }
+      .toggle-three.group-status .toggle-track {
+        transform: translateX(200%);
+      }
+      .toggle-three.group-contract .toggle-links a.contract-link,
+      .toggle-three.group-company .toggle-links a.company-link,
+      .toggle-three.group-status .toggle-links a.status-link {
+        color: #fff;
+      }
       @media (max-width: 768px) {
         :root {
           --sidebar-expanded: 220px;
@@ -191,13 +285,17 @@
             <i class="fas fa-chart-column"></i>
             <span class="link-text">Sales Stats</span>
           </a>
-          <a href="{{ url_for('inventory_stats') }}" class="nav-link{% if active_page == 'inventory_stats' %} active{% endif %}">
-            <i class="fas fa-boxes-stacked"></i>
-            <span class="link-text">Inventory Stats</span>
-          </a>
           <a href="{{ url_for('vehicle_stats') }}" class="nav-link{% if active_page == 'vehicle_stats' %} active{% endif %}">
             <i class="fas fa-car-side"></i>
             <span class="link-text">Vehicle Stats</span>
+          </a>
+          <a href="{{ url_for('executive_stats') }}" class="nav-link{% if active_page == 'executive_stats' %} active{% endif %}">
+            <i class="fas fa-chart-line"></i>
+            <span class="link-text">Executive Stats</span>
+          </a>
+          <a href="{{ url_for('purchase_vehicle_stats') }}" class="nav-link{% if active_page == 'purchase_vehicle_stats' %} active{% endif %}">
+            <i class="fas fa-cart-shopping"></i>
+            <span class="link-text">Purchase Vehicle Stats</span>
           </a>
           <a href="{{ url_for('atlas_vehicle_stats') }}" class="nav-link{% if active_page == 'atlas_vehicle_stats' %} active{% endif %}">
             <i class="fas fa-truck"></i>
@@ -206,14 +304,6 @@
           <a href="{{ url_for('atlas_table_samples') }}" class="nav-link{% if active_page == 'atlas_table_samples' %} active{% endif %}">
             <i class="fas fa-table"></i>
             <span class="link-text">Atlas Table Samples</span>
-          </a>
-          <a href="{{ url_for('crush_vehicles') }}" class="nav-link{% if active_page == 'crush_vehicles' %} active{% endif %}">
-            <i class="fas fa-car-burst"></i>
-            <span class="link-text">Crush Vehicles</span>
-          </a>
-          <a href="{{ url_for('logs') }}" class="nav-link{% if active_page == 'logs' %} active{% endif %}">
-            <i class="fas fa-clipboard-list"></i>
-            <span class="link-text">Logs</span>
           </a>
         </div>
         <div class="sidebar-footer">
@@ -245,15 +335,16 @@
             <div class="summary-card">
               <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
                 <div class="d-flex flex-wrap align-items-center gap-2">
-                  <a href="{{ url_for('vehicle_stats', filter='today', group=group_mode, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">Today</a>
-                  <a href="{{ url_for('vehicle_stats', filter='yesterday', group=group_mode, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">Yesterday</a>
-                  <a href="{{ url_for('vehicle_stats', filter='this_week', group=group_mode, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">This Week</a>
-                  <a href="{{ url_for('vehicle_stats', filter='last_week', group=group_mode, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">Last Week</a>
-                  <a href="{{ url_for('vehicle_stats', filter='this_month', group=group_mode, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">This Month</a>
-                  <a href="{{ url_for('vehicle_stats', filter='last_month', group=group_mode, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">Last Month</a>
+                  <a href="{{ url_for('vehicle_stats', filter='today', group=group_mode, date_mode=date_mode, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">Today</a>
+                  <a href="{{ url_for('vehicle_stats', filter='yesterday', group=group_mode, date_mode=date_mode, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">Yesterday</a>
+                  <a href="{{ url_for('vehicle_stats', filter='this_week', group=group_mode, date_mode=date_mode, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">This Week</a>
+                  <a href="{{ url_for('vehicle_stats', filter='last_week', group=group_mode, date_mode=date_mode, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">Last Week</a>
+                  <a href="{{ url_for('vehicle_stats', filter='this_month', group=group_mode, date_mode=date_mode, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">This Month</a>
+                  <a href="{{ url_for('vehicle_stats', filter='last_month', group=group_mode, date_mode=date_mode, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">Last Month</a>
                   <form method="get" class="d-inline">
                     <input type="hidden" name="filter" value="custom">
                     <input type="hidden" name="group" value="{{ group_mode }}">
+                    <input type="hidden" name="date_mode" value="{{ date_mode }}">
                     <input type="date" name="start_date" id="customStartDate" required>
                     <input type="date" name="end_date" id="customEndDate" required>
                     {% if live_enabled %}
@@ -261,12 +352,7 @@
                     {% endif %}
                     <button type="submit" class="btn btn-sm btn-primary">Custom</button>
                   </form>
-                  {% if group_mode == 'contract' %}
-                    <a href="{{ url_for('vehicle_stats', filter=filter_type, start_date=start_date.isoformat() if start_date else None, end_date=end_date.isoformat() if end_date else None, group='company', exclude=excluded_companies, live=1 if live_enabled else None) }}" class="btn btn-sm btn-outline-primary">Group by Insurance</a>
-                  {% else %}
-                    <a href="{{ url_for('vehicle_stats', filter=filter_type, start_date=start_date.isoformat() if start_date else None, end_date=end_date.isoformat() if end_date else None, group='contract', exclude=excluded_companies, live=1 if live_enabled else None) }}" class="btn btn-sm btn-outline-primary">Group Contracts</a>
-                  {% endif %}
-                </div>
+                 </div>
                 <div class="form-check ms-2">
                   <input class="form-check-input" type="checkbox" id="liveToggle" {% if live_enabled %}checked{% endif %}>
                   <label class="form-check-label text-success" for="liveToggle">Live</label>
@@ -277,11 +363,11 @@
             <div class="card mb-4 shadow-sm exclusion-card">
               <div class="card-body">
                 <div class="d-flex justify-content-between align-items-center">
-                  <h5 class="mb-0">Exclude Insurance Companies</h5>
+                  <h5 class="mb-0">Exclude {{ exclusion_label or "Insurance Companies" }}</h5>
                 </div>
                 <div class="exclusion-body mt-3">
                   <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
-                    <p class="mb-0 text-muted">Hover to show insurance company exclusions.</p>
+                    <p class="mb-0 text-muted">Hover to show {{ (exclusion_label or "Insurance Companies")|lower }} exclusions.</p>
                     <div class="d-flex gap-2">
                       <button type="submit" form="companyFilterForm" class="btn btn-sm btn-primary">Apply</button>
                       <button type="submit" form="companyFilterForm" formaction="{{ url_for('save_vehicle_stats_exclusions') }}" formmethod="post" class="btn btn-sm btn-success">Set as Default</button>
@@ -291,6 +377,7 @@
                   <form id="companyFilterForm" class="row g-2" method="get" action="{{ url_for('vehicle_stats') }}">
                     <input type="hidden" name="filter" value="{{ filter_type }}">
                     <input type="hidden" name="group" value="{{ group_mode }}">
+                    <input type="hidden" name="date_mode" value="{{ date_mode }}">
                     <input type="hidden" name="start_date" value="{{ start_date.isoformat() if start_date else '' }}">
                     <input type="hidden" name="end_date" value="{{ end_date.isoformat() if end_date else '' }}">
                     <input type="hidden" id="liveInputField" name="live" value="{{ 1 if live_enabled else '' }}">
@@ -303,6 +390,31 @@
                       </div>
                     {% endfor %}
                   </form>
+                </div>
+              </div>
+            </div>
+
+            <div class="toggle-stack">
+              <div class="toggle-wrapper">
+                <span class="toggle-label">Date Type</span>
+                <label class="toggle" for="dateModeToggle">
+                  <input type="checkbox" id="dateModeToggle" {% if date_mode == 'collected' %}checked{% endif %} aria-label="Toggle between Date Recovered and CollectedDate">
+                  <span class="toggle-track"></span>
+                  <div class="toggle-labels">
+                    <span>Recovered</span>
+                    <span>Collected</span>
+                  </div>
+                </label>
+              </div>
+              <div class="toggle-wrapper">
+                <span class="toggle-label">Group By</span>
+                <div class="toggle toggle-three group-{{ group_mode }}" role="group" aria-label="Toggle grouping criteria">
+                  <span class="toggle-track"></span>
+                  <div class="toggle-links">
+                    <a class="contract-link" href="{{ url_for('vehicle_stats', filter=filter_type, start_date=start_date.isoformat() if start_date else None, end_date=end_date.isoformat() if end_date else None, group='contract', date_mode=date_mode, exclude=excluded_companies, live=1 if live_enabled else None) }}">Contract</a>
+                    <a class="company-link" href="{{ url_for('vehicle_stats', filter=filter_type, start_date=start_date.isoformat() if start_date else None, end_date=end_date.isoformat() if end_date else None, group='company', date_mode=date_mode, exclude=excluded_companies, live=1 if live_enabled else None) }}">Insurance</a>
+                    <a class="status-link" href="{{ url_for('vehicle_stats', filter=filter_type, start_date=start_date.isoformat() if start_date else None, end_date=end_date.isoformat() if end_date else None, group='status', date_mode=date_mode, exclude=excluded_companies, live=1 if live_enabled else None) }}">Status</a>
+                  </div>
                 </div>
               </div>
             </div>
@@ -370,7 +482,13 @@
                       {% for row in detail_rows %}
                         <tr>
                           {% for value in row %}
-                            <td>{{ value }}</td>
+                            {% if value is mapping and value.get('kind') == 'single' %}
+                              <td style="background-color: {{ value.get('background_color', '') }}; color: #111; font-weight: 600;">{{ value.get('label', '') }}</td>
+                            {% elif value is mapping and value.get('kind') == 'multiple' %}
+                              <td><button type="button" class="btn btn-sm btn-link p-0">{{ value.get('label', 'More') }}</button></td>
+                            {% else %}
+                              <td>{{ value }}</td>
+                            {% endif %}
                           {% endfor %}
                         </tr>
                       {% endfor %}
@@ -383,6 +501,28 @@
         </div>
       </div>
     </div>
+
+    <div class="modal fade" id="vehicleFlagsModal" tabindex="-1" aria-labelledby="vehicleFlagsModalLabel" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-scrollable">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="vehicleFlagsModalLabel">Vehicle Flags</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <div class="table-responsive">
+              <table class="table table-sm align-middle mb-0">
+                <thead>
+                  <tr><th>Flag</th></tr>
+                </thead>
+                <tbody id="vehicleFlagsModalBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <script>
       const chartLabels = {{ chart_labels|tojson }};
       const chartValues = {{ chart_values|tojson }};
@@ -392,6 +532,7 @@
       const resetZoomBtn = document.getElementById('resetZoomBtn');
       const toggleChartBtn = document.getElementById('toggleChartBtn');
       const liveCheckbox = document.getElementById('liveToggle');
+      const dateModeToggle = document.getElementById('dateModeToggle');
       const customStartDate = document.getElementById('customStartDate');
       const customEndDate = document.getElementById('customEndDate');
 
@@ -407,6 +548,11 @@
         customEndDate.addEventListener('focus', syncCustomEndDate);
       }
       const vehicleDetailsTableBody = document.getElementById('vehicleDetailsTableBody');
+      const vehicleFlagsModalBody = document.getElementById('vehicleFlagsModalBody');
+      const vehicleFlagsModalElement = document.getElementById('vehicleFlagsModal');
+      let vehicleFlagsModal = null;
+      let vehicleDetailColumns = {{ detail_columns|tojson }};
+      let vehicleDetailRows = {{ detail_rows|tojson }};
       const chartTitleBase = {{ chart_title_base|tojson }}
 
       let chartInstance = null;
@@ -445,7 +591,13 @@
               },
               tooltip: {
                 callbacks: {
-                  label: (context) => `${context.label}: ${Number(context.parsed).toLocaleString()}`,
+                  label: (context) => {
+                    const parsedValue =
+                      context.parsed && typeof context.parsed === 'object'
+                        ? context.parsed.y ?? context.parsed.r ?? 0
+                        : context.parsed;
+                    return `${context.label}: ${Number(parsedValue).toLocaleString()}`;
+                  },
                 },
               },
               datalabels: {
@@ -527,19 +679,101 @@
         dateRangeLabel.textContent = `Showing: ${data.date_range_label}`;
       }
 
+      function normalizeColumnName(name) {
+        return String(name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      }
+
+      function getVehicleFlagsModal() {
+        if (vehicleFlagsModal) return vehicleFlagsModal;
+        if (!vehicleFlagsModalElement || !window.bootstrap) return null;
+        vehicleFlagsModal = new bootstrap.Modal(vehicleFlagsModalElement);
+        return vehicleFlagsModal;
+      }
+
+      function showVehicleFlagsModal(flags) {
+        const modalInstance = getVehicleFlagsModal();
+        if (!vehicleFlagsModalBody || !modalInstance) return;
+        vehicleFlagsModalBody.innerHTML = '';
+        (flags || []).forEach((flag) => {
+          const tr = document.createElement('tr');
+          const td = document.createElement('td');
+          const text = flag?.text || '';
+          const color = flag?.color || '';
+          td.textContent = text;
+          if (color) {
+            td.style.backgroundColor = color;
+            td.style.color = getContrastTextColor(color);
+          }
+          td.style.fontWeight = '600';
+          tr.appendChild(td);
+          vehicleFlagsModalBody.appendChild(tr);
+        });
+        modalInstance.show();
+      }
+
+      function renderFlagCell(td, value) {
+        if (!value || typeof value !== 'object') {
+          td.textContent = value ?? '';
+          return;
+        }
+
+        if (value.kind === 'single') {
+          const backgroundColor = value.background_color || '';
+          td.textContent = value.label || '';
+          if (backgroundColor) {
+            td.style.backgroundColor = backgroundColor;
+            td.style.color = getContrastTextColor(backgroundColor);
+          }
+          td.style.fontWeight = '600';
+          return;
+        }
+
+        if (value.kind === 'multiple') {
+          const moreButton = document.createElement('button');
+          moreButton.type = 'button';
+          moreButton.className = 'btn btn-sm btn-link p-0';
+          moreButton.textContent = value.label || 'More';
+          moreButton.addEventListener('click', (event) => {
+            event.preventDefault();
+            showVehicleFlagsModal(value.flags || []);
+          });
+          td.appendChild(moreButton);
+          return;
+        }
+
+        td.textContent = value.label ?? value.text ?? value.name ?? '';
+      }
+
       function rebuildDetailsTable(data) {
         if (!vehicleDetailsTableBody) return;
         vehicleDetailsTableBody.innerHTML = '';
-        const detailRows = data.detail_rows || [];
-        detailRows.forEach((row) => {
+        vehicleDetailColumns = data.detail_columns || vehicleDetailColumns || [];
+        vehicleDetailRows = data.detail_rows || [];
+        vehicleDetailRows.forEach((row) => {
           const tr = document.createElement('tr');
-          row.forEach((value) => {
+          row.forEach((value, index) => {
             const td = document.createElement('td');
-            td.textContent = value ?? '';
+            const columnKey = normalizeColumnName(vehicleDetailColumns[index]);
+            if (columnKey === 'flag') {
+              renderFlagCell(td, value);
+            } else {
+              td.textContent = value ?? '';
+            }
             tr.appendChild(td);
           });
           vehicleDetailsTableBody.appendChild(tr);
         });
+      }
+
+      function getContrastTextColor(hexColor) {
+        if (!hexColor || typeof hexColor !== 'string') return '#111111';
+        const normalized = hexColor.trim().replace('#', '');
+        if (!/^[0-9a-fA-F]{6}$/.test(normalized)) return '#111111';
+        const r = parseInt(normalized.slice(0, 2), 16);
+        const g = parseInt(normalized.slice(2, 4), 16);
+        const b = parseInt(normalized.slice(4, 6), 16);
+        const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+        return luminance > 0.6 ? '#111111' : '#ffffff';
       }
 
       function buildDataUrl() {
@@ -548,6 +782,7 @@
         if (!params.has('filter')) {
           params.set('filter', "{{ filter_type }}");
         }
+        params.set('date_mode', dateModeToggle && dateModeToggle.checked ? 'collected' : 'recovered');
         params.forEach((value, key) => {
           url.searchParams.append(key, value);
         });
@@ -637,11 +872,24 @@
         });
       }
 
+      if (dateModeToggle) {
+        dateModeToggle.addEventListener('change', () => {
+          const url = new URL(window.location.href);
+          url.searchParams.set('date_mode', dateModeToggle.checked ? 'collected' : 'recovered');
+          window.location.href = url.toString();
+        });
+      }
+
       const initialLiveEnabled = {{ 'true' if live_enabled else 'false' }};
       if (initialLiveEnabled) {
         syncLiveControls(true);
         startLiveUpdates();
       }
+
+      rebuildDetailsTable({
+        detail_columns: vehicleDetailColumns,
+        detail_rows: vehicleDetailRows,
+      });
 
       renderChart(currentChartType);
     </script>

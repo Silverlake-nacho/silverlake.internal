@@ -263,10 +263,14 @@
           <img src="{{ url_for('static', filename='SLK Logo.png') }}" alt="Silverlake Collapsed Logo" class="logo-collapsed">
           <img src="{{ url_for('static', filename='logo-slg-strip.svg') }}" alt="Silverlake Logo" class="logo-expanded">
         </div>
-        <div class="nav-section">
+                <div class="nav-section">
           <a href="{{ url_for('index') }}" class="nav-link{% if active_page == 'index' %} active{% endif %}">
             <i class="fas fa-magnifying-glass-dollar"></i>
             <span class="link-text">Opportunity Finder</span>
+          </a>
+          <a href="{{ url_for('image_lookup') }}" class="nav-link{% if active_page == 'image_lookup' %} active{% endif %}">
+            <i class="fas fa-image"></i>
+            <span class="link-text">Image Lookup</span>
           </a>
           <a href="{{ url_for('image_stats') }}" class="nav-link{% if active_page == 'image_stats' %} active{% endif %}">
             <i class="fas fa-chart-pie"></i>
@@ -288,13 +292,13 @@
             <i class="fas fa-boxes-stacked"></i>
             <span class="link-text">Inventory Stats</span>
           </a>
-          <a href="{{ url_for('crush_vehicles') }}" class="nav-link{% if active_page == 'crush_vehicles' %} active{% endif %}">
-            <i class="fas fa-car-burst"></i>
-            <span class="link-text">Crush Vehicles</span>
+          <a href="{{ url_for('vehicle_stats') }}" class="nav-link{% if active_page == 'vehicle_stats' %} active{% endif %}">
+            <i class="fas fa-car-side"></i>
+            <span class="link-text">Vehicle Stats</span>
           </a>
-          <a href="{{ url_for('logs') }}" class="nav-link{% if active_page == 'logs' %} active{% endif %}">
-            <i class="fas fa-clipboard-list"></i>
-            <span class="link-text">Logs</span>
+          <a href="{{ url_for('executive_stats') }}" class="nav-link{% if active_page == 'executive_stats' %} active{% endif %}">
+            <i class="fas fa-gauge-high"></i>
+            <span class="link-text">Executive Stats</span>
           </a>
         </div>
         <div class="sidebar-footer">
