@@ -251,6 +251,34 @@
         cursor: pointer;
         text-align: center;
       }
+      .timeline-verified-badge {
+        position: absolute;
+        left: -8px;
+        bottom: 30px;
+        display: none;
+        width: 24px;
+        height: 24px;
+        align-items: center;
+        justify-content: center;
+        border-radius: 50%;
+        background: #198754;
+        color: #fff;
+        font-size: 0.95rem;
+        font-weight: 800;
+        border: 2px solid #fff;
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+        z-index: 2;
+      }
+      .timeline-item.is-verified .timeline-verified-badge {
+        display: flex;
+      }
+      .timeline-item.is-verified .timeline-marker {
+        border-top-color: #0b3d0b;
+      }
+      .timeline-item.is-verified .timeline-thumb {
+        border-color: #0b3d0b;
+        box-shadow: 0 6px 14px rgba(11, 61, 11, 0.35);
+      }
       .timeline-marker {
         position: relative;
         width: 0;
@@ -331,6 +359,102 @@
       .zoom-controls input[type="range"] {
         max-width: 200px;
       }
+      .image-verified-control {
+        display: flex;
+        justify-content: flex-end;
+        padding-top: 0.75rem;
+      }
+      .image-modal-nav-stack {
+        display: flex;
+        flex-direction: column;
+        gap: 0.35rem;
+      }
+      .image-modal-nav {
+        flex-shrink: 0;
+        min-width: 2.75rem;
+      }
+      .image-modal-skip-nav {
+        background-color: #198754;
+        border-color: #198754;
+        color: #fff;
+      }
+      .image-modal-skip-nav:hover,
+      .image-modal-skip-nav:focus {
+        background-color: #157347;
+        border-color: #146c43;
+        color: #fff;
+      }
+      .image-modal-skip-nav:active {
+        background-color: #9be7a6 !important;
+        border-color: #9be7a6 !important;
+        color: #0f5132 !important;
+      }
+      .image-modal-title {
+        flex: 1;
+        text-align: center;
+      }
+      .image-count-warning-overlay {
+        align-items: center;
+        background: rgba(33, 37, 41, 0.45);
+        display: none;
+        inset: 0;
+        justify-content: center;
+        padding: 1rem;
+        position: absolute;
+        z-index: 20;
+      }
+      .image-count-warning-overlay.is-visible {
+        display: flex;
+      }
+      .image-count-warning-dialog {
+        max-width: 440px;
+        width: min(100%, 440px);
+      }
+      .modal-image-zoom-controls {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.5rem;
+        margin-bottom: 0.75rem;
+      }
+      #imageModalDialog {
+        max-width: min(96vw, var(--modal-image-dialog-width, 800px));
+        transition: max-width 0.15s ease;
+      }
+      #modalImageZoomLabel {
+        display: inline-block;
+        min-width: 3.5rem;
+        text-align: center;
+      }
+      .modal-image-frame {
+        position: relative;
+        overflow: auto;
+        border-radius: 0.375rem;
+        cursor: zoom-in;
+        background: #f8f9fa;
+        max-height: 70vh;
+      }
+      .modal-main-image {
+        object-fit: contain;
+        max-width: none;
+        max-height: none;
+        transition: width 0.15s ease;
+      }
+      .modal-magnifier {
+        display: none;
+        position: absolute;
+        width: 170px;
+        height: 170px;
+        border: 3px solid #fff;
+        border-radius: 50%;
+        box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+        pointer-events: none;
+        background-repeat: no-repeat;
+        z-index: 5;
+      }
+      .modal-image-frame:hover .modal-magnifier {
+        display: block;
+      }
       .exclusion-card .exclusion-body {
         display: none;
       }
@@ -382,10 +506,14 @@
           <img src="{{ url_for('static', filename='SLK Logo.png') }}" alt="Silverlake Collapsed Logo" class="logo-collapsed">
           <img src="{{ url_for('static', filename='logo-slg-strip.svg') }}" alt="Silverlake Logo" class="logo-expanded">
         </div>
-        <div class="nav-section">
+                <div class="nav-section">
           <a href="{{ url_for('index') }}" class="nav-link{% if active_page == 'index' %} active{% endif %}">
             <i class="fas fa-magnifying-glass-dollar"></i>
             <span class="link-text">Opportunity Finder</span>
+          </a>
+          <a href="{{ url_for('image_lookup') }}" class="nav-link{% if active_page == 'image_lookup' %} active{% endif %}">
+            <i class="fas fa-image"></i>
+            <span class="link-text">Image Lookup</span>
           </a>
           <a href="{{ url_for('image_stats') }}" class="nav-link{% if active_page == 'image_stats' %} active{% endif %}">
             <i class="fas fa-chart-pie"></i>
@@ -407,13 +535,13 @@
             <i class="fas fa-boxes-stacked"></i>
             <span class="link-text">Inventory Stats</span>
           </a>
-          <a href="{{ url_for('crush_vehicles') }}" class="nav-link{% if active_page == 'crush_vehicles' %} active{% endif %}">
-            <i class="fas fa-car-burst"></i>
-            <span class="link-text">Crush Vehicles</span>
+          <a href="{{ url_for('vehicle_stats') }}" class="nav-link{% if active_page == 'vehicle_stats' %} active{% endif %}">
+            <i class="fas fa-car-side"></i>
+            <span class="link-text">Vehicle Stats</span>
           </a>
-          <a href="{{ url_for('logs') }}" class="nav-link{% if active_page == 'logs' %} active{% endif %}">
-            <i class="fas fa-clipboard-list"></i>
-            <span class="link-text">Logs</span>
+          <a href="{{ url_for('executive_stats') }}" class="nav-link{% if active_page == 'executive_stats' %} active{% endif %}">
+            <i class="fas fa-gauge-high"></i>
+            <span class="link-text">Executive Stats</span>
           </a>
         </div>
         <div class="sidebar-footer">
@@ -542,11 +670,12 @@
                               </div>
                               <div class="timeline-track">
                                 {% for item in day["items"] %}
-                                  <button type="button" class="timeline-item" style="left: {{ item.position }}%; --stack-offset: {{ item.stack_index * 14 }}px;" data-bs-toggle="modal" data-bs-target="#imageModal" data-images='{{ item.full_urls|tojson }}' data-tag="{{ item.tag }}" data-time="{{ item.time_label }}" title="{{ item.time_label }} - Tag {{ item.tag }}">
+                                  <button type="button" class="timeline-item{% if item.verified %} is-verified{% endif %}" style="left: {{ item.position }}%; --stack-offset: {{ item.stack_index * 14 }}px;" data-bs-toggle="modal" data-bs-target="#imageModal" data-images='{{ item.full_urls|tojson }}' data-invnumber="{{ item.invnumber }}" data-tag="{{ item.tag }}" data-time="{{ item.time_label }}" data-verified="{{ 'true' if item.verified else 'false' }}" data-make="{{ item.make }}" data-model="{{ item.model }}" data-itemname="{{ item.itemname }}" data-part-comments="{{ item.part_comments }}" data-condition-shortcode="{{ item.condition_shortcode }}" title="{{ item.time_label }} - Tag {{ item.tag }}">
                                     <div class="timeline-marker timeline-marker--{{ item.status }}">
                                       <span class="timeline-time">{{ item.time_label }}</span>
                                       <span class="timeline-tag">{{ item.tag }}</span>
                                     </div>
+                                    <span class="timeline-verified-badge" aria-label="Verified">✓</span>
                                     <img src="{{ item.thumb_url }}" alt="Thumbnail {{ item.tag }}" class="timeline-thumb">
                                     <div class="timeline-preview-strip">
                                       {% for preview_url in item.preview_urls %}
@@ -576,13 +705,48 @@
     </div>
 
     <div class="modal fade" id="imageModal" tabindex="-1" aria-labelledby="imageModalLabel" aria-hidden="true">
-      <div class="modal-dialog modal-dialog-centered modal-lg">
-        <div class="modal-content">
-          <div class="modal-header">
-            <h5 class="modal-title" id="imageModalLabel">Image Preview</h5>
+      <div class="modal-dialog modal-dialog-centered modal-lg" id="imageModalDialog">
+        <div class="modal-content position-relative">
+          <div class="image-count-warning-overlay" id="imageCountWarningOverlay" role="alertdialog" aria-modal="true" aria-labelledby="imageCountWarningTitle" aria-describedby="imageCountWarningMessage">
+            <div class="modal-content image-count-warning-dialog shadow-lg">
+              <div class="modal-header">
+                <h5 class="modal-title text-danger" id="imageCountWarningTitle">Image limit warning</h5>
+              </div>
+              <div class="modal-body">
+                <p class="mb-0" id="imageCountWarningMessage">The part has more than 24 images, not allowed on eBay</p>
+              </div>
+              <div class="modal-footer">
+                <button type="button" class="btn btn-success" id="imageCountWarningOk">OK</button>
+              </div>
+            </div>
+          </div>
+          <div class="modal-header gap-2">
+            <div class="image-modal-nav-stack">
+              <button type="button" class="btn btn-sm btn-outline-success image-modal-nav" id="imageModalPrevPart" aria-label="Show previous timeline part">‹</button>
+              <button type="button" class="btn btn-sm image-modal-nav image-modal-skip-nav" id="imageModalPrevUnverifiedPart" aria-label="Show previous unverified timeline part">‹</button>
+            </div>
+            <div class="modal-title image-modal-title" id="imageModalLabel">
+              <h5 class="mb-0" id="imageModalSummary">Image Preview</h5>
+              <div class="small text-muted" id="imageModalPartDetails"></div>
+              <div class="small text-muted" id="imageModalPartComments"></div>
+              <div class="small text-muted" id="imageModalCondition"></div>
+              <div class="small text-muted" id="imageModalImageCount"></div>
+            </div>
+            <div class="image-modal-nav-stack">
+              <button type="button" class="btn btn-sm btn-outline-success image-modal-nav" id="imageModalNextPart" aria-label="Show next timeline part">›</button>
+              <button type="button" class="btn btn-sm image-modal-nav image-modal-skip-nav" id="imageModalNextUnverifiedPart" aria-label="Show next unverified timeline part">›</button>
+            </div>
             <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
           </div>
           <div class="modal-body text-center">
+            <div class="modal-image-zoom-controls">
+              <button type="button" class="btn btn-sm btn-outline-success" data-modal-image-zoom="1" aria-label="Reset image zoom to 100%">100%</button>
+              <button type="button" class="btn btn-sm btn-outline-success" id="modalImageZoomOut" aria-label="Zoom image out">-</button>
+              <span class="small text-muted" id="modalImageZoomLabel">100%</span>
+              <button type="button" class="btn btn-sm btn-outline-success" id="modalImageZoomIn" aria-label="Zoom image in">+</button>
+              <button type="button" class="btn btn-sm btn-outline-success" data-modal-image-zoom="2" aria-label="Set image zoom to 200%">200%</button>
+              <button type="button" class="btn btn-sm btn-outline-success" data-modal-image-zoom="3" aria-label="Set image zoom to 300%">300%</button>
+            </div>
             <div id="imageCarousel" class="carousel slide" data-bs-ride="false">
               <div class="carousel-inner" id="imageCarouselInner"></div>
               <button class="carousel-control-prev" type="button" data-bs-target="#imageCarousel" data-bs-slide="prev">
@@ -595,6 +759,12 @@
               </button>
             </div>
             <div class="modal-preview-strip" id="imageCarouselPreviews"></div>
+            <div class="image-verified-control">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="imageVerifiedCheckbox">
+                <label class="form-check-label fw-bold text-success" for="imageVerifiedCheckbox">Verified</label>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -602,10 +772,87 @@
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-      const imageModal = document.getElementById('imageModal');
+	  const imageModal = document.getElementById('imageModal');
       const carouselInner = document.getElementById('imageCarouselInner');
       const carouselPreviews = document.getElementById('imageCarouselPreviews');
+      const verifiedCheckbox = document.getElementById('imageVerifiedCheckbox');
+      const modalSummary = document.getElementById('imageModalSummary');
+      const modalPartDetails = document.getElementById('imageModalPartDetails');
+      const modalPartComments = document.getElementById('imageModalPartComments');
+      const modalCondition = document.getElementById('imageModalCondition');
+      const modalImageCount = document.getElementById('imageModalImageCount');
+      const modalPrevPart = document.getElementById('imageModalPrevPart');
+      const modalNextPart = document.getElementById('imageModalNextPart');
+      const modalPrevUnverifiedPart = document.getElementById('imageModalPrevUnverifiedPart');
+      const modalNextUnverifiedPart = document.getElementById('imageModalNextUnverifiedPart');
+      const imageCountWarningOverlay = document.getElementById('imageCountWarningOverlay');
+      const imageCountWarningOk = document.getElementById('imageCountWarningOk');
+      const imageModalDialog = document.getElementById('imageModalDialog') || imageModal.querySelector('.modal-dialog');
+      const modalImageZoomIn = document.getElementById('modalImageZoomIn');
+      const modalImageZoomOut = document.getElementById('modalImageZoomOut');
+      const modalImageZoomPresetButtons = document.querySelectorAll('[data-modal-image-zoom]');
+      const modalImageZoomLabel = document.getElementById('modalImageZoomLabel');
       let carouselInstance = null;
+      let modalImageZoom = 1;
+      let activeModalImageCount = 0;
+      let imageCountWarningAcknowledged = false;
+      let pendingImageCountWarningAction = null;
+	  let activeTimelineButton = null;
+
+      const applyModalImageZoom = () => {
+        const zoomLabel = `${Math.round(modalImageZoom * 100)}%`;
+        modalImageZoomLabel.textContent = zoomLabel;
+        modalImageZoomLabel.innerText = zoomLabel;
+        modalImageZoomLabel.setAttribute('value', zoomLabel);
+        if (imageModalDialog) {
+          imageModalDialog.style.setProperty('--modal-image-dialog-width', `${800 * modalImageZoom}px`);
+        }
+
+        Array.from(document.querySelectorAll('[data-zoomable-image]')).forEach((image) => {
+          image.style.width = `${modalImageZoom * 100}%`;
+        });
+        Array.from(modalImageZoomPresetButtons).forEach((button) => {
+          const buttonZoom = Number(button.getAttribute('data-modal-image-zoom'));
+          button.classList.toggle('active', Math.abs(buttonZoom - modalImageZoom) < 0.01);
+        });
+      };
+
+      const setModalImageZoom = (zoom) => {
+        modalImageZoom = Math.min(4, Math.max(1, zoom));
+        applyModalImageZoom();
+      };
+
+      const updateMagnifier = (event) => {
+        const frame = event.currentTarget;
+        const image = frame.querySelector('[data-zoomable-image]');
+        const lens = frame.querySelector('[data-magnifier-lens]');
+        if (!image || !lens) return;
+
+        const rect = frame.getBoundingClientRect();
+        const x = event.clientX - rect.left;
+        const y = event.clientY - rect.top;
+        const imageX = x + frame.scrollLeft;
+        const imageY = y + frame.scrollTop;
+        const lensZoom = 2.5;
+
+        lens.style.left = `${imageX - lens.offsetWidth / 2}px`;
+        lens.style.top = `${imageY - lens.offsetHeight / 2}px`;
+        lens.style.backgroundImage = `url("${image.currentSrc || image.src}")`;
+        lens.style.backgroundSize = `${image.clientWidth * lensZoom}px ${image.clientHeight * lensZoom}px`;
+        lens.style.backgroundPosition = `${-(imageX * lensZoom - lens.offsetWidth / 2)}px ${-(imageY * lensZoom - lens.offsetHeight / 2)}px`;
+      };
+
+      const resetMagnifier = (event) => {
+        const lens = event.currentTarget.querySelector('[data-magnifier-lens]');
+        if (!lens) return;
+        lens.style.backgroundImage = '';
+      };
+
+      modalImageZoomIn.addEventListener('click', () => setModalImageZoom(modalImageZoom + 0.25));
+      modalImageZoomOut.addEventListener('click', () => setModalImageZoom(modalImageZoom - 0.25));
+      Array.from(modalImageZoomPresetButtons).forEach((button) => {
+        button.addEventListener('click', () => setModalImageZoom(Number(button.getAttribute('data-modal-image-zoom'))));
+      });
 
       document.querySelectorAll('[data-zoom-controls]').forEach((controls) => {
         const zoomRange = controls.querySelector('[data-zoom-range]');
@@ -643,13 +890,81 @@
         updateZoom(zoomRange.value);
       });
 
-      imageModal.addEventListener('show.bs.modal', (event) => {
-        const button = event.relatedTarget;
+      const getTimelineButtons = () => Array.from(document.querySelectorAll('.timeline-item'));
+
+      const hideImageCountWarning = () => {
+        imageCountWarningOverlay.classList.remove('is-visible');
+        pendingImageCountWarningAction = null;
+      };
+
+      const showImageCountWarning = (onAcknowledge) => {
+        pendingImageCountWarningAction = onAcknowledge;
+        imageCountWarningOverlay.classList.add('is-visible');
+        imageCountWarningOk.focus();
+      };
+
+      const continueAfterImageCountWarning = () => {
+        const action = pendingImageCountWarningAction;
+        hideImageCountWarning();
+        if (action) {
+          action();
+        }
+      };
+
+      const confirmLeavePartIfNeeded = (onConfirmed) => {
+        if (activeModalImageCount <= 24 || imageCountWarningAcknowledged) {
+          onConfirmed();
+          return;
+        }
+
+        imageCountWarningAcknowledged = true;
+        showImageCountWarning(onConfirmed);
+      };
+
+      const isTimelineButtonVerified = (button) => button?.getAttribute('data-verified') === 'true';
+
+      const findTimelineButton = (timelineButtons, activeIndex, direction, skipVerified = false) => {
+        for (let index = activeIndex + direction; index >= 0 && index < timelineButtons.length; index += direction) {
+          const candidate = timelineButtons[index];
+          if (!skipVerified || !isTimelineButtonVerified(candidate)) {
+            return candidate;
+          }
+        }
+        return null;
+      };
+
+      const updatePartNavigationButtons = () => {
+        const timelineButtons = getTimelineButtons();
+        const activeIndex = timelineButtons.indexOf(activeTimelineButton);
+        modalPrevPart.disabled = activeIndex <= 0;
+        modalNextPart.disabled = activeIndex < 0 || activeIndex >= timelineButtons.length - 1;
+        modalPrevUnverifiedPart.disabled = activeIndex < 0 || !findTimelineButton(timelineButtons, activeIndex, -1, true);
+        modalNextUnverifiedPart.disabled = activeIndex < 0 || !findTimelineButton(timelineButtons, activeIndex, 1, true);
+      };
+
+      const showTimelinePartInModal = (button) => {
+        if (!button) return;
+
         const tag = button.getAttribute('data-tag');
         const time = button.getAttribute('data-time');
         const images = JSON.parse(button.getAttribute('data-images') || '[]');
-        const modalTitle = imageModal.querySelector('.modal-title');
-        modalTitle.textContent = `Tag ${tag} · ${time}`;
+        const make = button.getAttribute('data-make') || '';
+        const model = button.getAttribute('data-model') || '';
+        const itemname = button.getAttribute('data-itemname') || '';
+        const partComments = button.getAttribute('data-part-comments') || '';
+        const conditionShortcode = button.getAttribute('data-condition-shortcode') || '';
+        activeTimelineButton = button;
+        verifiedCheckbox.checked = button.getAttribute('data-verified') === 'true';
+        modalSummary.textContent = `Tag ${tag} · ${time}`;
+        modalPartDetails.textContent = [make, model, itemname].filter(Boolean).join(' · ');
+        modalPartComments.textContent = partComments ? `Part comments: ${partComments}` : '';
+        modalCondition.textContent = conditionShortcode ? `Condition: ${conditionShortcode}` : '';
+        activeModalImageCount = images.length;
+        imageCountWarningAcknowledged = false;
+        modalImageCount.textContent = `Images : ${activeModalImageCount}`;
+        modalImageCount.classList.toggle('text-danger', activeModalImageCount > 24);
+        modalImageCount.classList.toggle('fw-bold', activeModalImageCount > 24);
+        modalImageCount.classList.toggle('text-muted', activeModalImageCount <= 24);
 
         carouselInner.innerHTML = '';
         carouselPreviews.innerHTML = '';
@@ -657,7 +972,15 @@
         images.forEach((url, index) => {
           const item = document.createElement('div');
           item.className = `carousel-item${index === 0 ? ' active' : ''}`;
-          item.innerHTML = `<img src="${url}" class="d-block w-100 rounded" alt="Image ${index + 1} for ${tag}">`;
+          item.innerHTML = `
+            <div class="modal-image-frame" data-magnifier-frame>
+              <img src="${url}" class="modal-main-image d-block w-100 rounded" alt="Image ${index + 1} for ${tag}" data-zoomable-image>
+              <span class="modal-magnifier" data-magnifier-lens></span>
+            </div>
+          `;
+          const frame = item.querySelector('[data-magnifier-frame]');
+          frame.addEventListener('mousemove', updateMagnifier);
+          frame.addEventListener('mouseleave', resetMagnifier);
           carouselInner.appendChild(item);
         });
 
@@ -677,8 +1000,66 @@
           carouselInstance.dispose();
         }
         carouselInstance = new bootstrap.Carousel(document.getElementById('imageCarousel'));
+        setModalImageZoom(1);
+        updatePartNavigationButtons();
+      };
+
+      const navigateTimelinePart = (direction, skipVerified = false) => {
+        const timelineButtons = getTimelineButtons();
+        const activeIndex = timelineButtons.indexOf(activeTimelineButton);
+        const nextButton = findTimelineButton(timelineButtons, activeIndex, direction, skipVerified);
+        if (!nextButton) return;
+        confirmLeavePartIfNeeded(() => showTimelinePartInModal(nextButton));
+      };
+
+      imageModal.addEventListener('show.bs.modal', (event) => {
+        showTimelinePartInModal(event.relatedTarget);
       });
 
+      modalPrevPart.addEventListener('click', () => navigateTimelinePart(-1));
+      modalNextPart.addEventListener('click', () => navigateTimelinePart(1));
+      modalPrevUnverifiedPart.addEventListener('click', () => navigateTimelinePart(-1, true));
+      modalNextUnverifiedPart.addEventListener('click', () => navigateTimelinePart(1, true));
+      imageCountWarningOk.addEventListener('click', continueAfterImageCountWarning);
+
+      imageModal.addEventListener('hide.bs.modal', (event) => {
+        if (activeModalImageCount <= 24 || imageCountWarningAcknowledged) return;
+
+        event.preventDefault();
+        confirmLeavePartIfNeeded(() => bootstrap.Modal.getOrCreateInstance(imageModal).hide());
+      });
+
+      verifiedCheckbox.addEventListener('change', async (event) => {
+        if (!activeTimelineButton) return;
+
+        const verified = event.target.checked;
+        const invnumber = activeTimelineButton.getAttribute('data-invnumber');
+        event.target.disabled = true;
+
+        try {
+          const response = await fetch('{{ url_for("save_image_timeline_verified") }}', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ invnumber, verified }),
+          });
+
+          if (!response.ok) {
+            throw new Error('Unable to save verified status');
+          }
+
+          document.querySelectorAll(`[data-invnumber="${CSS.escape(invnumber)}"]`).forEach((button) => {
+            button.setAttribute('data-verified', String(verified));
+            button.classList.toggle('is-verified', verified);
+          });
+		  updatePartNavigationButtons();
+        } catch (error) {
+          event.target.checked = !verified;
+          window.alert('The verified status could not be saved. Please try again.');
+        } finally {
+          event.target.disabled = false;
+        }
+      });
+	  
       const previewToggle = document.getElementById('previewToggle');
       if (previewToggle) {
         const storedPreviewState = localStorage.getItem('timelinePreviewEnabled');
