@@ -1,0 +1,2752 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Silverlake Executive Stats</title>
+    <link rel="icon" href="{{ url_for('static', filename='SLK Logo.png') }}">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+    <link rel="stylesheet" href="https://cdn.datatables.net/1.13.8/css/dataTables.bootstrap5.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="https://cdn.datatables.net/1.13.8/js/jquery.dataTables.min.js"></script>
+    <script src="https://cdn.datatables.net/1.13.8/js/dataTables.bootstrap5.min.js"></script>
+    <style>
+      :root {
+        --sidebar-expanded: 260px;
+        --sidebar-collapsed: calc(var(--sidebar-expanded) * 0.3);
+        --sidebar-bg: #5c9c13;
+      }
+      body {
+        margin: 0;
+        background: url("{{ url_for('static', filename='background.jpg') }}") no-repeat center center fixed;
+        background-size: cover;
+        font-family: 'Montserrat', sans-serif;
+        color: black;
+      }
+      h1, h2, label {
+        color: #5c9c13;
+      }
+      .page-wrapper {
+        display: flex;
+        min-height: 100vh;
+      }
+      .sidebar {
+        width: var(--sidebar-collapsed);
+        background-color: var(--sidebar-bg);
+        color: #fff;
+        position: fixed;
+        inset: 0 auto 0 0;
+        overflow: hidden;
+        transition: width 0.3s ease;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        padding: 16px 12px;
+        z-index: 1000;
+      }
+      .sidebar:hover {
+        width: var(--sidebar-expanded);
+      }
+      .sidebar .brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 8px 10px;
+      }
+      .sidebar .logo-collapsed {
+        height: 34px;
+        opacity: 1;
+        transition: opacity 0.2s ease;
+      }
+      .sidebar .logo-expanded {
+        height: 34px;
+        opacity: 0;
+        transform: translateX(-6px);
+        transition: opacity 0.2s ease, transform 0.2s ease;
+      }
+      .sidebar:hover .logo-collapsed {
+        opacity: 0;
+      }
+      .sidebar:hover .logo-expanded {
+        opacity: 1;
+        transform: translateX(0);
+      }
+      .sidebar .brand-text {
+        font-weight: 700;
+        font-size: 1.05rem;
+        white-space: nowrap;
+        opacity: 0;
+        transition: opacity 0.2s ease;
+      }
+      .sidebar:hover .brand-text {
+        opacity: 1;
+      }
+      .sidebar .nav-section {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .sidebar .nav-link {
+        color: #fff;
+        font-weight: 700;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 10px 12px;
+        border-radius: 10px;
+        text-decoration: none;
+        transition: background-color 0.2s ease, color 0.2s ease;
+        font-size: 0.95rem;
+      }
+      .sidebar .nav-link i {
+        width: 20px;
+        text-align: center;
+        font-size: 1.15rem;
+      }
+      .sidebar .nav-link .link-text {
+        white-space: nowrap;
+        opacity: 0;
+        transform: translateX(-6px);
+        transition: opacity 0.2s ease, transform 0.2s ease;
+      }
+      .sidebar:hover .nav-link .link-text {
+        opacity: 1;
+        transform: translateX(0);
+      }
+      .sidebar .nav-link:hover,
+      .sidebar .nav-link.active {
+        background-color: rgba(255, 255, 255, 0.16);
+        color: #fff;
+      }
+      .sidebar-footer {
+        margin-top: auto;
+      }
+      .content {
+        flex: 1;
+        margin-left: var(--sidebar-collapsed);
+        transition: margin-left 0.3s ease;
+      }
+      .sidebar:hover ~ .content {
+        margin-left: var(--sidebar-expanded);
+      }
+      .content-inner {
+        padding: 24px 12px;
+      }
+      .portal-container {
+        width: 90%;
+        max-width: 1720px;
+        margin: 0 auto;
+        padding-left: 8px;
+        padding-right: 8px;
+      }
+      .logo {
+        display: flex;
+        justify-content: flex-end;
+        margin-bottom: 20px;
+      }
+      .logo img {
+        width: 150px;
+        max-width: 50%;
+        height: auto;
+      }
+      .summary-card {
+        background: rgba(255, 255, 255, 0.92);
+        border-radius: 16px;
+        padding: 16px 20px;
+        margin-bottom: 20px;
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+      }
+      .exclusion-card .exclusion-body {
+        display: none;
+      }
+      .exclusion-card:hover .exclusion-body,
+      .exclusion-card:focus-within .exclusion-body {
+        display: block;
+      }
+      .exclusion-card {
+        background: rgba(255, 255, 255, 0.92);
+      }
+      .toggle-stack {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-bottom: 20px;
+      }
+      .toggle-wrapper {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .toggle-label {
+        margin: 0;
+        font-weight: 600;
+      }
+      .toggle {
+        position: relative;
+        display: inline-flex;
+        align-items: center;
+        width: 300px;
+        height: 50px;
+        border-radius: 999px;
+        background: rgba(92, 156, 19, 0.15);
+        cursor: pointer;
+        padding: 4px;
+      }
+      .toggle input {
+        position: absolute;
+        inset: 0;
+        margin: 0;
+        opacity: 0;
+        cursor: pointer;
+      }
+      .toggle-track {
+        position: absolute;
+        top: 4px;
+        left: 4px;
+        width: calc(50% - 4px);
+        height: calc(100% - 8px);
+        border-radius: 999px;
+        background: #5c9c13;
+        transition: transform 0.2s ease;
+      }
+      .toggle input:checked + .toggle-track {
+        transform: translateX(100%);
+      }
+      .toggle-labels {
+        position: relative;
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        width: 100%;
+        font-size: 0.78rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.02em;
+        z-index: 1;
+      }
+      .toggle-labels span {
+        text-align: center;
+        color: rgba(31, 59, 8, 0.7);
+        transition: color 0.2s ease;
+        user-select: none;
+      }
+      .toggle-links {
+        position: relative;
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        width: 100%;
+        font-size: 0.78rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.02em;
+        z-index: 1;
+      }
+      .toggle-links a {
+        text-align: center;
+        text-decoration: none;
+        color: rgba(31, 59, 8, 0.7);
+        line-height: 32px;
+      }
+      .toggle-four {
+        width: 360px;
+      }
+      .toggle-four .toggle-track {
+        width: calc(25% - 2px);
+      }
+      .toggle-four.group-company .toggle-track {
+        transform: translateX(100%);
+      }
+      .toggle-four.group-status .toggle-track {
+        transform: translateX(200%);
+      }
+      .toggle-four.group-body_type .toggle-track {
+        transform: translateX(300%);
+      }
+      .toggle-four.group-contract .toggle-links a.contract-link,
+      .toggle-four.group-company .toggle-links a.company-link,
+      .toggle-four.group-status .toggle-links a.status-link,
+      .toggle-four.group-body_type .toggle-links a.body-type-link {
+        color: #fff;
+      }
+      .vehicle-sold-toggle .toggle-labels span:first-child {
+        color: #fff;
+      }
+      .contract-row-toggle {
+        cursor: pointer;
+      }
+      .contract-row-toggle td:first-child {
+        user-select: none;
+      }
+      .contract-row-toggle-expanded td:first-child,
+      .contract-row-toggle-expanded td:last-child {
+        font-weight: 700;
+      }
+      .contract-company-breakdown td:first-child {
+        padding-left: 30px;
+        font-size: 0.875rem;
+      }
+      .contract-company-breakdown td:last-child {
+        font-size: 0.875rem;
+      }
+      .vehicle-sold-contract-breakdown td {
+        font-size: 0.875rem;
+      }
+      .vehicle-sold-contract-breakdown td:first-child {
+        padding-left: 30px;
+      }
+      .contract-company-breakdown-total-excluded td {
+        color: #dc3545;
+        font-weight: 700;
+      }
+      .contract-type-light-grey td {
+        color: #adb5bd;
+      }
+      .vehicle-status-group-toggle {
+        cursor: pointer;
+      }
+      .vehicle-status-group-toggle td:first-child {
+        user-select: none;
+      }
+      .vehicle-status-group-toggle-expanded td:first-child,
+      .vehicle-status-group-toggle-expanded td:last-child {
+        font-weight: 700;
+      }
+      .vehicle-status-breakdown td:first-child {
+        padding-left: 30px;
+        font-size: 0.875rem;
+      }
+      .vehicle-status-breakdown td:last-child {
+        font-size: 0.875rem;
+      }
+      .vehicle-details-table thead {
+        position: sticky;
+        top: 0;
+        z-index: 4;
+      }
+      .vehicle-details-table thead tr.title-row th {
+        position: static;
+        background: #f8f9fa;
+      }
+      .vehicle-details-table thead tr.filter-row th {
+        position: static;
+        background: #fff;
+        padding: 6px;
+        overflow: hidden;
+      }
+      .vehicle-details-filter {
+        width: 100%;
+        min-width: 110px;
+        font-size: 0.8rem;
+      }
+      .vehicle-details-table thead tr.filter-row .dt-column-order {
+        display: none !important;
+      }
+      .vehicle-details-table thead tr:not(.title-row):not(.filter-row) {
+        display: none;
+      }
+      .vehicle-table-frame {
+        width: 100%;
+        max-width: 100%;
+        max-height: 60vh;
+        overflow-x: auto;
+        overflow-y: auto;
+      }
+      .vehicle-table-frame .vehicle-details-table {
+        width: max-content;
+        min-width: 100%;
+      }
+      .vehicle-flag-list {
+        display: flex;
+        align-items: center;
+        flex-wrap: nowrap;
+        gap: 4px;
+      }
+      .vehicle-flag-badge {
+        display: inline-block;
+        flex: 0 0 auto;
+        padding: 2px 7px;
+        border-radius: 4px;
+        font-weight: 600;
+        white-space: nowrap;
+      }
+      #vehicleFlagsModal {
+        z-index: 1070;
+      }
+      .modal-backdrop.vehicle-flags-backdrop {
+        z-index: 1065;
+      }
+      .parts-breakdown-trigger {
+        cursor: pointer;
+        color: #0d6efd;
+        text-decoration: underline;
+        text-decoration-style: dotted;
+        text-underline-offset: 2px;
+      }
+      @media (max-width: 768px) {
+        :root {
+          --sidebar-expanded: 220px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page-wrapper">
+      <nav class="sidebar">
+        <div class="brand">
+          <img src="{{ url_for('static', filename='SLK Logo.png') }}" alt="Silverlake Collapsed Logo" class="logo-collapsed">
+          <img src="{{ url_for('static', filename='logo-slg-strip.svg') }}" alt="Silverlake Logo" class="logo-expanded">
+        </div>
+                <div class="nav-section">
+          <a href="{{ url_for('index') }}" class="nav-link{% if active_page == 'index' %} active{% endif %}">
+            <i class="fas fa-magnifying-glass-dollar"></i>
+            <span class="link-text">Opportunity Finder</span>
+          </a>
+          <a href="{{ url_for('image_lookup') }}" class="nav-link{% if active_page == 'image_lookup' %} active{% endif %}">
+            <i class="fas fa-image"></i>
+            <span class="link-text">Image Lookup</span>
+          </a>
+          <a href="{{ url_for('image_stats') }}" class="nav-link{% if active_page == 'image_stats' %} active{% endif %}">
+            <i class="fas fa-chart-pie"></i>
+            <span class="link-text">Image Stats</span>
+          </a>
+          <a href="{{ url_for('image_timeline') }}" class="nav-link{% if active_page == 'image_timeline' %} active{% endif %}">
+            <i class="fas fa-clock"></i>
+            <span class="link-text">Image Timeline</span>
+          </a>
+          <a href="{{ url_for('stores_timeline') }}" class="nav-link{% if active_page == 'stores_timeline' %} active{% endif %}">
+            <i class="fas fa-warehouse"></i>
+            <span class="link-text">Stores Timeline</span>
+          </a>
+          <a href="{{ url_for('stats') }}" class="nav-link{% if active_page == 'stats' %} active{% endif %}">
+            <i class="fas fa-chart-column"></i>
+            <span class="link-text">Sales Stats</span>
+          </a>
+          <a href="{{ url_for('inventory_stats') }}" class="nav-link{% if active_page == 'inventory_stats' %} active{% endif %}">
+            <i class="fas fa-boxes-stacked"></i>
+            <span class="link-text">Inventory Stats</span>
+          </a>
+          <a href="{{ url_for('vehicle_stats') }}" class="nav-link{% if active_page == 'vehicle_stats' %} active{% endif %}">
+            <i class="fas fa-car-side"></i>
+            <span class="link-text">Vehicle Stats</span>
+          </a>
+          <a href="{{ url_for('executive_stats') }}" class="nav-link{% if active_page == 'executive_stats' %} active{% endif %}">
+            <i class="fas fa-gauge-high"></i>
+            <span class="link-text">Executive Stats</span>
+          </a>
+          <a href="{{ url_for('scrapped_cars_upload') }}" class="nav-link{% if active_page == 'scrapped_cars_upload' %} active{% endif %}">
+            <i class="fas fa-file-excel"></i>
+            <span class="link-text">Scrapped Cars Upload</span>
+          </a>
+        </div>
+        <div class="sidebar-footer">
+          <a href="{{ url_for('logout') }}" class="nav-link">
+            <i class="fas fa-arrow-right-from-bracket"></i>
+            <span class="link-text">Logout ({{ current_user }})</span>
+          </a>
+        </div>
+      </nav>
+      <div class="content">
+        <div class="content-inner">
+          <div class="container portal-container">
+            <div class="logo">
+              <img src="{{ url_for('static', filename='logo-slg-strip.svg') }}" alt="Silverlake Logo">
+            </div>
+
+            <h1 class="mb-4 text-center">Executive Stats</h1>
+
+            {% if error_message %}
+              <div class="alert alert-danger" role="alert">{{ error_message }}</div>
+            {% endif %}
+
+            {% if database_name %}
+              <div class="alert alert-info" role="alert">
+                Connected to database: <strong>{{ database_name }}</strong>
+              </div>
+            {% endif %}
+
+            <div class="summary-card">
+              <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+                <div class="d-flex flex-wrap align-items-center gap-2">
+                  <a href="{{ url_for('executive_stats', filter='today', group=group_mode, date_mode=date_mode, parts_dimension=parts_sold_context.stats_dimension if parts_sold_context else 'department', parts_prev_mode=parts_sold_context.prev_mode if parts_sold_context else 'mirror', sold_only=1 if vehicle_sold_context.sold_only else 0, sold_not_paid=1 if vehicle_sold_context.sold_not_paid else 0, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">Today</a>
+                  <a href="{{ url_for('executive_stats', filter='yesterday', group=group_mode, date_mode=date_mode, parts_dimension=parts_sold_context.stats_dimension if parts_sold_context else 'department', parts_prev_mode=parts_sold_context.prev_mode if parts_sold_context else 'mirror', sold_only=1 if vehicle_sold_context.sold_only else 0, sold_not_paid=1 if vehicle_sold_context.sold_not_paid else 0, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">Yesterday</a>
+                  <a href="{{ url_for('executive_stats', filter='this_week', group=group_mode, date_mode=date_mode, parts_dimension=parts_sold_context.stats_dimension if parts_sold_context else 'department', parts_prev_mode=parts_sold_context.prev_mode if parts_sold_context else 'mirror', sold_only=1 if vehicle_sold_context.sold_only else 0, sold_not_paid=1 if vehicle_sold_context.sold_not_paid else 0, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">This Week</a>
+                  <a href="{{ url_for('executive_stats', filter='last_week', group=group_mode, date_mode=date_mode, parts_dimension=parts_sold_context.stats_dimension if parts_sold_context else 'department', parts_prev_mode=parts_sold_context.prev_mode if parts_sold_context else 'mirror', sold_only=1 if vehicle_sold_context.sold_only else 0, sold_not_paid=1 if vehicle_sold_context.sold_not_paid else 0, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">Last Week</a>
+                  <a href="{{ url_for('executive_stats', filter='this_month', group=group_mode, date_mode=date_mode, parts_dimension=parts_sold_context.stats_dimension if parts_sold_context else 'department', parts_prev_mode=parts_sold_context.prev_mode if parts_sold_context else 'mirror', sold_only=1 if vehicle_sold_context.sold_only else 0, sold_not_paid=1 if vehicle_sold_context.sold_not_paid else 0, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">This Month</a>
+                  <a href="{{ url_for('executive_stats', filter='last_month', group=group_mode, date_mode=date_mode, parts_dimension=parts_sold_context.stats_dimension if parts_sold_context else 'department', parts_prev_mode=parts_sold_context.prev_mode if parts_sold_context else 'mirror', sold_only=1 if vehicle_sold_context.sold_only else 0, sold_not_paid=1 if vehicle_sold_context.sold_not_paid else 0, live=1 if live_enabled else None) }}" class="btn btn-sm btn-primary date-link">Last Month</a>
+                  <form method="get" class="d-inline">
+                    <input type="hidden" name="filter" value="custom">
+                    <input type="hidden" name="group" value="{{ group_mode }}">
+                    <input type="hidden" name="date_mode" value="{{ date_mode }}">
+                    <input type="hidden" name="parts_dimension" value="{{ parts_sold_context.stats_dimension if parts_sold_context else 'department' }}">
+                    <input type="hidden" name="parts_prev_mode" value="{{ parts_sold_context.prev_mode if parts_sold_context else 'mirror' }}">
+                    <input type="hidden" name="sold_only" value="{{ 1 if vehicle_sold_context.sold_only else 0 }}">
+                    <input type="hidden" name="sold_not_paid" value="{{ 1 if vehicle_sold_context.sold_not_paid else 0 }}">
+                    <input type="date" name="start_date" id="customStartDate" required>
+                    <input type="date" name="end_date" id="customEndDate" required>
+                    {% if live_enabled %}
+                      <input type="hidden" name="live" value="1">
+                    {% endif %}
+                    <button type="submit" class="btn btn-sm btn-primary">Custom</button>
+                  </form>
+                 </div>
+                <div class="form-check ms-2">
+                  <input class="form-check-input" type="checkbox" id="liveToggle" {% if live_enabled %}checked{% endif %}>
+                  <label class="form-check-label text-success" for="liveToggle">Live</label>
+                </div>
+              </div>
+            </div>
+
+            <div class="card mb-4 shadow-sm exclusion-card">
+              <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                  <h5 class="mb-0">Exclude {{ exclusion_label or "Insurance Companies" }}</h5>
+                </div>
+                <div class="exclusion-body mt-3">
+                  <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
+                    <p class="mb-0 text-muted">Hover to show {{ (exclusion_label or "Insurance Companies")|lower }} exclusions.</p>
+                    <div class="d-flex gap-2">
+                      <button type="submit" form="companyFilterForm" class="btn btn-sm btn-primary">Apply</button>
+                      <button type="submit" form="companyFilterForm" formaction="{{ url_for('save_executive_stats_exclusions') }}" formmethod="post" class="btn btn-sm btn-success">Set as Default</button>
+                      <small class="text-muted align-self-center">Defaults are saved per user.</small>
+                    </div>
+                  </div>
+                  <form id="companyFilterForm" class="row g-2" method="get" action="{{ url_for('executive_stats') }}">
+                    <input type="hidden" name="filter" value="{{ filter_type }}">
+                    <input type="hidden" name="group" value="{{ group_mode }}">
+                    <input type="hidden" name="date_mode" value="{{ date_mode }}">
+                    <input type="hidden" name="parts_dimension" value="{{ parts_sold_context.stats_dimension if parts_sold_context else 'department' }}">
+                    <input type="hidden" name="parts_prev_mode" value="{{ parts_sold_context.prev_mode if parts_sold_context else 'mirror' }}">
+                    <input type="hidden" name="sold_only" value="{{ 1 if vehicle_sold_context.sold_only else 0 }}">
+					<input type="hidden" name="sold_not_paid" value="{{ 1 if vehicle_sold_context.sold_not_paid else 0 }}">
+                    <input type="hidden" name="start_date" value="{{ start_date.isoformat() if start_date else '' }}">
+                    <input type="hidden" name="end_date" value="{{ end_date.isoformat() if end_date else '' }}">
+                    <input type="hidden" id="liveInputField" name="live" value="{{ 1 if live_enabled else '' }}">
+                    {% for company in all_companies %}
+                      <div class="col-sm-6 col-md-4 col-lg-3">
+                        <div class="form-check">
+                          <input class="form-check-input" type="checkbox" name="exclude" value="{{ company }}" id="company-{{ loop.index }}" {% if company in excluded_companies %}checked{% endif %}>
+                          <label class="form-check-label" for="company-{{ loop.index }}">{{ company }}</label>
+                        </div>
+                      </div>
+                    {% endfor %}
+                  </form>
+                </div>
+              </div>
+            </div>
+
+            <div class="toggle-stack">
+              <div class="toggle-wrapper">
+                <span class="toggle-label">Date Type</span>
+                <label class="toggle" for="dateModeToggle">
+                  <input type="checkbox" id="dateModeToggle" {% if date_mode == 'collected' %}checked{% endif %} aria-label="Toggle between Vehicles IN and Vehicles OUT">
+                  <span class="toggle-track"></span>
+                  <div class="toggle-labels">
+                    <span><i class="fas fa-arrow-right-to-bracket"></i> Vehicles IN</span>
+                    <span><i class="fas fa-arrow-right-from-bracket"></i> Vehicles OUT</span>
+                  </div>
+                </label>
+              </div>
+              <div class="toggle-wrapper">
+                <span class="toggle-label">Group By</span>
+                <div class="toggle toggle-four group-{{ group_mode }}" role="group" aria-label="Toggle grouping criteria">
+                  <span class="toggle-track"></span>
+                  <div class="toggle-links">
+                    <a class="contract-link" href="{{ url_for('executive_stats', filter=filter_type, start_date=start_date.isoformat() if start_date else None, end_date=end_date.isoformat() if end_date else None, group='contract', date_mode=date_mode, parts_dimension=parts_sold_context.stats_dimension if parts_sold_context else 'department', exclude=excluded_companies, live=1 if live_enabled else None) }}">Contract</a>
+                    <a class="company-link" href="{{ url_for('executive_stats', filter=filter_type, start_date=start_date.isoformat() if start_date else None, end_date=end_date.isoformat() if end_date else None, group='company', date_mode=date_mode, parts_dimension=parts_sold_context.stats_dimension if parts_sold_context else 'department', exclude=excluded_companies, live=1 if live_enabled else None) }}">Insurance</a>
+                    <a class="status-link" href="{{ url_for('executive_stats', filter=filter_type, start_date=start_date.isoformat() if start_date else None, end_date=end_date.isoformat() if end_date else None, group='status', date_mode=date_mode, parts_dimension=parts_sold_context.stats_dimension if parts_sold_context else 'department', exclude=excluded_companies, live=1 if live_enabled else None) }}">Status</a>
+                    <a class="body-type-link" href="{{ url_for('executive_stats', filter=filter_type, start_date=start_date.isoformat() if start_date else None, end_date=end_date.isoformat() if end_date else None, group='body_type', date_mode=date_mode, parts_dimension=parts_sold_context.stats_dimension if parts_sold_context else 'department', exclude=excluded_companies, live=1 if live_enabled else None) }}">Body Type</a>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="row g-4 mb-4">
+              <div class="col-lg-6">
+                <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+                  <h5 class="text-success mb-0" id="dateRangeLabel">Showing: {{ date_range_label }}</h5>
+                </div>
+                <table class="table table-striped">
+                  <thead>
+                    <tr>
+                      <th>{{ entity_label }}</th>
+                      <th class="text-end">Vehicles</th>
+                    </tr>
+                  </thead>
+                  <tbody id="companyTableBody"></tbody>
+                  <tfoot>
+                    <tr class="fw-bold">
+                      <td class="text-end">Total Vehicles {{ 'OUT' if date_mode == 'collected' else 'IN' }}</td>
+                      <td class="text-end" id="totalSumCell">{{ '{:,.0f}'.format(sum_total) }}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+              <div class="col-lg-6">
+                <div class="card shadow-sm">
+                  <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                      <h5 class="card-title mb-0" id="chartTitle">{{ chart_title_base }} </h5>
+                      <div class="d-flex gap-2">
+                        <button id="resetZoomBtn" class="btn btn-sm btn-outline-secondary">Reset Zoom</button>
+                        <button id="toggleChartBtn" class="btn btn-sm btn-success">Show Pie Chart</button>
+                      </div>
+                    </div>
+                    <canvas id="vehicleChart" height="180"></canvas>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="row g-4 mb-4" id="vehicleSoldSection">
+              <div class="col-12">
+                <div class="toggle-stack mb-2">
+                  <div class="toggle-wrapper">
+                    <span class="toggle-label">Date Type</span>
+                    <div class="toggle vehicle-sold-toggle" role="group" aria-label="Vehicle sold date type">
+                      <span class="toggle-track"></span>
+                      <div class="toggle-labels">
+                        <span><i class="fas fa-gavel"></i> Vehicle Sold</span>
+                        <span aria-hidden="true"></span>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="toggle-wrapper">
+                    <span class="toggle-label">Group By</span>
+                    <div class="toggle toggle-four group-{{ group_mode }}" role="group" aria-label="Select Vehicle Sold grouping criteria">
+                      <span class="toggle-track"></span>
+                      <div class="toggle-links">
+                        <a class="contract-link" href="{{ url_for('executive_stats', filter=filter_type, start_date=start_date.isoformat() if start_date else None, end_date=end_date.isoformat() if end_date else None, group='contract', date_mode=date_mode, parts_dimension=parts_sold_context.stats_dimension if parts_sold_context else 'department', exclude=excluded_companies, sold_only=1 if vehicle_sold_context.sold_only else 0, sold_not_paid=1 if vehicle_sold_context.sold_not_paid else 0, live=1 if live_enabled else None) }}#vehicleSoldSection">Contract</a>
+                        <a class="company-link" href="{{ url_for('executive_stats', filter=filter_type, start_date=start_date.isoformat() if start_date else None, end_date=end_date.isoformat() if end_date else None, group='company', date_mode=date_mode, parts_dimension=parts_sold_context.stats_dimension if parts_sold_context else 'department', exclude=excluded_companies, sold_only=1 if vehicle_sold_context.sold_only else 0, sold_not_paid=1 if vehicle_sold_context.sold_not_paid else 0, live=1 if live_enabled else None) }}#vehicleSoldSection">Insurance</a>
+                        <a class="status-link" href="{{ url_for('executive_stats', filter=filter_type, start_date=start_date.isoformat() if start_date else None, end_date=end_date.isoformat() if end_date else None, group='status', date_mode=date_mode, parts_dimension=parts_sold_context.stats_dimension if parts_sold_context else 'department', exclude=excluded_companies, sold_only=1 if vehicle_sold_context.sold_only else 0, sold_not_paid=1 if vehicle_sold_context.sold_not_paid else 0, live=1 if live_enabled else None) }}#vehicleSoldSection">Status</a>
+                        <a class="body-type-link" href="{{ url_for('executive_stats', filter=filter_type, start_date=start_date.isoformat() if start_date else None, end_date=end_date.isoformat() if end_date else None, group='body_type', date_mode=date_mode, parts_dimension=parts_sold_context.stats_dimension if parts_sold_context else 'department', exclude=excluded_companies, sold_only=1 if vehicle_sold_context.sold_only else 0, sold_not_paid=1 if vehicle_sold_context.sold_not_paid else 0, live=1 if live_enabled else None) }}#vehicleSoldSection">Body Type</a>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="form-check align-self-center mb-0">
+                    <input class="form-check-input" type="checkbox" id="vehicleSoldOnlyToggle" {% if vehicle_sold_context.sold_only %}checked{% endif %}>
+                    <label class="form-check-label text-success" for="vehicleSoldOnlyToggle">Sold</label>
+                  </div>
+                  <div class="form-check align-self-center mb-0">
+                    <input class="form-check-input" type="checkbox" id="vehicleSoldNotPaidToggle" {% if vehicle_sold_context.sold_not_paid %}checked{% endif %}>
+                    <label class="form-check-label text-success" for="vehicleSoldNotPaidToggle">Sold Not Paid</label>
+                  </div>
+                </div>
+              </div>
+              <div class="col-lg-6">
+                <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+                  <h5 class="text-success mb-0" id="vehicleSoldDateRangeLabel">Showing: {{ vehicle_sold_context.date_range_label }}</h5>
+                </div>
+                <table class="table table-striped">
+                  <thead>
+                    <tr>
+                      <th id="vehicleSoldEntityHeader">{{ vehicle_sold_context.entity_label }}</th>
+                      <th class="text-end">Vehicles</th>
+                      <th class="text-end">Sale Price</th>
+                      <th class="text-end">Premium</th>
+                      <th class="text-end">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody id="vehicleSoldTableBody">
+                    {% for row in vehicle_sold_context.rows %}
+                    <tr>
+                      <td>{{ row[0] }}</td>
+                      <td class="text-end">{{ '{:,.0f}'.format(row[1]) }}</td>
+                      <td class="text-end">£{{ '{:,.2f}'.format(row[2]) }}</td>
+                      <td class="text-end">£{{ '{:,.2f}'.format(row[3]) }}</td>
+                      <td class="text-end">£{{ '{:,.2f}'.format(row[2] + row[3]) }}</td>
+                    </tr>
+                    {% endfor %}
+                  </tbody>
+                  <tfoot>
+                    <tr class="fw-bold">
+                      <td class="text-end">Total Vehicles Sold</td>
+                      <td class="text-end" id="vehicleSoldTotalCell">{{ '{:,.0f}'.format(vehicle_sold_context.sum_total) }}</td>
+                      <td class="text-end" id="vehicleSoldSalePriceTotalCell">Total: £{{ '{:,.2f}'.format(vehicle_sold_context.sum_sale_price) }}</td>
+                      <td class="text-end" id="vehicleSoldPremiumTotalCell">Total: £{{ '{:,.2f}'.format(vehicle_sold_context.sum_premium) }}</td>
+                      <td class="text-end" id="vehicleSoldGrandTotalCell">Grand Total: £{{ '{:,.2f}'.format(vehicle_sold_context.sum_sales_total) }}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+              <div class="col-lg-6">
+                <div class="card shadow-sm">
+                  <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                      <h5 class="card-title mb-0" id="vehicleSoldChartTitle">{{ vehicle_sold_context.chart_title_base }} (Bar)</h5>
+                      <div class="d-flex gap-2">
+                        <button id="vehicleSoldResetZoomBtn" class="btn btn-sm btn-outline-secondary">Reset Zoom</button>
+                        <button id="vehicleSoldToggleChartBtn" class="btn btn-sm btn-success">Show Pie Chart</button>
+                      </div>
+                    </div>
+                    <canvas id="vehicleSoldChart" height="180"></canvas>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="row g-4 mb-4" id="currentStatusSection">
+              <div class="col-12 d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <div>
+                  <h5 class="text-success mb-1">Current Vehicle Status</h5>
+                  <small class="text-muted">Operational totals use each vehicle's status at the time this page is loaded.</small>
+                </div>
+                <div class="btn-group btn-group-sm" role="group" aria-label="Current vehicle status period">
+                  <button type="button" class="btn btn-success active" id="currentStatusNowBtn" aria-pressed="true">Currently</button>
+                  <button type="button" class="btn btn-outline-success" id="currentStatusSelectedBtn" aria-pressed="false">Date selected</button>
+                </div>
+              </div>
+              <div class="col-lg-6">
+                <h5 class="text-success mb-2" id="currentStatusRangeLabel">Showing: Current vehicle status</h5>
+                <table class="table table-striped">
+                  <thead><tr><th>Status group</th><th class="text-end">Vehicles</th></tr></thead>
+                  <tbody id="currentStatusTableBody"></tbody>
+                  <tfoot><tr class="fw-bold"><td class="text-end">Total Vehicles</td><td class="text-end" id="currentStatusTotalCell">0</td></tr></tfoot>
+                </table>
+              </div>
+              <div class="col-lg-6">
+                <div class="card shadow-sm">
+                  <div class="card-body">
+                    <h5 class="card-title mb-3">Current Vehicle Status (Bar)</h5>
+                    <canvas id="currentStatusChart" height="180"></canvas>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {% if date_mode == 'recovered' and vehicle_in_status_context %}
+            <div class="row g-4 mb-4" id="vehicleInStatusSection">
+              <div class="col-12">
+                <h5 class="text-success mb-3">Vehicle IN by Status</h5>
+              </div>
+              <div class="col-lg-6">
+                <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+                  <h5 class="text-success mb-0" id="vehicleInStatusDateRangeLabel">Showing: {{ vehicle_in_status_context.date_range_label }}</h5>
+                </div>
+                <table class="table table-striped">
+                  <thead>
+                    <tr>
+                      <th>{{ vehicle_in_status_context.entity_label }}</th>
+                      <th class="text-end">Vehicles</th>
+                    </tr>
+                  </thead>
+                  <tbody id="vehicleInStatusTableBody"></tbody>
+                  <tfoot>
+                    <tr class="fw-bold">
+                      <td class="text-end">Total Vehicles IN</td>
+                      <td class="text-end" id="vehicleInStatusTotalSumCell">{{ '{:,.0f}'.format(vehicle_in_status_context.sum_total) }}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+              <div class="col-lg-6">
+                <div class="card shadow-sm">
+                  <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                      <h5 class="card-title mb-0" id="vehicleInStatusChartTitle">{{ vehicle_in_status_context.chart_title_base }} </h5>
+                      <div class="d-flex gap-2">
+                        <button id="vehicleInStatusResetZoomBtn" class="btn btn-sm btn-outline-secondary">Reset Zoom</button>
+                        <button id="vehicleInStatusToggleChartBtn" class="btn btn-sm btn-success">Show Pie Chart</button>
+                      </div>
+                    </div>
+                    <canvas id="vehicleInStatusChart" height="180"></canvas>
+                  </div>
+                </div>
+              </div>
+            </div>
+            {% endif %}
+
+            <div class="row g-4 mb-4" id="partsSoldSection">
+              <div class="col-12">
+                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                  <h5 class="text-success mb-0">Parts Sold</h5>
+                  <div class="toggle-wrapper mb-0">
+                    <span class="toggle-label">Type</span>
+                    <label class="toggle" for="partsDimensionToggle">
+                      <input type="checkbox" id="partsDimensionToggle"
+                        {% if parts_sold_context and parts_sold_context.stats_dimension == 'user' %}checked{% endif %}
+                        aria-label="Toggle parts sold between Department and User">
+                      <span class="toggle-track"></span>
+                      <div class="toggle-labels">
+                        <span>Department</span>
+                        <span>User</span>
+                      </div>
+                    </label>
+                  </div>
+                </div>
+              </div>
+              <div class="col-lg-6">
+                <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+                  <div class="d-flex flex-column">
+                    <h5 class="text-success mb-0" id="partsSoldDateRangeLabel">Showing: {{ parts_sold_context.date_range_label if parts_sold_context else date_range_label }}</h5>
+                    <small class="text-muted" id="partsSoldPrevDateRangeLabel">Parts Sold (Prev Period): {{ parts_sold_context.prev_date_range_label if parts_sold_context else 'Prev Period' }}</small>
+                  </div>
+                  <button id="partsSoldTogglePrevModeBtn" class="btn btn-outline-secondary btn-sm">
+                    {{ 'Use Previous Month' if parts_sold_context and parts_sold_context.prev_mode == 'mirror' else 'Use Mirrored Range' }}
+                  </button>
+                </div>
+                <table class="table table-striped">
+                  <thead>
+                    <tr>
+                      <th id="partsSoldEntityHeader">{{ parts_sold_context.entity_label if parts_sold_context else 'Department' }}</th>
+                      <th class="text-end">Parts Sold</th>
+                      <th class="text-end">Value</th>
+                      <th class="text-end">AVG</th>
+                      <th class="text-end" id="partsSoldPreviousHeader">Parts Sold Prev</th>
+                      <th class="text-end">Value Prev</th>
+                      <th class="text-end">AVG Prev</th>
+                    </tr>
+                  </thead>
+                  <tbody id="partsSoldTableBody">
+                    {% if parts_sold_context %}
+                      {% for row in parts_sold_context.rows %}
+                        <tr>
+                          <td>{{ row[0] }}</td>
+                          <td class="text-end parts-breakdown-trigger" data-entity="{{ row[0] }}" data-period="current" title="Show parts sold breakdown">{{ '{:,.0f}'.format(row[1]) }}</td>
+                          <td class="text-end">£{{ '{:,.2f}'.format(row[3]) }}</td>
+                          <td class="text-end">£{{ '{:,.2f}'.format(row[4]) }}</td>
+                          <td class="text-end parts-breakdown-trigger" data-entity="{{ row[0] }}" data-period="previous" title="Show previous-period parts sold breakdown">{{ '{:,.0f}'.format(row[2]) }}</td>
+                          <td class="text-end">£{{ '{:,.2f}'.format(row[5]) }}</td>
+                          <td class="text-end">£{{ '{:,.2f}'.format(row[6]) }}</td>
+                        </tr>
+                      {% endfor %}
+                    {% endif %}
+                  </tbody>
+                  <tfoot>
+                    <tr class="fw-bold">
+                      <td>Total</td>
+                      <td class="text-end parts-breakdown-trigger" id="partsSoldTotalCell" data-entity="" data-period="current" title="Show all parts sold breakdown">{{ '{:,.0f}'.format(parts_sold_context.sum_total if parts_sold_context else 0) }}</td>
+                      <td class="text-end" id="partsSoldValueTotalCell">£{{ '{:,.2f}'.format(parts_sold_context.sum_sales_value if parts_sold_context else 0) }}</td>
+                      <td class="text-end" id="partsSoldAverageTotalCell">£{{ '{:,.2f}'.format(parts_sold_context.average_value if parts_sold_context else 0) }}</td>
+                      <td class="text-end parts-breakdown-trigger" id="partsSoldPreviousTotalCell" data-entity="" data-period="previous" title="Show all previous-period parts sold breakdown">{{ '{:,.0f}'.format(parts_sold_context.sum_total_vat if parts_sold_context else 0) }}</td>
+                      <td class="text-end" id="partsSoldPreviousValueTotalCell">£{{ '{:,.2f}'.format(parts_sold_context.sum_previous_sales_value if parts_sold_context else 0) }}</td>
+                      <td class="text-end" id="partsSoldPreviousAverageTotalCell">£{{ '{:,.2f}'.format(parts_sold_context.previous_average_value if parts_sold_context else 0) }}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+              <div class="col-lg-6">
+                <div class="card shadow-sm">
+                  <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                      <h5 class="card-title mb-0" id="partsSoldChartTitle">Parts Sold by {{ parts_sold_context.entity_label if parts_sold_context else 'Department' }} (Bar)</h5>
+                      <div class="d-flex gap-2">
+                        <button id="partsSoldResetZoomBtn" class="btn btn-sm btn-outline-secondary">Reset Zoom</button>
+                        <button id="partsSoldToggleChartBtn" class="btn btn-sm btn-success">Show Pie Chart</button>
+                      </div>
+                    </div>
+                    <canvas id="partsSoldChart" height="200"></canvas>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="row g-4 mb-4" id="scrappedCarsSection">
+              <div class="col-12 d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <div>
+                  <h5 class="text-success mb-0">Cars Scrapped</h5>
+                  <small class="text-muted">Showing: {{ date_range_label }}</small>
+                </div>
+                <a class="btn btn-sm btn-outline-success" href="{{ url_for('scrapped_cars_upload') }}">
+                  <i class="fas fa-file-excel me-1"></i>Upload scrapped cars
+                </a>
+              </div>
+              {% if scrapped_cars_context.error %}
+                <div class="col-12"><div class="alert alert-warning mb-0" id="scrappedCarsError">{{ scrapped_cars_context.error }}</div></div>
+              {% endif %}
+              <div class="col-lg-6">
+                <div class="table-responsive">
+                  <table class="table table-striped">
+                    <thead><tr><th>Date</th><th class="text-end">Cars Scrapped</th></tr></thead>
+                    <tbody id="scrappedCarsTableBody">
+                      {% for row in scrapped_cars_context.rows %}
+                        <tr><td>{{ row.date }}</td><td class="text-end">{{ '{:,.0f}'.format(row.scrappedcars) }}</td></tr>
+                      {% endfor %}
+                    </tbody>
+                    <tfoot><tr class="fw-bold"><td>Total</td><td class="text-end" id="scrappedCarsTotalCell">{{ '{:,.0f}'.format(scrapped_cars_context.sum_total) }}</td></tr></tfoot>
+                  </table>
+                </div>
+              </div>
+              <div class="col-lg-6">
+                <div class="card shadow-sm"><div class="card-body">
+                  <h5 class="card-title">Cars Scrapped by Day</h5>
+                  <canvas id="scrappedCarsChart" height="200"></canvas>
+                </div></div>
+              </div>
+            </div>
+
+            <div class="summary-card">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="loadDetailTablesToggle">
+                <label class="form-check-label" for="loadDetailTablesToggle">Load detailed tables</label>
+              </div>
+              <small class="text-muted" id="detailTablesStatus">Detailed records are loaded only when requested to keep this page fast.</small>
+            </div>
+
+            <div id="detailTablesContainer" class="d-none">
+            <div class="card shadow-sm">
+              <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+                  <h5 class="card-title mb-0">Vehicle Details</h5>
+                  <div class="d-flex align-items-center gap-2 flex-wrap">
+                    <small class="text-muted">Matches the selected date range for cross-referencing counts.</small>
+                    <a class="btn btn-sm btn-outline-success detail-excel-download" data-detail-dataset="vehicle" href="#"><i class="fas fa-file-excel me-1"></i>Download Excel</a>
+                  </div>
+                </div>
+                <div class="vehicle-table-frame">
+                  <table id="vehicleDetailsTable" class="table table-striped table-sm align-middle vehicle-details-table">
+                    <thead>
+                      <tr class="title-row" id="vehicleDetailsTitleRow">
+                        {% for column in detail_columns %}
+                          <th>{{ column }}</th>
+                        {% endfor %}
+                      </tr>
+                      <tr class="filter-row" id="vehicleDetailsFilterRow" data-dt-order="disable">
+                        {% for column in detail_columns %}
+                          <th><input type="text" class="form-control form-control-sm vehicle-details-filter" placeholder="Filter {{ column }}"></th>
+                        {% endfor %}
+                      </tr>
+                    </thead>
+                    <tbody id="vehicleDetailsTableBody">
+                      {% for row in detail_rows %}
+                        <tr>
+                          {% for value in row %}
+                            {% if value is mapping and value.get('kind') in ['single', 'multiple'] %}
+                              <td><div class="vehicle-flag-list">{% for flag in value.get('flags', []) %}<span class="vehicle-flag-badge" style="background-color: {{ flag.get('color', '') }};">{{ flag.get('text') or 'No text Flag' }}</span>{% endfor %}</div></td>
+                            {% else %}
+                              <td>{{ value }}</td>
+                            {% endif %}
+                          {% endfor %}
+                        </tr>
+                      {% endfor %}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            <div class="card shadow-sm" id="vehicleSoldDetailsSection">
+              <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+                  <h5 class="card-title mb-0">Vehicle Sold Details</h5>
+                  <div class="d-flex align-items-center gap-2 flex-wrap">
+                    <small class="text-muted">Matches the DateSold range and exclusions used by the Vehicle Sold figures.</small>
+                    <a class="btn btn-sm btn-outline-success detail-excel-download" data-detail-dataset="vehicle_sold" href="#"><i class="fas fa-file-excel me-1"></i>Download Excel</a>
+                  </div>
+                </div>
+                <div class="vehicle-table-frame">
+                  <table id="vehicleSoldDetailsTable" class="table table-striped table-sm align-middle vehicle-details-table">
+                    <thead>
+                      <tr class="title-row" id="vehicleSoldDetailsTitleRow">
+                        {% for column in vehicle_sold_context.detail_columns %}
+                          <th>{{ column }}</th>
+                        {% endfor %}
+                      </tr>
+                      <tr class="filter-row" id="vehicleSoldDetailsFilterRow" data-dt-order="disable">
+                        {% for column in vehicle_sold_context.detail_columns %}
+                          <th><input type="text" class="form-control form-control-sm vehicle-details-filter" placeholder="Filter {{ column }}"></th>
+                        {% endfor %}
+                      </tr>
+                    </thead>
+                    <tbody id="vehicleSoldDetailsTableBody">
+                      {% for row in vehicle_sold_context.detail_rows %}
+                        <tr>
+                          {% for value in row %}
+                            {% if value is mapping and value.get('kind') in ['single', 'multiple'] %}
+                              <td><div class="vehicle-flag-list">{% for flag in value.get('flags', []) %}<span class="vehicle-flag-badge" style="background-color: {{ flag.get('color', '') }};">{{ flag.get('text') or 'No text Flag' }}</span>{% endfor %}</div></td>
+                            {% else %}
+                              <td>{{ value }}</td>
+                            {% endif %}
+                          {% endfor %}
+                        </tr>
+                      {% endfor %}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            <div class="card shadow-sm" id="uncollectedSoldDetailsSection">
+              <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+                  <h5 class="card-title mb-0">Auction Vehicles Sold, Not Collected Details</h5>
+                  <div class="d-flex align-items-center gap-2 flex-wrap">
+                    <small class="text-muted" id="uncollectedSoldDetailsLabel">Showing vehicles sold in 2026 currently in Sold status without a CollectedDate or ActualDeliveryDate.</small>
+                    <a class="btn btn-sm btn-outline-success detail-excel-download" data-detail-dataset="uncollected_sold" href="#"><i class="fas fa-file-excel me-1"></i>Download Excel</a>
+                  </div>
+                </div>
+                <div class="vehicle-table-frame">
+                  <table id="uncollectedSoldDetailsTable" class="table table-striped table-sm align-middle vehicle-details-table">
+                    <thead>
+                      <tr class="title-row" id="uncollectedSoldDetailsTitleRow"></tr>
+                      <tr class="filter-row" id="uncollectedSoldDetailsFilterRow" data-dt-order="disable"></tr>
+                    </thead>
+                    <tbody id="uncollectedSoldDetailsTableBody"></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal fade" id="vehicleFlagsModal" tabindex="-1" aria-labelledby="vehicleFlagsModalLabel" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-scrollable">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="vehicleFlagsModalLabel">Vehicle Flags</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <div class="table-responsive">
+              <table class="table table-sm align-middle mb-0">
+                <thead>
+                  <tr><th>Flag</th></tr>
+                </thead>
+                <tbody id="vehicleFlagsModalBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal fade" id="currentStatusDetailsModal" tabindex="-1" aria-labelledby="currentStatusDetailsModalLabel" aria-hidden="true">
+      <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="currentStatusDetailsModalLabel">Vehicle status details</h5>
+            <a class="btn btn-sm btn-outline-success ms-auto me-2" id="currentStatusDetailsDownload" href="#"><i class="fas fa-file-excel me-1"></i>Download Excel</a>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <div class="d-flex flex-wrap gap-4 mb-3 d-none" id="currentStatusDetailOptions">
+              <div class="form-check d-none" id="includeSoldNotPaidWrapper">
+                <input class="form-check-input" type="checkbox" id="includeSoldNotPaidToggle">
+                <label class="form-check-label text-success" for="includeSoldNotPaidToggle">Include Sold Not Paid</label>
+              </div>
+              <div class="form-check d-none" id="includeIaaWrapper">
+                <input class="form-check-input" type="checkbox" id="includeIaaToggle">
+                <label class="form-check-label text-success" for="includeIaaToggle">Include IAA</label>
+              </div>
+              <div class="form-check d-none" id="iaaOnlyWrapper">
+                <input class="form-check-input" type="checkbox" id="iaaOnlyToggle">
+                <label class="form-check-label text-success" for="iaaOnlyToggle">IAA only</label>
+              </div>
+            </div>
+            <div class="vehicle-table-frame">
+              <table id="currentStatusDetailsModalTable" class="table table-striped table-sm align-middle vehicle-details-table">
+                <thead>
+                  <tr class="title-row" id="currentStatusDetailsModalHeader"></tr>
+                  <tr class="filter-row" id="currentStatusDetailsModalFilterRow" data-dt-order="disable"></tr>
+                </thead>
+                <tbody id="currentStatusDetailsModalBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+
+    <div class="modal fade" id="partsBreakdownModal" tabindex="-1" aria-labelledby="partsBreakdownModalLabel" aria-hidden="true">
+      <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+          <div class="modal-header">
+            <div>
+              <h5 class="modal-title mb-0" id="partsBreakdownModalLabel">Parts sold breakdown</h5>
+              <small class="text-muted" id="partsBreakdownModalSubtitle"></small>
+            </div>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
+              <div class="form-check mb-0">
+                <input class="form-check-input" type="checkbox" value="1" id="partsBreakdownFullDetail">
+                <label class="form-check-label text-success" for="partsBreakdownFullDetail">Full detail</label>
+              </div>
+              <a class="btn btn-sm btn-outline-success" href="#" id="partsBreakdownDownloadBtn">Download Excel</a>
+            </div>
+            <p class="text-muted small mb-2" id="partsBreakdownStatus"></p>
+            <div class="table-responsive">
+              <table class="table table-striped table-sm">
+                <thead>
+                  <tr id="partsBreakdownHeaderRow">
+                    <th>Item</th>
+                    <th class="text-end">Quantity</th>
+                    <th class="text-end">Avg Sold Price</th>
+                  </tr>
+                </thead>
+                <tbody id="partsBreakdownList"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+	
+    <script>
+      const chartLabels = {{ chart_labels|tojson }};
+      const chartValues = {{ chart_values|tojson }};
+      const totalSumCell = document.getElementById('totalSumCell');
+      const dateRangeLabel = document.getElementById('dateRangeLabel');
+      const chartTitle = document.getElementById('chartTitle');
+      const resetZoomBtn = document.getElementById('resetZoomBtn');
+      const toggleChartBtn = document.getElementById('toggleChartBtn');
+      const vehicleInStatusSection = document.getElementById('vehicleInStatusSection');
+      const vehicleInStatusTableBody = document.getElementById('vehicleInStatusTableBody');
+      const vehicleInStatusTotalSumCell = document.getElementById('vehicleInStatusTotalSumCell');
+      const vehicleInStatusDateRangeLabel = document.getElementById('vehicleInStatusDateRangeLabel');
+      const vehicleInStatusChartTitle = document.getElementById('vehicleInStatusChartTitle');
+      const vehicleInStatusResetZoomBtn = document.getElementById('vehicleInStatusResetZoomBtn');
+      const vehicleInStatusToggleChartBtn = document.getElementById('vehicleInStatusToggleChartBtn');
+      const currentStatusTableBody = document.getElementById('currentStatusTableBody');
+      const currentStatusTotalCell = document.getElementById('currentStatusTotalCell');
+      const currentStatusRangeLabel = document.getElementById('currentStatusRangeLabel');
+      const currentStatusNowBtn = document.getElementById('currentStatusNowBtn');
+      const currentStatusSelectedBtn = document.getElementById('currentStatusSelectedBtn');
+      const currentStatusDetailsModalElement = document.getElementById('currentStatusDetailsModal');
+      const currentStatusDetailsModalLabel = document.getElementById('currentStatusDetailsModalLabel');
+      const currentStatusDetailsModalHeader = document.getElementById('currentStatusDetailsModalHeader');
+      const currentStatusDetailsModalFilterRow = document.getElementById('currentStatusDetailsModalFilterRow');
+      const currentStatusDetailsModalBody = document.getElementById('currentStatusDetailsModalBody');
+      const currentStatusDetailsDownload = document.getElementById('currentStatusDetailsDownload');
+      const currentStatusDetailOptions = document.getElementById('currentStatusDetailOptions');
+      const includeSoldNotPaidWrapper = document.getElementById('includeSoldNotPaidWrapper');
+      const includeSoldNotPaidToggle = document.getElementById('includeSoldNotPaidToggle');
+      const includeIaaWrapper = document.getElementById('includeIaaWrapper');
+      const includeIaaToggle = document.getElementById('includeIaaToggle');
+      const iaaOnlyWrapper = document.getElementById('iaaOnlyWrapper');
+      const iaaOnlyToggle = document.getElementById('iaaOnlyToggle');
+      const vehicleSoldTableBody = document.getElementById('vehicleSoldTableBody');
+      const vehicleSoldDateRangeLabel = document.getElementById('vehicleSoldDateRangeLabel');
+      const vehicleSoldEntityHeader = document.getElementById('vehicleSoldEntityHeader');
+      const vehicleSoldTotalCell = document.getElementById('vehicleSoldTotalCell');
+      const vehicleSoldSalePriceTotalCell = document.getElementById('vehicleSoldSalePriceTotalCell');
+      const vehicleSoldPremiumTotalCell = document.getElementById('vehicleSoldPremiumTotalCell');
+      const vehicleSoldGrandTotalCell = document.getElementById('vehicleSoldGrandTotalCell');
+      const vehicleSoldChartTitle = document.getElementById('vehicleSoldChartTitle');
+      const vehicleSoldResetZoomBtn = document.getElementById('vehicleSoldResetZoomBtn');
+      const vehicleSoldToggleChartBtn = document.getElementById('vehicleSoldToggleChartBtn');
+      const vehicleSoldOnlyToggle = document.getElementById('vehicleSoldOnlyToggle');
+	  const vehicleSoldNotPaidToggle = document.getElementById('vehicleSoldNotPaidToggle');
+      const liveCheckbox = document.getElementById('liveToggle');
+	  const dateModeToggle = document.getElementById('dateModeToggle');
+      const partsDimensionToggle = document.getElementById('partsDimensionToggle');
+      const partsSoldTableBody = document.getElementById('partsSoldTableBody');
+      const partsSoldTotalCell = document.getElementById('partsSoldTotalCell');
+      const partsBreakdownModalEl = document.getElementById('partsBreakdownModal');
+      let partsBreakdownModal = null;
+      const partsBreakdownTitle = document.getElementById('partsBreakdownModalLabel');
+      const partsBreakdownSubtitle = document.getElementById('partsBreakdownModalSubtitle');
+      const partsBreakdownList = document.getElementById('partsBreakdownList');
+      const partsBreakdownHeaderRow = document.getElementById('partsBreakdownHeaderRow');
+      const partsBreakdownFullDetail = document.getElementById('partsBreakdownFullDetail');
+      const partsBreakdownDownloadBtn = document.getElementById('partsBreakdownDownloadBtn');
+      const partsBreakdownStatus = document.getElementById('partsBreakdownStatus');
+      const partsSoldPreviousTotalCell = document.getElementById('partsSoldPreviousTotalCell');
+      const partsSoldDateRangeLabel = document.getElementById('partsSoldDateRangeLabel');
+      const partsSoldPrevDateRangeLabel = document.getElementById('partsSoldPrevDateRangeLabel');
+      const partsSoldEntityHeader = document.getElementById('partsSoldEntityHeader');
+      const partsSoldPreviousHeader = document.getElementById('partsSoldPreviousHeader');
+      const partsSoldChartTitle = document.getElementById('partsSoldChartTitle');
+      const partsSoldToggleChartBtn = document.getElementById('partsSoldToggleChartBtn');
+      const partsSoldResetZoomBtn = document.getElementById('partsSoldResetZoomBtn');
+      const partsSoldTogglePrevModeBtn = document.getElementById('partsSoldTogglePrevModeBtn');
+      const customStartDate = document.getElementById('customStartDate');
+      const customEndDate = document.getElementById('customEndDate');
+      const scrollPositionStorageKey = 'executiveStatsScrollPosition';
+
+      function rememberScrollPosition() {
+        try {
+          window.sessionStorage.setItem(scrollPositionStorageKey, JSON.stringify({
+            path: window.location.pathname,
+            top: window.scrollY,
+          }));
+        } catch (err) {
+          console.warn('Unable to remember the Executive Stats scroll position', err);
+        }
+      }
+
+      function restoreScrollPosition() {
+        let savedPosition = null;
+        try {
+          savedPosition = JSON.parse(window.sessionStorage.getItem(scrollPositionStorageKey));
+          window.sessionStorage.removeItem(scrollPositionStorageKey);
+        } catch (err) {
+          console.warn('Unable to restore the Executive Stats scroll position', err);
+        }
+
+        if (!savedPosition || savedPosition.path !== window.location.pathname) return;
+
+        // Wait for tables and charts to be rebuilt before restoring the viewport.
+        window.requestAnimationFrame(() => {
+          window.requestAnimationFrame(() => window.scrollTo(0, Number(savedPosition.top) || 0));
+        });
+      }
+
+      document.addEventListener('click', (event) => {
+        const link = event.target.closest('a[href]');
+        if (!link || link.target || link.hasAttribute('download')) return;
+
+        const destination = new URL(link.href, window.location.href);
+        if (destination.origin === window.location.origin && destination.pathname === window.location.pathname) {
+          rememberScrollPosition();
+        }
+      });
+
+      document.addEventListener('submit', rememberScrollPosition);
+
+      function syncCustomEndDate() {
+        if (!customStartDate || !customEndDate) return;
+        if (!customEndDate.value && customStartDate.value) {
+          customEndDate.value = customStartDate.value;
+        }
+      }
+
+      if (customStartDate && customEndDate) {
+        customStartDate.addEventListener('change', syncCustomEndDate);
+        customEndDate.addEventListener('focus', syncCustomEndDate);
+      }
+      const loadDetailTablesToggle = document.getElementById('loadDetailTablesToggle');
+      const detailTablesContainer = document.getElementById('detailTablesContainer');
+      const detailTablesStatus = document.getElementById('detailTablesStatus');
+      const vehicleDetailsTitleRow = document.getElementById('vehicleDetailsTitleRow');
+      const vehicleDetailsFilterRow = document.getElementById('vehicleDetailsFilterRow');
+      const vehicleDetailsTableBody = document.getElementById('vehicleDetailsTableBody');
+      const vehicleSoldDetailsTitleRow = document.getElementById('vehicleSoldDetailsTitleRow');
+      const vehicleSoldDetailsFilterRow = document.getElementById('vehicleSoldDetailsFilterRow');
+      const vehicleSoldDetailsTableBody = document.getElementById('vehicleSoldDetailsTableBody');
+      const uncollectedSoldDetailsTableBody = document.getElementById('uncollectedSoldDetailsTableBody');
+      const uncollectedSoldDetailsTitleRow = document.getElementById('uncollectedSoldDetailsTitleRow');
+      const uncollectedSoldDetailsFilterRow = document.getElementById('uncollectedSoldDetailsFilterRow');
+      const uncollectedSoldDetailsLabel = document.getElementById('uncollectedSoldDetailsLabel');
+      const vehicleFlagsModalBody = document.getElementById('vehicleFlagsModalBody');
+      const vehicleFlagsModalElement = document.getElementById('vehicleFlagsModal');
+      let vehicleFlagsModal = null;
+      let vehicleDetailColumns = {{ (detail_columns or [])|tojson }};
+      let vehicleDetailRows = {{ (detail_rows or [])|tojson }};
+      let vehicleSoldDetailColumns = {{ vehicle_sold_context.detail_columns|tojson }};
+      let vehicleSoldDetailRows = {{ vehicle_sold_context.detail_rows|tojson }};
+      const chartTitleBase = {{ chart_title_base|tojson }}
+      let detailsDataTable = null;
+      let vehicleSoldDetailsDataTable = null;
+      let uncollectedSoldDetailsDataTable = null;
+      let currentStatusDetailsDataTable = null;
+      let detailTablesLoaded = false;
+      let detailTablesRequest = null;
+      let currentStatusDetailsRequest = null;
+      let activeCurrentStatusGroup = '';
+
+      let chartInstance = null;
+      let currentChartType = 'bar';
+      let labels = chartLabels.slice();
+      let values = chartValues.slice();
+
+      const vehicleInStatusDataset = {{ (vehicle_in_status_context or {})|tojson }};
+      let vehicleInStatusChartInstance = null;
+      let vehicleInStatusCurrentChartType = 'bar';
+      let vehicleInStatusLabels = (vehicleInStatusDataset.chart_labels || []).slice();
+      let vehicleInStatusValues = (vehicleInStatusDataset.chart_values || []).slice();
+      let vehicleInStatusBreakdown = vehicleInStatusDataset.group_status_breakdown || {};
+
+      let currentStatusDataset = {{ (current_status_context or {})|tojson }};
+      let currentStatusMode = 'current';
+      let currentStatusChartInstance = null;
+
+      const vehicleSoldDataset = {{ (vehicle_sold_context or {})|tojson }};
+      let vehicleSoldChartInstance = null;
+      let vehicleSoldCurrentChartType = 'bar';
+      let vehicleSoldLabels = (vehicleSoldDataset.chart_labels || []).slice();
+      let vehicleSoldValues = (vehicleSoldDataset.chart_values || []).slice();
+      let vehicleSoldContractCompanyBreakdown = vehicleSoldDataset.contract_company_breakdown || {};
+
+      const partsSoldDataset = {{ (parts_sold_context or {})|tojson }};
+      let partsSoldChartInstance = null;
+      let partsSoldCurrentChartType = 'bar';
+      let partsSoldLabels = (partsSoldDataset.chart_labels || []).slice();
+      let partsSoldValues = (partsSoldDataset.chart_values || []).slice();
+      let partsSoldEntityLabel = partsSoldDataset.entity_label || 'Department';
+
+      const scrappedCarsDataset = {{ (scrapped_cars_context or {})|tojson }};
+      let scrappedCarsChartInstance = null;
+
+      function updateScrappedCars(data) {
+        if (!data) return;
+        const body = document.getElementById('scrappedCarsTableBody');
+        if (body) {
+          body.innerHTML = (data.rows || []).map((row) =>
+            `<tr><td>${escapeHtml(row.date)}</td><td class="text-end">${Number(row.scrappedcars || 0).toLocaleString()}</td></tr>`
+          ).join('');
+        }
+        const total = document.getElementById('scrappedCarsTotalCell');
+        if (total) total.textContent = Number(data.sum_total || 0).toLocaleString();
+        const canvas = document.getElementById('scrappedCarsChart');
+        if (canvas) {
+          if (scrappedCarsChartInstance) scrappedCarsChartInstance.destroy();
+          const config = buildChartConfig('bar', data.chart_labels || [], data.chart_values || []);
+          config.data.datasets[0].label = 'Cars Scrapped';
+          scrappedCarsChartInstance = new Chart(canvas, config);
+        }
+      }
+
+      const expandedVehicleInStatusGroups = new Set();
+      const currentGroupMode = {{ group_mode|tojson }};
+      let contractCompanyBreakdown = {{ (contract_company_breakdown or {})|tojson }};
+      const collapsedContracts = new Set();
+      const collapsedVehicleSoldContracts = new Set();
+      const lightGreyContractTypes = new Set(['IAA Purchases']);
+      const lightGreyContractColor = '#adb5bd';
+
+
+      function generateColors(count) {
+        const palette = ['#5c9c13', '#7fbf2e', '#b2d97c', '#2e5e0f', '#3f7f16', '#94c11f'];
+        return Array.from({ length: count }, (_, index) => palette[index % palette.length]);
+      }
+
+      function getLabelColor(label, fallbackColor) {
+        return lightGreyContractTypes.has(label) ? lightGreyContractColor : fallbackColor;
+      }
+
+      function generateLabelColors(dataLabels) {
+        return generateColors(dataLabels.length).map((color, index) => getLabelColor(dataLabels[index], color));
+      }
+
+      function buildChartConfig(type, dataLabels, dataValues) {
+        const colors = generateLabelColors(dataLabels);
+        const isPie = type === 'pie';
+        return {
+          type,
+          data: {
+            labels: dataLabels,
+            datasets: [
+              {
+                label: 'Vehicles',
+                data: dataValues,
+                backgroundColor: colors,
+                borderColor: isPie ? '#fff' : colors,
+                borderWidth: isPie ? 1 : 0,
+              },
+            ],
+          },
+          options: {
+            responsive: true,
+            layout: {
+              padding: {
+                top: isPie ? 0 : 36,
+              },
+            },
+            plugins: {
+              legend: {
+                display: isPie,
+                position: 'bottom',
+              },
+              tooltip: {
+                callbacks: {
+                  label: (context) => {
+                    const parsedValue =
+                      context.parsed && typeof context.parsed === 'object'
+                        ? context.parsed.y ?? context.parsed.r ?? 0
+                        : context.parsed;
+                    return `${context.label}: ${Number(parsedValue).toLocaleString()}`;
+                  },
+                },
+              },
+              datalabels: {
+                color: '#1f3b08',
+                anchor: isPie ? 'end' : 'end',
+                align: isPie ? 'end' : 'end',
+                clip: false,
+                offset: isPie ? 0 : 4,
+                formatter: (value) => Number(value).toLocaleString(),
+              },
+              zoom: {
+                zoom: {
+                  wheel: { enabled: !isPie },
+                  pinch: { enabled: !isPie },
+                  mode: 'x',
+                },
+                pan: {
+                  enabled: !isPie,
+                  mode: 'x',
+                },
+              },
+            },
+            scales: isPie
+              ? {}
+              : {
+                  x: {
+                    ticks: {
+                      color: '#1f3b08',
+                      maxRotation: 45,
+                      minRotation: 0,
+                    },
+                  },
+                  y: {
+                    grace: '15%',
+                    ticks: {
+                      color: '#1f3b08',
+                    },
+                    beginAtZero: true,
+                  },
+                },
+          },
+          plugins: [ChartDataLabels],
+        };
+      }
+
+      function renderChart(type) {
+        if (chartInstance) {
+          chartInstance.destroy();
+        }
+        chartInstance = new Chart(
+          document.getElementById('vehicleChart'),
+          buildChartConfig(type, labels, values)
+        );
+        chartTitle.textContent = type === 'pie'
+          ? `${chartTitleBase} (Pie)`
+          : `${chartTitleBase} (Bar)`;
+      }
+
+      function updateChartData(data) {
+        labels = data.chart_labels;
+        values = data.chart_values;
+        if (chartInstance) {
+          chartInstance.data.labels = labels;
+          chartInstance.data.datasets[0].data = values;
+          chartInstance.data.datasets[0].backgroundColor = generateLabelColors(labels);
+          chartInstance.update();
+        }
+      }
+
+      function renderVehicleInStatusChart(type) {
+        if (!vehicleInStatusSection) return;
+        const chartCanvas = document.getElementById('vehicleInStatusChart');
+        if (!chartCanvas) return;
+        if (vehicleInStatusChartInstance) {
+          vehicleInStatusChartInstance.destroy();
+        }
+        vehicleInStatusChartInstance = new Chart(
+          chartCanvas,
+          buildChartConfig(type, vehicleInStatusLabels, vehicleInStatusValues)
+        );
+        if (vehicleInStatusChartTitle) {
+          const baseTitle = vehicleInStatusDataset.chart_title_base || 'Vehicles by Vehicle Status';
+          vehicleInStatusChartTitle.textContent = type === 'pie'
+            ? `${baseTitle} (Pie)`
+            : `${baseTitle} (Bar)`;
+        }
+      }
+
+      function renderCurrentStatus() {
+        const data = currentStatusDataset[currentStatusMode] || {};
+        const uncollectedDownload = document.querySelector('[data-detail-dataset="uncollected_sold"]');
+        if (uncollectedDownload) {
+          uncollectedDownload.href = buildDetailsExcelUrl('uncollected_sold', {
+            status_mode: currentStatusMode,
+          });
+        }
+        if (currentStatusTableBody) {
+          currentStatusTableBody.innerHTML = (data.rows || []).map((row) => `
+            <tr><td>${escapeHtml(row[0])}</td><td class="text-end"><button type="button" class="btn btn-link p-0 fw-semibold current-status-details-trigger" data-status-group="${escapeHtml(row[0])}">${Number(row[1] || 0).toLocaleString()}</button></td></tr>
+          `).join('');
+        }
+        if (currentStatusTotalCell) currentStatusTotalCell.textContent = Number(data.sum_total || 0).toLocaleString();
+        if (currentStatusRangeLabel) currentStatusRangeLabel.textContent = `Showing: ${data.date_range_label || ''}`;
+        const canvas = document.getElementById('currentStatusChart');
+        if (canvas) {
+          if (currentStatusChartInstance) currentStatusChartInstance.destroy();
+          currentStatusChartInstance = new Chart(canvas.getContext('2d'), buildChartConfig(
+            'bar', data.chart_labels || [], data.chart_values || []
+          ));
+        }
+        const showingCurrent = currentStatusMode === 'current';
+        currentStatusNowBtn?.classList.toggle('active', showingCurrent);
+        currentStatusNowBtn?.classList.toggle('btn-success', showingCurrent);
+        currentStatusNowBtn?.classList.toggle('btn-outline-success', !showingCurrent);
+        currentStatusNowBtn?.setAttribute('aria-pressed', String(showingCurrent));
+        currentStatusSelectedBtn?.classList.toggle('active', !showingCurrent);
+        currentStatusSelectedBtn?.classList.toggle('btn-success', !showingCurrent);
+        currentStatusSelectedBtn?.classList.toggle('btn-outline-success', showingCurrent);
+        currentStatusSelectedBtn?.setAttribute('aria-pressed', String(!showingCurrent));
+        if (detailTablesLoaded) rebuildUncollectedSoldDetailsTable(data);
+      }
+
+      function renderVehicleSoldChart(type) {
+        const canvas = document.getElementById('vehicleSoldChart');
+        if (!canvas) return;
+        if (vehicleSoldChartInstance) vehicleSoldChartInstance.destroy();
+        vehicleSoldChartInstance = new Chart(canvas, buildChartConfig(type, vehicleSoldLabels, vehicleSoldValues));
+        vehicleSoldCurrentChartType = type;
+        const baseTitle = vehicleSoldDataset.chart_title_base || 'Vehicles Sold';
+        if (vehicleSoldChartTitle) vehicleSoldChartTitle.textContent = `${baseTitle} (${type === 'pie' ? 'Pie' : 'Bar'})`;
+      }
+
+      function updateVehicleSoldData(data, refreshRelatedViews = true) {
+        if (!data || !vehicleSoldTableBody) return;
+        vehicleSoldTableBody.innerHTML = '';
+        vehicleSoldContractCompanyBreakdown = data.contract_company_breakdown || {};
+        const canExpandContracts = (data.group_mode || currentGroupMode) === 'contract';
+        (data.rows || []).forEach((row) => {
+          const label = Array.isArray(row) ? row[0] : row.label;
+          const total = Array.isArray(row) ? row[1] : row.total;
+          const salePrice = Array.isArray(row) ? row[2] : row.sale_price;
+          const premium = Array.isArray(row) ? row[3] : row.premium;
+          const salesTotal = Number(salePrice || 0) + Number(premium || 0);
+          const safeLabel = label ?? 'Unassigned';
+          const isExpanded = canExpandContracts && !collapsedVehicleSoldContracts.has(safeLabel);
+          const tr = document.createElement('tr');
+          if (canExpandContracts) {
+            tr.classList.add('contract-row-toggle');
+            if (isExpanded) tr.classList.add('contract-row-toggle-expanded');
+            tr.addEventListener('click', () => {
+              if (collapsedVehicleSoldContracts.has(safeLabel)) {
+                collapsedVehicleSoldContracts.delete(safeLabel);
+              } else {
+                collapsedVehicleSoldContracts.add(safeLabel);
+              }
+              updateVehicleSoldData(data, false);
+            });
+          }
+          tr.innerHTML = `<td>${escapeHtml(safeLabel)}</td><td class="text-end">${Number(total || 0).toLocaleString()}</td><td class="text-end">£${Number(salePrice || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td><td class="text-end">£${Number(premium || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td><td class="text-end">£${salesTotal.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>`;
+          vehicleSoldTableBody.appendChild(tr);
+
+          if (isExpanded) {
+            (vehicleSoldContractCompanyBreakdown[safeLabel] || []).forEach((companyRow) => {
+              const company = Array.isArray(companyRow) ? companyRow[0] : companyRow.company;
+              const companyTotal = Array.isArray(companyRow) ? companyRow[1] : companyRow.total;
+              const companySalePrice = Array.isArray(companyRow) ? companyRow[2] : companyRow.sale_price;
+              const companyPremium = Array.isArray(companyRow) ? companyRow[3] : companyRow.premium;
+              const companySalesTotal = Number(companySalePrice || 0) + Number(companyPremium || 0);
+              const detailTr = document.createElement('tr');
+              detailTr.classList.add('vehicle-sold-contract-breakdown');
+              detailTr.innerHTML = `<td>└ ${escapeHtml(company || 'Unknown Insurance Company')}</td><td class="text-end">${Number(companyTotal || 0).toLocaleString()}</td><td class="text-end">£${Number(companySalePrice || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td><td class="text-end">£${Number(companyPremium || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td><td class="text-end">£${companySalesTotal.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>`;
+              vehicleSoldTableBody.appendChild(detailTr);
+            });
+          }
+        });
+        if (vehicleSoldDateRangeLabel) vehicleSoldDateRangeLabel.textContent = `Showing: ${data.date_range_label}`;
+        if (vehicleSoldEntityHeader) vehicleSoldEntityHeader.textContent = data.entity_label || 'Insurance Company';
+        if (vehicleSoldTotalCell) vehicleSoldTotalCell.textContent = Number(data.sum_total || 0).toLocaleString();
+        if (vehicleSoldSalePriceTotalCell) vehicleSoldSalePriceTotalCell.textContent = `Total: £${Number(data.sum_sale_price || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+        if (vehicleSoldPremiumTotalCell) vehicleSoldPremiumTotalCell.textContent = `Total: £${Number(data.sum_premium || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+        if (vehicleSoldGrandTotalCell) vehicleSoldGrandTotalCell.textContent = `Grand Total: £${Number(data.sum_sales_total || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+        if (refreshRelatedViews) {
+          vehicleSoldLabels = (data.chart_labels || []).slice();
+          vehicleSoldValues = (data.chart_values || []).slice();
+          renderVehicleSoldChart(vehicleSoldCurrentChartType);
+          if (detailTablesLoaded && (data.detail_columns || []).length) {
+            rebuildVehicleSoldDetailsTable(data);
+          }
+        }
+      }
+
+      function renderPartsSoldChart(type) {
+        const chartCanvas = document.getElementById('partsSoldChart');
+        if (!chartCanvas) return;
+        if (partsSoldChartInstance) {
+          partsSoldChartInstance.destroy();
+        }
+        partsSoldChartInstance = new Chart(
+          chartCanvas,
+          buildChartConfig(type, partsSoldLabels, partsSoldValues)
+        );
+        partsSoldCurrentChartType = type;
+        if (partsSoldChartTitle) {
+          partsSoldChartTitle.textContent = type === 'pie'
+            ? `Parts Sold by ${partsSoldEntityLabel} (Pie)`
+            : `Parts Sold by ${partsSoldEntityLabel} (Bar)`;
+        }
+        if (partsSoldToggleChartBtn) {
+          partsSoldToggleChartBtn.textContent = type === 'pie' ? 'Show Bar Chart' : 'Show Pie Chart';
+        }
+      }
+
+      function updatePartsSoldChartData(data) {
+        partsSoldLabels = data.chart_labels || [];
+        partsSoldValues = data.chart_values || [];
+        partsSoldEntityLabel = data.entity_label || 'Department';
+        if (partsSoldChartInstance) {
+          partsSoldChartInstance.data.labels = partsSoldLabels;
+          partsSoldChartInstance.data.datasets[0].data = partsSoldValues;
+          partsSoldChartInstance.data.datasets[0].backgroundColor = generateLabelColors(partsSoldLabels);
+          partsSoldChartInstance.update();
+        }
+        if (partsSoldChartTitle) {
+          partsSoldChartTitle.textContent = partsSoldCurrentChartType === 'pie'
+            ? `Parts Sold by ${partsSoldEntityLabel} (Pie)`
+            : `Parts Sold by ${partsSoldEntityLabel} (Bar)`;
+        }
+      }
+
+      function rebuildVehicleInStatusTable(data) {
+        if (!vehicleInStatusSection || !vehicleInStatusTableBody) return;
+        vehicleInStatusTableBody.innerHTML = '';
+        vehicleInStatusBreakdown = data.group_status_breakdown || {};
+        (data.rows || []).forEach((row) => {
+          const rowLabel = row && typeof row === 'object' && !Array.isArray(row)
+            ? row.label
+            : row?.[0];
+          const rowTotal = row && typeof row === 'object' && !Array.isArray(row)
+            ? row.total
+            : row?.[1];
+          const safeLabel = rowLabel ?? 'Unknown';
+          const statusRows = vehicleInStatusBreakdown[safeLabel] || [];
+          const canExpand = statusRows.length > 0;
+          const isExpanded = expandedVehicleInStatusGroups.has(safeLabel);
+          const tr = document.createElement('tr');
+          if (canExpand) {
+            tr.classList.add('vehicle-status-group-toggle');
+            if (isExpanded) {
+              tr.classList.add('vehicle-status-group-toggle-expanded');
+            }
+            tr.addEventListener('click', () => {
+              if (expandedVehicleInStatusGroups.has(safeLabel)) {
+                expandedVehicleInStatusGroups.delete(safeLabel);
+              } else {
+                expandedVehicleInStatusGroups.add(safeLabel);
+              }
+              rebuildVehicleInStatusTable(data);
+            });
+          }
+          tr.innerHTML = `
+            <td>${safeLabel}</td>
+            <td class="text-end">${Number(rowTotal ?? 0).toLocaleString()}</td>
+          `;
+          vehicleInStatusTableBody.appendChild(tr);
+
+          if (canExpand && isExpanded) {
+            statusRows.forEach((statusRow) => {
+              const statusLabel = Array.isArray(statusRow) ? statusRow[0] : statusRow?.status;
+              const statusTotal = Array.isArray(statusRow) ? statusRow[1] : statusRow?.total;
+              const detailTr = document.createElement('tr');
+              detailTr.classList.add('vehicle-status-breakdown');
+              detailTr.innerHTML = `
+                <td>└ ${statusLabel || 'Unknown Status'}</td>
+                <td class="text-end">${Number(statusTotal || 0).toLocaleString()}</td>
+              `;
+              vehicleInStatusTableBody.appendChild(detailTr);
+            });
+          }
+        });
+        if (vehicleInStatusTotalSumCell) {
+          vehicleInStatusTotalSumCell.textContent = Number(data.sum_total ?? 0).toLocaleString();
+        }
+        if (vehicleInStatusDateRangeLabel) {
+          vehicleInStatusDateRangeLabel.textContent = `Showing: ${data.date_range_label || ''}`;
+        }
+      }
+
+      function updateVehicleInStatusData(data) {
+        if (!data || !vehicleInStatusSection) return;
+        vehicleInStatusDataset.chart_title_base = data.chart_title_base || vehicleInStatusDataset.chart_title_base;
+        vehicleInStatusLabels = data.chart_labels || [];
+        vehicleInStatusValues = data.chart_values || [];
+        vehicleInStatusDataset.group_status_breakdown = data.group_status_breakdown || {};
+        rebuildVehicleInStatusTable(data);
+        if (vehicleInStatusChartInstance) {
+          vehicleInStatusChartInstance.data.labels = vehicleInStatusLabels;
+          vehicleInStatusChartInstance.data.datasets[0].data = vehicleInStatusValues;
+          vehicleInStatusChartInstance.data.datasets[0].backgroundColor = generateLabelColors(vehicleInStatusLabels);
+          vehicleInStatusChartInstance.update();
+        }
+      }
+
+      function shouldEnableContractBreakdown() {
+        return currentGroupMode === 'contract';
+      }
+
+      function toggleContractBreakdown(contractLabel) {
+        if (collapsedContracts.has(contractLabel)) {
+          collapsedContracts.delete(contractLabel);
+        } else {
+          collapsedContracts.add(contractLabel);
+        }
+      }
+
+      function buildContractCompanyRows(contractLabel) {
+        const breakdownRows = contractCompanyBreakdown[contractLabel] || [];
+        return breakdownRows.map((item) => {
+          const companyName = Array.isArray(item) ? item[0] : item?.company;
+          const companyTotal = Array.isArray(item) ? item[1] : item?.total;
+          const excludedFromTotal = !Array.isArray(item) && item?.excluded_from_total;
+          const rowClass = excludedFromTotal
+            ? 'contract-company-breakdown contract-company-breakdown-total-excluded'
+            : 'contract-company-breakdown';
+          return `
+            <tr class="${rowClass}">
+              <td>└ ${companyName || 'Unknown Insurance Company'}</td>
+              <td class="text-end">${Number(companyTotal || 0).toLocaleString()}</td>
+            </tr>
+          `;
+        }).join('');
+      }
+
+      function rebuildTable(data) {
+        const tbody = document.getElementById('companyTableBody');
+        tbody.innerHTML = '';
+        const canExpandContracts = shouldEnableContractBreakdown();
+        contractCompanyBreakdown = data.contract_company_breakdown || {};
+
+        (data.rows || []).forEach((row) => {
+          const rowLabel = row && typeof row === 'object' && !Array.isArray(row)
+            ? row.label
+            : row?.[0];
+          const rowTotal = row && typeof row === 'object' && !Array.isArray(row)
+            ? row.total
+            : row?.[1];
+          const safeLabel = rowLabel ?? 'Unassigned';
+          const safeTotal = Number(rowTotal ?? 0);
+          const tr = document.createElement('tr');
+          const isExpanded = canExpandContracts && !collapsedContracts.has(safeLabel);
+          if (lightGreyContractTypes.has(safeLabel)) {
+            tr.classList.add('contract-type-light-grey');
+          }
+
+          if (canExpandContracts) {
+            tr.classList.add('contract-row-toggle');
+            if (isExpanded) {
+              tr.classList.add('contract-row-toggle-expanded');
+            }
+            tr.innerHTML = `
+              <td>${safeLabel}</td>
+              <td class="text-end">${safeTotal.toLocaleString()}</td>
+            `;
+            tr.addEventListener('click', () => {
+              toggleContractBreakdown(safeLabel);
+              rebuildTable(data);
+            });
+          } else {
+            tr.innerHTML = `
+              <td>${safeLabel}</td>
+              <td class="text-end">${safeTotal.toLocaleString()}</td>
+            `;
+          }
+          tbody.appendChild(tr);
+
+          if (canExpandContracts && isExpanded) {
+            tbody.insertAdjacentHTML('beforeend', buildContractCompanyRows(safeLabel));
+          }
+        });
+        totalSumCell.textContent = Number(data.sum_total ?? 0).toLocaleString();
+        dateRangeLabel.textContent = `Showing: ${data.date_range_label || ''}`;
+      }
+
+      function escapeHtml(value) {
+        return String(value ?? '').replace(/[&<>"']/g, (char) => ({
+          '&': '&amp;',
+          '<': '&lt;',
+          '>': '&gt;',
+          '"': '&quot;',
+          "'": '&#39;',
+        }[char]));
+      }
+	  
+      function rebuildPartsSoldTable(data) {
+        if (!data || !partsSoldTableBody) return;
+        partsSoldTableBody.innerHTML = '';
+        (data.rows || []).forEach((row) => {
+          const label = Array.isArray(row) ? row[0] : row.label ?? 'Unassigned';
+          const total = Number(Array.isArray(row) ? row[1] : row.total ?? 0);
+          const previousTotal = Number(Array.isArray(row) ? row[2] : row.previous_total ?? 0);
+          const salesValue = Number(Array.isArray(row) ? row[3] : row.sales_value ?? 0);
+          const averageValue = Number(Array.isArray(row) ? row[4] : row.average_value ?? 0);
+          const previousSalesValue = Number(Array.isArray(row) ? row[5] : row.previous_sales_value ?? 0);
+          const previousAverageValue = Number(Array.isArray(row) ? row[6] : row.previous_average_value ?? 0);
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td>${escapeHtml(label)}</td>
+            <td class="text-end parts-breakdown-trigger" data-entity="${escapeHtml(label)}" data-period="current" title="Show parts sold breakdown">${total.toLocaleString()}</td>
+            <td class="text-end">${salesValue.toLocaleString('en-GB', { style: 'currency', currency: 'GBP' })}</td>
+            <td class="text-end">${averageValue.toLocaleString('en-GB', { style: 'currency', currency: 'GBP' })}</td>
+            <td class="text-end parts-breakdown-trigger" data-entity="${escapeHtml(label)}" data-period="previous" title="Show previous-period parts sold breakdown">${previousTotal.toLocaleString()}</td>
+            <td class="text-end">${previousSalesValue.toLocaleString('en-GB', { style: 'currency', currency: 'GBP' })}</td>
+            <td class="text-end">${previousAverageValue.toLocaleString('en-GB', { style: 'currency', currency: 'GBP' })}</td>
+          `;
+          partsSoldTableBody.appendChild(tr);
+        });
+        if (partsSoldTotalCell) {
+          partsSoldTotalCell.textContent = Number(data.sum_total ?? 0).toLocaleString();
+          partsSoldTotalCell.dataset.entity = '';
+          partsSoldPreviousTotalCell.dataset.entity = '';
+          partsSoldPreviousTotalCell.dataset.period = 'previous';
+        }
+        if (partsSoldPreviousTotalCell) {
+          partsSoldPreviousTotalCell.textContent = Number(data.sum_total_previous ?? data.sum_total_vat ?? 0).toLocaleString();
+        }
+        const currency = (value) => Number(value ?? 0).toLocaleString('en-GB', { style: 'currency', currency: 'GBP' });
+        document.getElementById('partsSoldValueTotalCell').textContent = currency(data.sum_sales_value);
+        document.getElementById('partsSoldAverageTotalCell').textContent = currency(data.average_value);
+        document.getElementById('partsSoldPreviousValueTotalCell').textContent = currency(data.sum_previous_sales_value);
+        document.getElementById('partsSoldPreviousAverageTotalCell').textContent = currency(data.previous_average_value);
+        if (partsSoldDateRangeLabel) {
+          partsSoldDateRangeLabel.textContent = `Showing: ${data.date_range_label || ''}`;
+        }
+        if (partsSoldPrevDateRangeLabel) {
+          partsSoldPrevDateRangeLabel.textContent = `Parts Sold (Prev Period): ${data.prev_date_range_label || 'Prev Period'}`;
+        }
+        if (partsSoldEntityHeader) {
+          partsSoldEntityHeader.textContent = data.entity_label || 'Department';
+        }
+        if (partsSoldPreviousHeader) {
+          partsSoldPreviousHeader.textContent = 'Parts Sold Prev';
+        }
+        if (partsSoldTogglePrevModeBtn && data.prev_mode) {
+          partsSoldTogglePrevModeBtn.textContent = data.prev_mode === 'mirror'
+            ? 'Use Previous Month'
+            : 'Use Mirrored Range';
+        }
+        updatePartsSoldChartData(data);
+      }
+
+
+      function getPartsBreakdownModal() {
+        if (!partsBreakdownModalEl) return null;
+        if (!partsBreakdownModal && window.bootstrap && window.bootstrap.Modal) {
+          partsBreakdownModal = window.bootstrap.Modal.getOrCreateInstance(partsBreakdownModalEl);
+        }
+        return partsBreakdownModal;
+      }
+
+      function buildPartsBreakdownUrl(entity, period = 'current', fullDetail = false, exportExcel = false) {
+        const url = new URL("{{ url_for('executive_stats_parts_breakdown') }}", window.location.origin);
+        const params = new URLSearchParams(window.location.search);
+        if (!params.has('filter')) {
+          params.set('filter', {{ filter_type|tojson }});
+        }
+        params.set('dimension', partsSoldDataset.stats_dimension || 'department');
+        params.set('period', period === 'previous' ? 'previous' : 'current');
+        if (entity) {
+          params.set('entity', entity);
+        } else {
+          params.delete('entity');
+        }
+        if (fullDetail) {
+          params.set('full_detail', '1');
+        } else {
+          params.delete('full_detail');
+        }
+        if (exportExcel) {
+          params.set('export', 'excel');
+        } else {
+          params.delete('export');
+        }
+        params.forEach((value, key) => url.searchParams.append(key, value));
+        return url.toString();
+      }
+
+      function formatCurrency(value) {
+        return `£${Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+      }
+
+      function setPartsBreakdownHeader(fullDetail = false) {
+        if (!partsBreakdownHeaderRow) return;
+        partsBreakdownHeaderRow.innerHTML = fullDetail
+          ? '<th>Item</th><th>Tag Number</th><th class="text-end">Price Sold</th>'
+          : '<th>Item</th><th class="text-end">Quantity</th><th class="text-end">Avg Sold Price</th>';
+      }
+
+      function renderPartsBreakdown(items, fullDetail = false) {
+        if (!partsBreakdownList) return;
+        setPartsBreakdownHeader(fullDetail);
+        partsBreakdownList.innerHTML = items.map(item => fullDetail ? `
+          <tr>
+            <td>${escapeHtml(item.itemname || 'Unknown')}</td>
+            <td>${escapeHtml(item.tag_number || '')}</td>
+            <td class="text-end">${formatCurrency(item.sold_price)}</td>
+          </tr>
+        ` : `
+          <tr>
+            <td>${escapeHtml(item.itemname || 'Unknown')}</td>
+            <td class="text-end">${Number(item.count || 0).toLocaleString()}</td>
+            <td class="text-end">${formatCurrency(item.average_sold_price)}</td>
+          </tr>
+        `).join('');
+      }
+
+      async function openPartsBreakdown(entity, period = 'current') {
+        const modal = getPartsBreakdownModal();
+        if (!modal || !partsBreakdownList || !partsBreakdownStatus || !partsBreakdownTitle || !partsBreakdownSubtitle) return;
+
+        const isPreviousPeriod = period === 'previous';
+        const label = entity || 'All departments';
+        if (partsBreakdownFullDetail) {
+          partsBreakdownFullDetail.dataset.entity = entity || '';
+          partsBreakdownFullDetail.dataset.period = period;
+        }
+        partsBreakdownTitle.textContent = `${label} - ${isPreviousPeriod ? 'Previous period parts sold breakdown' : 'Parts sold breakdown'}`;
+        partsBreakdownSubtitle.textContent = '';
+        const fullDetail = Boolean(partsBreakdownFullDetail && partsBreakdownFullDetail.checked);
+        partsBreakdownStatus.textContent = 'Loading parts...';
+        partsBreakdownList.innerHTML = '';
+        setPartsBreakdownHeader(fullDetail);
+        if (partsBreakdownDownloadBtn) {
+          partsBreakdownDownloadBtn.href = buildPartsBreakdownUrl(entity, period, fullDetail, true);
+        }
+        modal.show();
+
+        try {
+          const response = await fetch(buildPartsBreakdownUrl(entity, period, fullDetail), { cache: 'no-store' });
+          if (!response.ok) throw new Error('Failed to load parts breakdown');
+          const data = await response.json();
+          if (data.date_range_label) {
+            partsBreakdownSubtitle.textContent = data.date_range_label;
+          }
+          const responseFullDetail = Boolean(data.full_detail);
+          if (Array.isArray(data.items) && data.items.length) {
+            renderPartsBreakdown(data.items, responseFullDetail);
+            const totalText = `Total parts sold: ${Number(data.total || 0).toLocaleString()}`;
+            partsBreakdownStatus.textContent = responseFullDetail
+              ? `${totalText} · Sales total: ${formatCurrency(data.sales_total)}`
+              : totalText;
+          } else {
+            setPartsBreakdownHeader(responseFullDetail);
+            partsBreakdownStatus.textContent = 'No parts sold in this period.';
+            partsBreakdownList.innerHTML = '<tr><td colspan="3" class="text-center text-muted">No items found.</td></tr>';
+          }
+        } catch (err) {
+          console.error(err);
+          partsBreakdownStatus.textContent = 'Unable to load parts breakdown right now.';
+          partsBreakdownList.innerHTML = '<tr><td colspan="3" class="text-center text-danger">Error loading data.</td></tr>';
+        }
+      }
+	  
+
+      if (partsBreakdownFullDetail) {
+        partsBreakdownFullDetail.addEventListener('change', () => {
+          if (!partsBreakdownModalEl || !partsBreakdownModalEl.classList.contains('show')) return;
+          openPartsBreakdown(
+            partsBreakdownFullDetail.dataset.entity || '',
+            partsBreakdownFullDetail.dataset.period || 'current'
+          );
+        });
+      }
+
+      function normalizeColumnName(name) {
+        return String(name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      }
+
+
+      function padTwoDigits(value) {
+        return String(value).padStart(2, '0');
+      }
+
+      function isLikelyDateColumn(columnName) {
+        const normalized = normalizeColumnName(columnName);
+        return normalized.includes('date') || normalized.includes('time') || normalized.endsWith('at') || normalized.includes('timestamp');
+      }
+
+      function parseDateValue(rawValue) {
+        if (rawValue === null || rawValue === undefined) return null;
+        const value = String(rawValue).trim();
+        if (!value) return null;
+
+        const normalizedValue = value.replace(' ', 'T');
+        const parsed = new Date(normalizedValue);
+        if (!Number.isNaN(parsed.getTime())) return parsed;
+
+        const match = value.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2})(?::(\d{2}))?)?$/);
+        if (!match) return null;
+
+        const [, year, month, day, hour = '00', minute = '00', second = '00'] = match;
+        return new Date(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute), Number(second));
+      }
+
+      function formatDateTimeForDisplay(rawValue, columnName) {
+        if (!isLikelyDateColumn(columnName)) return rawValue ?? '';
+        const parsed = parseDateValue(rawValue);
+        if (!parsed) return rawValue ?? '';
+
+        const day = padTwoDigits(parsed.getDate());
+        const month = padTwoDigits(parsed.getMonth() + 1);
+        const year = parsed.getFullYear();
+        const hours = padTwoDigits(parsed.getHours());
+        const minutes = padTwoDigits(parsed.getMinutes());
+        const seconds = padTwoDigits(parsed.getSeconds());
+        return `${day}/${month}/${year} ${hours}:${minutes}:${seconds}`;
+      }
+
+      function getVehicleFlagsModal() {
+        if (vehicleFlagsModal) return vehicleFlagsModal;
+        if (!vehicleFlagsModalElement || !window.bootstrap) return null;
+        vehicleFlagsModal = new bootstrap.Modal(vehicleFlagsModalElement);
+        return vehicleFlagsModal;
+      }
+
+      function showVehicleFlagsModal(flags) {
+        const modalInstance = getVehicleFlagsModal();
+        if (!vehicleFlagsModalBody || !modalInstance) return;
+        vehicleFlagsModalBody.innerHTML = '';
+        (flags || []).forEach((flag) => {
+          const tr = document.createElement('tr');
+          const td = document.createElement('td');
+          const text = flag?.text || '';
+          const color = flag?.color || '';
+          td.textContent = text;
+          if (color) {
+            td.style.backgroundColor = color;
+            td.style.color = getContrastTextColor(color);
+          }
+          td.style.fontWeight = '600';
+          tr.appendChild(td);
+          vehicleFlagsModalBody.appendChild(tr);
+        });
+        modalInstance.show();
+        const modalBackdrops = document.querySelectorAll('.modal-backdrop');
+        const flagsBackdrop = modalBackdrops[modalBackdrops.length - 1];
+        if (flagsBackdrop) flagsBackdrop.classList.add('vehicle-flags-backdrop');
+      }
+
+      if (vehicleFlagsModalElement) {
+        vehicleFlagsModalElement.addEventListener('hidden.bs.modal', () => {
+          if (document.querySelector('.modal.show')) {
+            document.body.classList.add('modal-open');
+          }
+        });
+      }
+
+      currentStatusDetailsModalElement?.addEventListener('shown.bs.modal', () => {
+        syncTableHeaderOffsets('currentStatusDetailsModalTable');
+      });
+
+      function renderFlagCell(td, value) {
+        if (!value || typeof value !== 'object') {
+          td.textContent = value ?? '';
+          return;
+        }
+
+        if (value.kind === 'single' || value.kind === 'multiple') {
+          const flags = (value.flags || []).length
+            ? value.flags
+            : [{ text: value.label || '', color: value.background_color || '' }];
+          const flagList = document.createElement('div');
+          flagList.className = 'vehicle-flag-list';
+          flags.forEach((flag) => {
+            const badge = document.createElement('span');
+            const color = flag?.color || '';
+            badge.className = 'vehicle-flag-badge';
+            badge.textContent = flag?.text || 'No text Flag';
+            if (color) {
+              badge.style.backgroundColor = color;
+              badge.style.color = getContrastTextColor(color);
+            }
+            flagList.appendChild(badge);
+          });
+          td.appendChild(flagList);
+          return;
+        }
+
+        td.textContent = value.label ?? value.text ?? value.name ?? '';
+      }
+
+      function rebuildDetailsTable(data) {
+        if (!vehicleDetailsTableBody) return;
+        vehicleDetailColumns = data.detail_columns || vehicleDetailColumns || [];
+        vehicleDetailsTitleRow.innerHTML = vehicleDetailColumns
+          .map((column) => `<th>${escapeHtml(column)}</th>`).join('');
+        vehicleDetailsFilterRow.innerHTML = vehicleDetailColumns
+          .map((column) => `<th><input type="text" class="form-control form-control-sm vehicle-details-filter" placeholder="Filter ${escapeHtml(column)}"></th>`).join('');
+        vehicleDetailsTableBody.innerHTML = '';
+        vehicleDetailRows = data.detail_rows || [];
+        vehicleDetailRows.forEach((row) => {
+          const tr = document.createElement('tr');
+          row.forEach((value, index) => {
+            const td = document.createElement('td');
+            const columnKey = normalizeColumnName(vehicleDetailColumns[index]);
+            if (columnKey === 'flag') {
+              renderFlagCell(td, value);
+            } else {
+              td.textContent = formatDateTimeForDisplay(value, vehicleDetailColumns[index]);
+            }
+            tr.appendChild(td);
+          });
+          vehicleDetailsTableBody.appendChild(tr);
+        });
+   
+        initializeDetailsTable();
+      }
+
+      function rebuildVehicleSoldDetailsTable(data) {
+        if (!vehicleSoldDetailsTableBody) return;
+        vehicleSoldDetailColumns = data.detail_columns || vehicleSoldDetailColumns || [];
+        vehicleSoldDetailsTitleRow.innerHTML = vehicleSoldDetailColumns
+          .map((column) => `<th>${escapeHtml(column)}</th>`).join('');
+        vehicleSoldDetailsFilterRow.innerHTML = vehicleSoldDetailColumns
+          .map((column) => `<th><input type="text" class="form-control form-control-sm vehicle-details-filter" placeholder="Filter ${escapeHtml(column)}"></th>`).join('');
+        vehicleSoldDetailsTableBody.innerHTML = '';
+        vehicleSoldDetailRows = data.detail_rows || [];
+        vehicleSoldDetailRows.forEach((row) => {
+          const tr = document.createElement('tr');
+          row.forEach((value, index) => {
+            const td = document.createElement('td');
+            const columnKey = normalizeColumnName(vehicleSoldDetailColumns[index]);
+            if (columnKey === 'flag') {
+              renderFlagCell(td, value);
+            } else {
+              td.textContent = formatDateTimeForDisplay(value, vehicleSoldDetailColumns[index]);
+            }
+            tr.appendChild(td);
+          });
+          vehicleSoldDetailsTableBody.appendChild(tr);
+        });
+        initializeVehicleSoldDetailsTable();
+      }
+
+      function rebuildUncollectedSoldDetailsTable(data) {
+        if (!uncollectedSoldDetailsTableBody) return;
+        if (uncollectedSoldDetailsDataTable) {
+          uncollectedSoldDetailsDataTable.destroy();
+          uncollectedSoldDetailsDataTable = null;
+        }
+        const columns = data.detail_columns || [];
+        uncollectedSoldDetailsTitleRow.innerHTML = columns
+          .map((column) => `<th>${escapeHtml(column)}</th>`).join('');
+        uncollectedSoldDetailsFilterRow.innerHTML = columns
+          .map((column) => `<th><input type="text" class="form-control form-control-sm vehicle-details-filter" placeholder="Filter ${escapeHtml(column)}"></th>`).join('');
+        uncollectedSoldDetailsTableBody.innerHTML = '';
+        (data.detail_rows || []).forEach((row) => {
+          const tr = document.createElement('tr');
+          row.forEach((value, index) => {
+            const td = document.createElement('td');
+            if (normalizeColumnName(columns[index]) === 'flag') {
+              renderFlagCell(td, value);
+            } else {
+              td.textContent = formatDateTimeForDisplay(value, columns[index]);
+            }
+            tr.appendChild(td);
+          });
+          uncollectedSoldDetailsTableBody.appendChild(tr);
+        });
+        if (uncollectedSoldDetailsLabel) {
+          uncollectedSoldDetailsLabel.textContent = currentStatusMode === 'current'
+            ? 'Showing vehicles sold in 2026 currently in Sold status without a CollectedDate or ActualDeliveryDate.'
+            : `Showing those vehicles sold in 2026 within ${data.date_range_label || 'the selected date range'}.`;
+        }
+        initializeUncollectedSoldDetailsTable();
+      }
+
+      async function showCurrentStatusDetails(groupLabel) {
+        activeCurrentStatusGroup = groupLabel;
+        const soldGroup = groupLabel === 'Auction vehicles sold, not collected';
+        const waitingGroup = groupLabel === 'Vehicles waiting to be cleared';
+        currentStatusDetailOptions?.classList.toggle('d-none', !soldGroup && !waitingGroup);
+        includeSoldNotPaidWrapper?.classList.toggle('d-none', !soldGroup);
+        includeIaaWrapper?.classList.toggle('d-none', !waitingGroup);
+        iaaOnlyWrapper?.classList.toggle('d-none', !waitingGroup);
+        if (!soldGroup && includeSoldNotPaidToggle) includeSoldNotPaidToggle.checked = false;
+        if (!waitingGroup && includeIaaToggle) includeIaaToggle.checked = false;
+        if (!waitingGroup && iaaOnlyToggle) iaaOnlyToggle.checked = false;
+        if (currentStatusDetailsDownload) {
+          currentStatusDetailsDownload.href = buildDetailsExcelUrl('current_status', {
+            status_mode: currentStatusMode,
+            status_group: groupLabel,
+            include_sold_not_paid: includeSoldNotPaidToggle?.checked ? '1' : '0',
+            include_iaa: includeIaaToggle?.checked ? '1' : '0',
+            iaa_only: iaaOnlyToggle?.checked ? '1' : '0',
+          });
+        }
+        const existingData = currentStatusDataset[currentStatusMode] || {};
+        const groupColumns = (existingData.detail_columns_by_group || {})[groupLabel];
+        const hasLoadedGroup = Array.isArray(groupColumns)
+          ? groupColumns.length > 0
+          : (existingData.detail_columns || []).length > 0;
+        if (!hasLoadedGroup) {
+          currentStatusDetailsModalLabel.textContent = `${groupLabel} Details`;
+          currentStatusDetailsModalHeader.innerHTML = '';
+          currentStatusDetailsModalFilterRow.innerHTML = '';
+          currentStatusDetailsModalBody.innerHTML = '<tr><td class="text-center py-4">Loading details...</td></tr>';
+          bootstrap.Modal.getOrCreateInstance(currentStatusDetailsModalElement).show();
+          try {
+            if (!currentStatusDetailsRequest) {
+              const detailsUrl = new URL(buildDetailsUrl('current_status'));
+              detailsUrl.searchParams.set('status_mode', currentStatusMode);
+              detailsUrl.searchParams.set('status_group', groupLabel);
+              currentStatusDetailsRequest = fetch(detailsUrl, { cache: 'no-store' })
+                .then((response) => {
+                  if (!response.ok) throw new Error('Unable to load vehicle status details');
+                  return response.json();
+                })
+                .finally(() => { currentStatusDetailsRequest = null; });
+            }
+            const payload = await currentStatusDetailsRequest;
+            const modeData = currentStatusDataset[payload.status_mode] || {};
+            modeData.detail_columns_by_group = modeData.detail_columns_by_group || {};
+            modeData.detail_groups = modeData.detail_groups || {};
+            modeData.detail_columns_by_group[payload.status_group] = payload.detail_columns || [];
+            modeData.detail_groups[payload.status_group] = payload.detail_rows || [];
+          } catch (error) {
+            currentStatusDetailsModalBody.innerHTML = `<tr><td class="text-danger text-center py-4">${escapeHtml(error.message)}</td></tr>`;
+            return;
+          }
+        }
+        renderCurrentStatusDetails(groupLabel);
+      }
+
+      function renderCurrentStatusDetails(groupLabel) {
+        const data = currentStatusDataset[currentStatusMode] || {};
+        const columns = (data.detail_columns_by_group || {})[groupLabel] || data.detail_columns || [];
+        const statusIndex = columns.findIndex((column) => normalizeColumnName(column) === 'status');
+        const insuranceIndex = columns.findIndex((column) => normalizeColumnName(column) === 'insurancecompany');
+        const includeSoldNotPaid = Boolean(includeSoldNotPaidToggle?.checked);
+        const includeIaa = Boolean(includeIaaToggle?.checked);
+        const iaaOnly = Boolean(iaaOnlyToggle?.checked);
+        const rows = ((data.detail_groups || {})[groupLabel] || []).filter((row) => {
+          if (groupLabel === 'Auction vehicles sold, not collected' && statusIndex >= 0) {
+            const status = String(row[statusIndex] || '').trim().toLowerCase();
+            if (status !== 'sold' && !(includeSoldNotPaid && status === 'sold not paid')) return false;
+          }
+          if (groupLabel === 'Vehicles waiting to be cleared' && insuranceIndex >= 0) {
+            const company = String(row[insuranceIndex] || '').trim().toUpperCase();
+            if (iaaOnly && company !== 'IAA') return false;
+            if (!iaaOnly && !includeIaa && company === 'IAA') return false;
+          }
+          return true;
+        });
+        if (currentStatusDetailsDownload) {
+          currentStatusDetailsDownload.href = buildDetailsExcelUrl('current_status', {
+            status_mode: currentStatusMode,
+            status_group: groupLabel,
+            include_sold_not_paid: includeSoldNotPaid ? '1' : '0',
+            include_iaa: includeIaa ? '1' : '0',
+            iaa_only: iaaOnly ? '1' : '0',
+          });
+        }
+        if (currentStatusDetailsDataTable) {
+          currentStatusDetailsDataTable.destroy();
+          currentStatusDetailsDataTable = null;
+        }
+        currentStatusDetailsModalLabel.textContent = `${groupLabel} Details (${rows.length.toLocaleString()})`;
+        currentStatusDetailsModalHeader.innerHTML = columns
+          .map((column) => `<th>${escapeHtml(column)}</th>`).join('');
+        currentStatusDetailsModalFilterRow.innerHTML = columns
+          .map((column) => `<th><input type="text" class="form-control form-control-sm vehicle-details-filter" placeholder="Filter ${escapeHtml(column)}"></th>`).join('');
+        currentStatusDetailsModalBody.innerHTML = '';
+        rows.forEach((row) => {
+          const tr = document.createElement('tr');
+          row.forEach((value, index) => {
+            const td = document.createElement('td');
+            if (normalizeColumnName(columns[index]) === 'flag') {
+              renderFlagCell(td, value);
+            } else {
+              td.textContent = formatDateTimeForDisplay(value, columns[index]);
+            }
+            tr.appendChild(td);
+          });
+          currentStatusDetailsModalBody.appendChild(tr);
+        });
+        const $table = jQuery('#currentStatusDetailsModalTable');
+        const $filterInputs = $table.find('thead tr.filter-row th input');
+        currentStatusDetailsDataTable = $table.DataTable({
+          paging: false,
+          info: false,
+          order: [],
+          dom: 't',
+          autoWidth: false,
+          ordering: true,
+          initComplete: function () {
+            removeEmptyDetailsHeaderRows($table[0]);
+            const api = this.api();
+            api.columns().every(function (index) {
+              const column = this;
+              jQuery($filterInputs[index]).on('keyup change clear', function () {
+                if (column.search() !== this.value) column.search(this.value).draw();
+              });
+            });
+            syncTableHeaderOffsets('currentStatusDetailsModalTable');
+          },
+        });
+        bootstrap.Modal.getOrCreateInstance(currentStatusDetailsModalElement).show();
+      }
+
+      includeSoldNotPaidToggle?.addEventListener('change', () => {
+        if (activeCurrentStatusGroup) renderCurrentStatusDetails(activeCurrentStatusGroup);
+      });
+      includeIaaToggle?.addEventListener('change', () => {
+        if (includeIaaToggle.checked && iaaOnlyToggle) iaaOnlyToggle.checked = false;
+        if (activeCurrentStatusGroup) renderCurrentStatusDetails(activeCurrentStatusGroup);
+      });
+      iaaOnlyToggle?.addEventListener('change', () => {
+        if (iaaOnlyToggle.checked && includeIaaToggle) includeIaaToggle.checked = false;
+        if (activeCurrentStatusGroup) renderCurrentStatusDetails(activeCurrentStatusGroup);
+      });
+
+
+      function syncDetailsHeaderOffsets() {
+        syncTableHeaderOffsets('vehicleDetailsTable');
+      }
+
+      function syncTableHeaderOffsets(tableId) {
+        const detailsTable = document.getElementById(tableId);
+        if (!detailsTable) return;
+        const titleRowCell = detailsTable.querySelector('thead tr.title-row th');
+        const titleRowHeight = titleRowCell ? Math.ceil(titleRowCell.getBoundingClientRect().height) : 42;
+        detailsTable.style.setProperty('--vehicle-title-row-height', `${titleRowHeight}px`);
+      }
+
+      function removeEmptyDetailsHeaderRows(table) {
+        table.querySelectorAll('thead tr:not(.title-row):not(.filter-row)').forEach((row) => {
+          row.remove();
+        });
+      }
+	  
+      function initializeDetailsTable() {
+        if (!window.jQuery || !jQuery.fn.DataTable) return;
+        const $table = jQuery('#vehicleDetailsTable');
+        if (!$table.length) return;
+		removeEmptyDetailsHeaderRows($table[0]);
+
+        if (detailsDataTable) {
+          detailsDataTable.destroy();
+        }
+
+        const $filterInputs = $table.find('thead tr.filter-row th input');
+        $filterInputs.off('keyup change clear').val('');
+
+        detailsDataTable = $table.DataTable({
+          paging: false,
+          info: false,
+          order: [],
+          dom: 't',
+          autoWidth: false,
+          ordering: true,
+          initComplete: function () {
+            removeEmptyDetailsHeaderRows($table[0]);
+            const api = this.api();
+            api.columns().every(function (index) {
+              const column = this;
+              jQuery($filterInputs[index]).on('keyup change clear', function () {
+                if (column.search() !== this.value) {
+                  column.search(this.value).draw();
+                }
+              });
+            });
+            syncDetailsHeaderOffsets();
+          },
+        });
+
+        syncDetailsHeaderOffsets();
+      }
+
+      function initializeVehicleSoldDetailsTable() {
+        if (!window.jQuery || !jQuery.fn.DataTable) return;
+        const $table = jQuery('#vehicleSoldDetailsTable');
+        if (!$table.length) return;
+        removeEmptyDetailsHeaderRows($table[0]);
+        if (vehicleSoldDetailsDataTable) vehicleSoldDetailsDataTable.destroy();
+
+        const $filterInputs = $table.find('thead tr.filter-row th input');
+        $filterInputs.off('keyup change clear').val('');
+        vehicleSoldDetailsDataTable = $table.DataTable({
+          paging: false,
+          info: false,
+          order: [],
+          dom: 't',
+          autoWidth: false,
+          ordering: true,
+          initComplete: function () {
+            removeEmptyDetailsHeaderRows($table[0]);
+            const api = this.api();
+            api.columns().every(function (index) {
+              const column = this;
+              jQuery($filterInputs[index]).on('keyup change clear', function () {
+                if (column.search() !== this.value) column.search(this.value).draw();
+              });
+            });
+            syncTableHeaderOffsets('vehicleSoldDetailsTable');
+          },
+        });
+        syncTableHeaderOffsets('vehicleSoldDetailsTable');
+      }
+
+      function initializeUncollectedSoldDetailsTable() {
+        if (!window.jQuery || !jQuery.fn.DataTable) return;
+        const $table = jQuery('#uncollectedSoldDetailsTable');
+        if (!$table.length) return;
+        removeEmptyDetailsHeaderRows($table[0]);
+        const $filterInputs = $table.find('thead tr.filter-row th input');
+        uncollectedSoldDetailsDataTable = $table.DataTable({
+          paging: false,
+          info: false,
+          order: [],
+          dom: 't',
+          autoWidth: false,
+          ordering: true,
+          initComplete: function () {
+            const api = this.api();
+            api.columns().every(function (index) {
+              const column = this;
+              jQuery($filterInputs[index]).on('keyup change clear', function () {
+                if (column.search() !== this.value) column.search(this.value).draw();
+              });
+            });
+            syncTableHeaderOffsets('uncollectedSoldDetailsTable');
+          },
+        });
+        syncTableHeaderOffsets('uncollectedSoldDetailsTable');
+      }
+
+      function getContrastTextColor(hexColor) {
+        if (!hexColor || typeof hexColor !== 'string') return '#111111';
+        const normalized = hexColor.trim().replace('#', '');
+        if (!/^[0-9a-fA-F]{6}$/.test(normalized)) return '#111111';
+        const r = parseInt(normalized.slice(0, 2), 16);
+        const g = parseInt(normalized.slice(2, 4), 16);
+        const b = parseInt(normalized.slice(4, 6), 16);
+        const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+        return luminance > 0.6 ? '#111111' : '#ffffff';
+      }
+
+      function buildDataUrl() {
+        const url = new URL("{{ url_for('executive_stats_data') }}", window.location.origin);
+        const params = new URLSearchParams(window.location.search);
+        if (!params.has('filter')) {
+          params.set('filter', "{{ filter_type }}");
+        }
+        params.set('date_mode', dateModeToggle && dateModeToggle.checked ? 'collected' : 'recovered');
+        params.forEach((value, key) => {
+          url.searchParams.append(key, value);
+        });
+        return url.toString();
+      }
+
+      function buildDetailsUrl(section = 'tables') {
+        const url = new URL("{{ url_for('executive_stats_details') }}", window.location.origin);
+        const params = new URLSearchParams(window.location.search);
+        if (!params.has('filter')) params.set('filter', {{ filter_type|tojson }});
+        params.set('date_mode', dateModeToggle && dateModeToggle.checked ? 'collected' : 'recovered');
+        params.set('section', section);
+        params.forEach((value, key) => url.searchParams.append(key, value));
+        return url.toString();
+      }
+
+      function buildDetailsExcelUrl(dataset, extraParams = {}) {
+        const section = dataset === 'current_status' ? 'current_status' : 'tables';
+        const url = new URL(buildDetailsUrl(section));
+        url.searchParams.set('export', 'excel');
+        url.searchParams.set('dataset', dataset);
+        Object.entries(extraParams).forEach(([key, value]) => {
+          url.searchParams.set(key, value);
+        });
+        return url.toString();
+      }
+
+      document.querySelectorAll('.detail-excel-download').forEach((link) => {
+        const dataset = link.dataset.detailDataset;
+        if (dataset !== 'uncollected_sold') {
+          link.href = buildDetailsExcelUrl(dataset);
+        }
+      });
+
+      async function loadDetailTables() {
+        if (detailTablesLoaded) return;
+        if (!detailTablesRequest) {
+          detailTablesStatus.textContent = 'Loading detailed records...';
+          detailTablesRequest = fetch(buildDetailsUrl('tables'), { cache: 'no-store' })
+            .then((response) => {
+              if (!response.ok) throw new Error('Unable to load detailed records');
+              return response.json();
+            })
+            .finally(() => { detailTablesRequest = null; });
+        }
+        const payload = await detailTablesRequest;
+        rebuildDetailsTable(payload.vehicle_details || {});
+        rebuildVehicleSoldDetailsTable(payload.vehicle_sold_details || {});
+        currentStatusDataset = payload.current_status || currentStatusDataset;
+        rebuildUncollectedSoldDetailsTable(currentStatusDataset[currentStatusMode] || {});
+        detailTablesLoaded = true;
+        detailTablesStatus.textContent = 'Detailed records loaded.';
+      }
+
+      loadDetailTablesToggle?.addEventListener('change', async () => {
+        if (!loadDetailTablesToggle.checked) {
+          detailTablesContainer?.classList.add('d-none');
+          return;
+        }
+        detailTablesContainer?.classList.remove('d-none');
+        try {
+          await loadDetailTables();
+        } catch (error) {
+          detailTablesStatus.textContent = error.message;
+          detailTablesStatus.classList.add('text-danger');
+          loadDetailTablesToggle.checked = false;
+          detailTablesContainer?.classList.add('d-none');
+        }
+      });
+
+      let liveInterval = null;
+
+      async function refreshStats() {
+        try {
+          const response = await fetch(buildDataUrl(), { cache: 'no-store' });
+          if (!response.ok) return;
+          const data = await response.json();
+          rebuildTable(data);
+          updateChartData(data);
+          if (data.vehicle_sold) {
+            updateVehicleSoldData(data.vehicle_sold);
+          }
+          if (data.current_status) {
+            if (detailTablesLoaded) {
+              ['current', 'selected'].forEach((mode) => {
+                const previous = currentStatusDataset[mode] || {};
+                const next = data.current_status[mode] || {};
+                next.detail_columns = previous.detail_columns || [];
+                next.detail_rows = previous.detail_rows || [];
+                next.detail_groups = previous.detail_groups || {};
+              });
+            }
+            currentStatusDataset = data.current_status;
+            renderCurrentStatus();
+          }
+          if (data.vehicle_in_status) {
+            updateVehicleInStatusData(data.vehicle_in_status);
+          }
+          if (data.parts_sold) {
+            rebuildPartsSoldTable(data.parts_sold);
+          }
+          if (data.scrapped_cars) {
+            updateScrappedCars(data.scrapped_cars);
+          }
+        } catch (err) {
+          console.error('Live vehicle stats refresh failed', err);
+        }
+      }
+
+      if (partsSoldTableBody) {
+        partsSoldTableBody.addEventListener('click', (event) => {
+          const trigger = event.target.closest('.parts-breakdown-trigger');
+          if (!trigger) return;
+          event.preventDefault();
+          openPartsBreakdown(trigger.dataset.entity || '', trigger.dataset.period || 'current');
+        });
+      }
+      [partsSoldTotalCell, partsSoldPreviousTotalCell].forEach((totalCell) => {
+        if (!totalCell) return;
+        totalCell.addEventListener('click', (event) => {
+          event.preventDefault();
+          openPartsBreakdown('', totalCell.dataset.period || 'current');
+        });
+      });
+	  
+      function syncLiveParam(checked) {
+        const url = new URL(window.location.href);
+        if (checked) {
+          url.searchParams.set('live', '1');
+        } else {
+          url.searchParams.delete('live');
+        }
+        window.history.replaceState({}, '', url);
+      }
+
+      function startLiveUpdates() {
+        if (liveInterval) return;
+        refreshStats();
+        liveInterval = setInterval(refreshStats, 5000);
+      }
+
+      function stopLiveUpdates() {
+        if (liveInterval) {
+          clearInterval(liveInterval);
+          liveInterval = null;
+        }
+      }
+
+      function syncLiveControls(enabled) {
+        syncLiveParam(enabled);
+        const liveInput = document.getElementById('liveInputField');
+        if (liveInput) {
+          liveInput.value = enabled ? '1' : '';
+        }
+        document.querySelectorAll('.date-link').forEach((link) => {
+          const url = new URL(link.href);
+          if (enabled) {
+            url.searchParams.set('live', '1');
+          } else {
+            url.searchParams.delete('live');
+          }
+          link.href = url.toString();
+        });
+      }
+
+      liveCheckbox.addEventListener('change', (event) => {
+        const enabled = event.target.checked;
+        syncLiveControls(enabled);
+        if (enabled) {
+          startLiveUpdates();
+        } else {
+          stopLiveUpdates();
+        }
+      });
+
+      if (toggleChartBtn) {
+        toggleChartBtn.addEventListener('click', () => {
+          currentChartType = currentChartType === 'bar' ? 'pie' : 'bar';
+          toggleChartBtn.textContent = currentChartType === 'bar'
+            ? 'Show Pie Chart'
+            : 'Show Bar Chart';
+          renderChart(currentChartType);
+        });
+      }
+
+      if (resetZoomBtn) {
+        resetZoomBtn.addEventListener('click', () => {
+          if (chartInstance) {
+            chartInstance.resetZoom();
+          }
+        });
+      }
+
+      if (vehicleInStatusToggleChartBtn) {
+        vehicleInStatusToggleChartBtn.addEventListener('click', () => {
+          vehicleInStatusCurrentChartType = vehicleInStatusCurrentChartType === 'bar' ? 'pie' : 'bar';
+          vehicleInStatusToggleChartBtn.textContent = vehicleInStatusCurrentChartType === 'bar'
+            ? 'Show Pie Chart'
+            : 'Show Bar Chart';
+          renderVehicleInStatusChart(vehicleInStatusCurrentChartType);
+        });
+      }
+
+      currentStatusNowBtn?.addEventListener('click', () => {
+        currentStatusMode = 'current';
+        renderCurrentStatus();
+      });
+      currentStatusSelectedBtn?.addEventListener('click', () => {
+        currentStatusMode = 'selected';
+        renderCurrentStatus();
+      });
+      currentStatusTableBody?.addEventListener('click', (event) => {
+        const trigger = event.target.closest('.current-status-details-trigger');
+        if (trigger) showCurrentStatusDetails(trigger.dataset.statusGroup || 'Vehicle status');
+      });
+
+      if (vehicleInStatusResetZoomBtn) {
+        vehicleInStatusResetZoomBtn.addEventListener('click', () => {
+          if (vehicleInStatusChartInstance) {
+            vehicleInStatusChartInstance.resetZoom();
+          }
+        });
+      }
+
+      if (vehicleSoldToggleChartBtn) {
+        vehicleSoldToggleChartBtn.addEventListener('click', () => {
+          const nextType = vehicleSoldCurrentChartType === 'bar' ? 'pie' : 'bar';
+          vehicleSoldToggleChartBtn.textContent = nextType === 'bar' ? 'Show Pie Chart' : 'Show Bar Chart';
+          renderVehicleSoldChart(nextType);
+        });
+      }
+
+      if (vehicleSoldResetZoomBtn) {
+        vehicleSoldResetZoomBtn.addEventListener('click', () => {
+          if (vehicleSoldChartInstance) vehicleSoldChartInstance.resetZoom();
+        });
+      }
+
+      if (vehicleSoldOnlyToggle) {
+        vehicleSoldOnlyToggle.addEventListener('change', () => {
+          const url = new URL(window.location.href);
+          url.searchParams.set('sold_only', vehicleSoldOnlyToggle.checked ? '1' : '0');
+          url.hash = 'vehicleSoldSection';
+          rememberScrollPosition();
+          window.location.href = url.toString();
+        });
+      }
+
+      if (vehicleSoldNotPaidToggle) {
+        vehicleSoldNotPaidToggle.addEventListener('change', () => {
+          const url = new URL(window.location.href);
+          url.searchParams.set('sold_not_paid', vehicleSoldNotPaidToggle.checked ? '1' : '0');
+          url.hash = 'vehicleSoldSection';
+          rememberScrollPosition();
+          window.location.href = url.toString();
+        });
+      }
+	  
+      if (partsDimensionToggle) {
+        partsDimensionToggle.addEventListener('change', () => {
+          const url = new URL(window.location.href);
+          url.searchParams.set('parts_dimension', partsDimensionToggle.checked ? 'user' : 'department');
+          rememberScrollPosition();
+          window.location.href = url.toString();
+        });
+      }
+
+      if (partsSoldToggleChartBtn) {
+        partsSoldToggleChartBtn.addEventListener('click', () => {
+          const nextType = partsSoldCurrentChartType === 'bar' ? 'pie' : 'bar';
+          renderPartsSoldChart(nextType);
+        });
+      }
+
+      if (partsSoldResetZoomBtn) {
+        partsSoldResetZoomBtn.addEventListener('click', () => {
+          if (partsSoldChartInstance) {
+            partsSoldChartInstance.resetZoom();
+          }
+        });
+      }
+
+      if (partsSoldTogglePrevModeBtn) {
+        partsSoldTogglePrevModeBtn.addEventListener('click', (event) => {
+          event.preventDefault();
+          const url = new URL(window.location.href);
+          const currentPrevMode = url.searchParams.get('parts_prev_mode') || {{ (parts_sold_context.prev_mode if parts_sold_context else 'mirror')|tojson }};
+          const nextPrevMode = currentPrevMode === 'month' ? 'mirror' : 'month';
+          url.searchParams.set('parts_prev_mode', nextPrevMode);
+          rememberScrollPosition();
+          window.location.href = url.toString();
+        });
+      }
+	  
+      if (dateModeToggle) {
+        dateModeToggle.addEventListener('change', () => {
+          const url = new URL(window.location.href);
+          url.searchParams.set('date_mode', dateModeToggle.checked ? 'collected' : 'recovered');
+          rememberScrollPosition();
+          window.location.href = url.toString();
+        });
+      }
+
+      const initialLiveEnabled = {{ 'true' if live_enabled else 'false' }};
+      if (initialLiveEnabled) {
+        syncLiveControls(true);
+        startLiveUpdates();
+      }
+
+      rebuildTable({
+        rows: {{ rows|tojson }},
+        sum_total: {{ sum_total|tojson }},
+        date_range_label: {{ date_range_label|tojson }},
+        contract_company_breakdown: {{ (contract_company_breakdown or {})|tojson }},
+      });
+	 
+      rebuildPartsSoldTable({{ (parts_sold_context or {})|tojson }});
+      renderPartsSoldChart(partsSoldCurrentChartType);
+      updateScrappedCars(scrappedCarsDataset);
+
+      // Detail tables are fetched and initialized only when requested.
+      window.addEventListener('resize', () => {
+        syncDetailsHeaderOffsets();
+        syncTableHeaderOffsets('vehicleSoldDetailsTable');
+      });
+      renderChart(currentChartType);
+      updateVehicleSoldData(vehicleSoldDataset);
+
+      if (vehicleInStatusSection) {
+        rebuildVehicleInStatusTable({
+          rows: vehicleInStatusDataset.rows || [],
+          sum_total: vehicleInStatusDataset.sum_total || 0,
+          date_range_label: vehicleInStatusDataset.date_range_label || '',
+          group_status_breakdown: vehicleInStatusDataset.group_status_breakdown || {},
+        });
+        renderVehicleInStatusChart(vehicleInStatusCurrentChartType);
+      }
+      renderCurrentStatus();
+      restoreScrollPosition();
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  </body>
+</html>
